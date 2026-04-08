@@ -1,0 +1,46 @@
+Resume Sess
+
+Resume LocalAssistant work from the restart brief at /mnt/c/Users/JustinLeopard/localassistant-data/restart-brief.md.
+
+Read these files first:
+- /mnt/c/Users/JustinLeopard/localassistant-data/restart-brief.md
+- /mnt/c/Users/JustinLeopard/localassistant-data/memory.json
+- /mnt/c/Users/JustinLeopard/localassistant-data/assistant_state.json
+- /mnt/c/Users/JustinLeopard/localassistant-data/inbox.md
+- /mnt/c/Users/JustinLeopard/Documents/New project/src/localassistant/assistant.py
+- /mnt/c/Users/JustinLeopard/Documents/New project/src/localassistant/memory.py
+- /mnt/c/Users/JustinLeopard/Documents/New project/src/localassistant/config.py
+- /mnt/c/Users/JustinLeopard/Documents/New project/src/localassistant/cli.py
+
+Current system summary:
+- LocalAssistant is a WSL-first local desktop assistant using Ollama model alias `LocalAssistant` based on `gemma4:e4b-turbo`.
+- Runtime data lives at /mnt/c/Users/JustinLeopard/localassistant-data
+- Main launcher paths:
+  - /mnt/c/Users/JustinLeopard/localassistant.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-monitor.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-capture.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-suggest.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-loops.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-resolve.sh
+  - /mnt/c/Users/JustinLeopard/localassistant-wrong.sh
+
+Current capabilities already implemented:
+- desktop observation from WSL via Windows PowerShell
+- event logging to SQLite
+- learned memory and open-loop tracking
+- manual resolve and wrong feedback
+- heuristic auto-resolution and auto-deprioritization
+- passive ignored-signal learning
+- confidence-weighted interruption modes: notify, inbox, hold
+
+Constraints and preferences:
+- Prefer WSL-first paths in user-facing responses
+- Do not use the old hidden .localassistant path
+- Assume the user wants LocalAssistant to become increasingly autonomous and helpful
+- Keep changes grounded in inspectable local state, not vague abstractions
+
+After reading, summarize:
+1. current LocalAssistant state
+2. open loops still active
+3. feedback profile status
+4. the best next implementation step

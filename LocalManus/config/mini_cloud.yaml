@@ -1,0 +1,156 @@
+# =============================================================================
+# ManusLocal — mini-swe-agent Cloud Config v3 (gameron.me proxy)
+# Use with: mini-local-cloud -t "your task"
+# Models: claude-opus-4-6 (default), gpt-5.4, claude-sonnet-4-6, gpt-5.3-codex
+#
+# v3.1: native tool calls — openai/ prefix for litellm + /v1 endpoint
+#     max_tokens 16384, temperature 0, full upstream templates, all env vars
+# =============================================================================
+
+model:
+  model_name: openai/claude-opus-4-6
+  model_class: litellm
+  cost_tracking: ignore_errors
+  model_kwargs:
+    api_base: https://api.gameron.me/v1
+    api_key: sk-user-e65550a3cd582639241fdb153dfaca4e
+    max_tokens: 64000
+    temperature: 0.0
+    drop_params: true
+  observation_template: |
+    {%- if output.output | length < 10000 -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output": {{ output.output | tojson }}
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- else -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output_head": {{ output.output[:5000] | tojson }},
+      "output_tail": {{ output.output[-5000:] | tojson }},
+      "elided_chars": {{ output.output | length - 10000 }},
+      "warning": "Output too long. Try a different command that produces less output. Use head, tail, or sed to view fewer lines. Use more selective grep patterns. Redirect output to a file and search in it."
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- endif -%}
+  format_error_template: |
+    Tool call error:
+
+    <error>
+    {{error}}
+    </error>
+
+    Every response needs to use the 'bash' tool at least once to execute commands.
+
+    Call the bash tool with your command as the argument:
+    - Tool: bash
+    - Arguments: {"command": "your_command_here"}
+
+    If you want to end the task, please issue the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    without any other command.
+agent:
+  step_limit: 0
+  mode: yolo
+  output_path: /home/justinleopard/projects/JustAi/LocalManus/logs/last_cloud_run.traj.json
+  system_template: |
+    You are ManusLocal, an AI agent, that will have a real GPU/Server home very soon, whom executes tasks from anywhere by running bash commands.
+    You are operating inside a WSL2/Ubuntu/Windows environment on behalf of your developer, currently. 
+
+    You can execute bash commands and edit files to implement the necessary changes.
+
+    Each response should include:
+
+    1. **Reasoning text** where you explain your analysis and plan
+    2. At least one tool call with your command
+
+    **CRITICAL REQUIREMENTS:**
+
+    - Your response SHOULD include reasoning text explaining what you are doing
+    - Your response MUST include AT LEAST ONE bash tool call
+    - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+    - You can persist state by writing to files, e.g. `echo "MY_VAR=value" >> .env && source .env`
+    - Submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+      Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
+
+    Example of a CORRECT response:
+    <example_response>
+    I need to understand the structure of the repository first. Let me check what files are in the current directory.
+
+    [Makes bash tool call with {"command": "ls -la"} as arguments]
+    </example_response>
+
+    ## Useful command examples
+
+    ### Create a new file:
+
+    ```bash
+    cat <<'EOF' > newfile.py
+    import numpy as np
+    hello = "world"
+    print(hello)
+    EOF
+    ```
+
+    ### Edit files with sed:
+
+    ```bash
+    sed -i 's/old_string/new_string/g' filename.py
+    ```
+
+    ### View file content with line numbers:
+
+    ```bash
+    nl -ba filename.py | sed -n '10,20p'
+    ```
+
+    ### Install Python packages (Ubuntu enforces PEP 668):
+
+    ```bash
+    python3 -m venv .venv && source .venv/bin/activate && pip install <package>
+    ```
+
+
+    ## CLI-Anything Tools
+    You have agent-optimised CLI wrappers available for installed applications.
+    Discover what tools are available:
+    ```bash
+    find /home/justinleopard/cli-harnesses -name "SKILL.md" 2>/dev/null
+    ```
+    Read a SKILL.md to learn a tool's commands before using it:
+    ```bash
+    cat /home/justinleopard/cli-harnesses/ffmpeg/agent-harness/cli_anything/ffmpeg/skills/SKILL.md
+    ```
+    All CLI-Anything tools support `--json` for structured output and `--help` for discovery.
+    Installed entry points: cli-anything-ffmpeg, cli-anything-gh, cli-anything-docker (when built).
+
+  instance_template: |
+    TASK: {{task}}
+
+    ## Recommended Workflow
+    1. Analyze the codebase by finding and reading relevant files
+    2. Implement the necessary changes
+    3. Verify your work — run tests, check syntax, confirm expected output
+    4. Test edge cases to ensure robustness
+    5. Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+
+    <system_information>
+    {{system}} {{release}} {{machine}}
+    </system_information>
+
+environment:
+  cwd: /home/justinleopard/projects
+  environment_class: local
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: "off"
+    TQDM_DISABLE: "1"
+    DEBIAN_FRONTEND: noninteractive
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    GIT_TERMINAL_PROMPT: "0"
+    NPM_CONFIG_PROGRESS: "false"
+    TERM: xterm-256color
+    PATH: "/home/justinleopard/.local/bin:/home/justinleopard/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

@@ -1,0 +1,171 @@
+# =============================================================================
+# ManusLocal — OpenFang Configuration
+# Agent OS configuration for ManusLocal's orchestration layer.
+# =============================================================================
+
+[agent]
+name = "ManusLocal"
+version = "1.0.0"
+description = "Justin's persistent local AI agent — Manus's local instance"
+
+[llm]
+# Primary: Local Qwen3 via Ollama
+default_provider = "ollama"
+default_model = "qwen3:30b-a3b-q4_K_M"
+
+[[llm.providers]]
+name = "ollama"
+# OLLAMA_HOST must be set to http://172.31.224.1:11434 (Windows host IP from WSL)
+base_url = "${OLLAMA_HOST}/v1"
+api_key = "ollama"
+models = ["qwen3:30b-a3b-q4_K_M"]
+
+# Fallback 1: DeepSeek (near-free, frontier quality)
+[[llm.providers]]
+name = "deepseek"
+api_key = "${DEEPSEEK_API_KEY}"
+models = ["deepseek-chat", "deepseek-coder"]
+
+# Fallback 2: Gemini Flash (free tier, fast)
+[[llm.providers]]
+name = "gemini"
+api_key = "${GEMINI_API_KEY}"
+models = ["gemini-2.5-flash"]
+
+# Fallback 3: Groq (free tier, very fast)
+[[llm.providers]]
+name = "groq"
+api_key = "${GROQ_API_KEY}"
+models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+[llm.routing]
+# Tier-based fallback chain
+orchestration = ["ollama/qwen3:30b-a3b-q4_K_M", "deepseek/deepseek-chat"]
+coding = ["ollama/qwen3:30b-a3b-q4_K_M", "deepseek/deepseek-coder"]
+fast = ["groq/llama-3.1-8b-instant", "gemini/gemini-2.5-flash"]
+research = ["ollama/qwen3:30b-a3b-q4_K_M", "deepseek/deepseek-chat"]
+
+[server]
+host = "127.0.0.1"
+port = 50051
+log_level = "info"
+
+[memory]
+# Honcho is the primary memory layer
+backend = "honcho"
+honcho_api_key = "${HONCHO_API_KEY}"
+honcho_base_url = "${HONCHO_BASE_URL}"
+honcho_workspace = "${HONCHO_WORKSPACE_DEV}"
+# SQLite for local fast-access cache
+sqlite_path = "~/.openfang/memory.db"
+vector_dims = 1536
+
+[budget]
+enabled = true
+daily_limit_usd = 5.00
+monthly_limit_usd = 50.00
+alert_threshold = 0.80
+# Local Ollama inference is free — only track API calls
+track_local = false
+
+[security]
+wasm_sandbox = true
+audit_log = true
+taint_tracking = true
+
+# ── MCP Servers ───────────────────────────────────────────────────────────────
+[[mcp.servers]]
+name = "filesystem"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/justinleopard"]
+
+[[mcp.servers]]
+name = "github"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+env = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }
+
+[[mcp.servers]]
+name = "honcho"
+transport = "stdio"
+command = "python3"
+args = ["-m", "honcho_mcp"]
+env = { HONCHO_API_KEY = "${HONCHO_API_KEY}", HONCHO_WORKSPACE_ID = "dev" }
+
+# ── Agents ────────────────────────────────────────────────────────────────────
+[[agents]]
+name = "orchestrator"
+template = "orchestrator"
+model = "ollama/qwen3:30b-a3b-q4_K_M"
+description = "Main ManusLocal orchestrator — decomposes tasks, delegates to specialists"
+system_prompt_file = "../persona/system_prompt.txt"
+[agents.capabilities]
+tools = ["function", "shell_exec", "file_read", "file_write", "web_search", "web_fetch", "memory_store", "memory_recall", "agent_send", "agent_spawn", "mcp:filesystem:*", "mcp:github:*", "mcp:honcho:*"]
+
+[[agents]]
+name = "coder"
+template = "coder"
+model = "ollama/qwen3:30b-a3b-q4_K_M"
+description = "Software engineering specialist — uses mini-swe-agent for complex tasks"
+[agents.capabilities]
+tools = ["shell_exec", "file_read", "file_write", "memory_store", "memory_recall", "mcp:filesystem:*", "mcp:github:*"]
+
+[[agents]]
+name = "researcher"
+template = "researcher"
+model = "ollama/qwen3:30b-a3b-q4_K_M"
+description = "Research and information gathering specialist"
+[agents.capabilities]
+tools = ["web_search", "web_browse", "file_write", "memory_store", "memory_recall"]
+
+[[agents]]
+name = "analyst"
+template = "analyst"
+model = "ollama/qwen3:30b-a3b-q4_K_M"
+description = "Data analysis and visualization specialist"
+[agents.capabilities]
+tools = ["shell_exec", "file_read", "file_write", "memory_store"]
+
+[[agents]]
+name = "delegator"
+template = "orchestrator"
+model = "ollama/qwen3:30b-a3b-q4_K_M"
+description = "Handles escalation to cloud Manus for tasks beyond local capabilities"
+[agents.capabilities]
+tools = ["shell_exec", "file_read", "memory_recall"]
+
+# ── Workflows ─────────────────────────────────────────────────────────────────
+[[workflows]]
+name = "dev-pipeline"
+file = "../workflows/dev_pipeline.toml"
+trigger = "manual"
+
+[[workflows]]
+name = "daily-check"
+file = "../workflows/daily_check.toml"
+trigger = "cron:0 0 9,13,17 * * *"  # 3x daily proactive check
+
+[[workflows]]
+name = "end-of-day"
+file = "../workflows/end_of_day.toml"
+trigger = "cron:0 0 22 * * *"  # 10pm daily
+
+[[workflows]]
+name = "self-improve"
+file = "../workflows/self_improve.toml"
+trigger = "cron:0 0 3 * * 0"  # Sunday 3am
+
+# ── Channels ──────────────────────────────────────────────────────────────────
+[[channels]]
+name = "telegram"
+type = "telegram"
+bot_token = "${TELEGRAM_BOT_TOKEN}"
+chat_id = "${TELEGRAM_CHAT_ID}"
+enabled = true
+
+[[channels]]
+name = "cli"
+type = "cli"
+enabled = true

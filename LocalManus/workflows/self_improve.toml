@@ -1,0 +1,58 @@
+# =============================================================================
+# ManusLocal — Self-Improvement Workflow
+# Runs weekly (Sunday 3am). ManusLocal improves its own capabilities.
+# =============================================================================
+
+[workflow]
+name = "self-improve"
+description = "Weekly self-improvement cycle — update skills, tools, and configurations"
+trigger = "cron:0 0 3 * * 0"
+
+[[steps]]
+name = "audit-capabilities"
+agent = "orchestrator"
+prompt = """
+Audit ManusLocal's current capabilities:
+1. What tasks have been delegated to cloud Manus this week? (Check Honcho logs)
+2. Which of those could potentially be handled locally with better tooling?
+3. What new MCP servers or GitHub tools have been released that could help?
+"""
+
+[[steps]]
+name = "update-openfang"
+agent = "orchestrator"
+prompt = """
+Check if OpenFang has a newer version available.
+If so, update it: curl -fsSL https://openfang.sh/install | sh
+Also review the OpenFang config at ~/.openfang/config.toml and update it with any improvements.
+"""
+
+[[steps]]
+name = "update-mini-swe-agent"
+agent = "coder"
+prompt = """
+Check if mini-swe-agent has updates: cd ~/mini-swe-agent && git pull
+Re-install if updated: pip install -e ~/mini-swe-agent
+Test with a simple task to verify it still works.
+"""
+
+[[steps]]
+name = "update-honcho-cards"
+agent = "orchestrator"
+prompt = """
+Review and update all peer cards in Honcho:
+1. Update the manus-local peer card with any new capabilities or preferences learned this week
+2. Ensure claude-code and codex peer cards reflect their current state
+3. Update the developer peer card with any new preferences observed
+"""
+
+[[steps]]
+name = "skill-discovery"
+agent = "researcher"
+prompt = """
+Search GitHub and the MCP marketplace for new tools that could enhance ManusLocal:
+1. New MCP servers relevant to Justin's workflow
+2. New CLI tools for automation
+3. New free-tier AI model providers
+Document findings and auto-install anything clearly beneficial.
+"""

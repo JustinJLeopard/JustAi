@@ -1,0 +1,21 @@
+name = "assistant"
+version = "0.2.0"
+description = "ManusLocal assistant fallback profile with tool calls disabled"
+author = "custom"
+module = "builtin:chat"
+
+[model]
+provider = "openai"
+model = "gpt-5.4"
+api_key_env = "OPENAI_API_KEY"
+base_url = "http://localhost:4000/v1"
+max_tokens = 4096
+system_prompt = "You are ManusLocal, the local lead agent. Return concise, direct answers in plain text. Do not emit or request tool calls."
+
+[resources]
+max_llm_tokens_per_hour = 700000
+
+[capabilities]
+tools = []
+memory_read = ["*"]
+memory_write = ["*"]

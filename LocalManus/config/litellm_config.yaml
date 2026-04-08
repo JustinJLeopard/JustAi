@@ -1,0 +1,130 @@
+# =============================================================================
+# ManusLocal — LiteLLM Proxy Configuration
+# Exposes Ollama (Windows-side) as an OpenAI-compatible API on localhost:4000
+# This is the bridge that makes Qwen3 accessible to all WSL tools.
+# =============================================================================
+
+model_list:
+
+  # === Gameron.me OpenAI-compatible models ===
+  - model_name: gpt-5.4
+    litellm_params:
+      model: openai/gpt-5.4
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "https://api.gameron.me/v1"
+
+  - model_name: gpt-5.3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "https://api.gameron.me/v1"
+      
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: openai/claude-opus-4-6
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "https://api.gameron.me/v1"
+      
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/claude-sonnet-4-6
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "https://api.gameron.me/v1"
+      
+  - model_name: gemini-3-1-pro
+    litellm_params:
+      model: openai/gemini-3.1-pro-preview
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "https://api.gameron.me/v1"
+  # Gemma 4 E4B — standard Q4_K_M (9.6 GB, fast MoE, ~4B active params)
+  - model_name: gemma4-local
+    litellm_params:
+      model: ollama/gemma4:e4b-it-q4_K_M
+      api_base: "http://172.31.224.1:11434"
+      stream: true
+
+  # Gemma 4 E4B — Unsloth Dynamic UD-Q4_K_XL (TurboQuant, 5.1 GB, best quality/speed)
+  - model_name: gemma4-turbo-local
+    litellm_params:
+      model: ollama/gemma4:e4b-turbo
+      api_base: "http://172.31.224.1:11434"
+      stream: true
+
+  # Local fallback: Qwen3 30B via Ollama (Windows-side)
+  # Ollama must be configured to listen on 0.0.0.0 on Windows.
+  # See scripts/fix_ollama_wsl.sh for the one-time Windows fix.
+  - model_name: qwen3-local
+    litellm_params:
+      model: ollama/qwen3:30b-a3b-q4_K_M
+      api_base: "http://172.31.224.1:11434"  # Replaced at startup by start_manuslocal.sh
+      stream: true
+
+  # Faster local option: Qwen3 8B via Ollama
+  - model_name: qwen3-fast-local
+    litellm_params:
+      model: ollama/qwen3:8b
+      api_base: "http://172.31.224.1:11434"
+      stream: true
+
+  # Fast coder-oriented local option (non-thinking default behavior)
+  - model_name: qwen-coder-fast-local
+    litellm_params:
+      model: ollama/qwen2.5-coder:7b
+      api_base: "http://172.31.224.1:11434"
+      stream: true
+      
+  # Alias: expose as gpt-4o for drop-in compatibility
+  - model_name: gpt-4o
+    litellm_params:
+      model: ollama/gemma4:e4b-turbo
+      api_base: "http://172.31.224.1:11434"
+      stream: true
+
+  # Fallback 1: DeepSeek (near-free)
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+
+  # Fallback 2: Gemini Flash (free tier)
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # Fallback 3: Groq (free tier, fast)
+  - model_name: groq-fast
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: "os.environ/GROQ_API_KEY"
+
+  # OpenRouter (for mini-swe-agent compatibility)
+  - model_name: openrouter-gemini
+    litellm_params:
+      model: openrouter/google/gemini-3-flash-preview
+      api_key: "os.environ/OPENROUTER_API_KEY"
+
+litellm_settings:
+  # Cloud default for ManusLocal
+  default_model: gpt-5.4
+  drop_params: true
+  set_verbose: false
+
+general_settings:
+  master_key: "os.environ/LITELLM_KEY"
+  database_url: null  # No DB needed for simple proxy
+
+router_settings:
+  # Automatic fallback chain
+  routing_strategy: "latency-based-routing"
+  fallbacks:
+    - {"gpt-5.4": ["claude-opus-4-6", "gpt-5.3-codex", "claude-sonnet-4-6", "gemma4-turbo-local", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"gpt-5.3-codex": ["gpt-5.4", "claude-opus-4-6", "claude-sonnet-4-6", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"claude-opus-4-6": ["gpt-5.4", "claude-sonnet-4-6", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"claude-sonnet-4-6": ["gpt-5.4", "claude-opus-4-6", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"gemma4-turbo-local": ["gemma4-local", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"gemma4-local": ["gemma4-turbo-local", "qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"qwen3-fast-local": ["qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"qwen-coder-fast-local": ["qwen3-local", "deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"gpt-4o": ["deepseek-chat", "gemini-flash", "groq-fast"]}
+    - {"qwen3-local": ["gpt-5.4", "claude-opus-4-6", "deepseek-chat", "gemini-flash", "groq-fast"]}

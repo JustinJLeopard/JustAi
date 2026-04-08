@@ -1,0 +1,47 @@
+# =============================================================================
+# ManusLocal — End-of-Day Workflow
+# Runs at 10pm daily. Closes out the day, flushes memory, and experiments.
+# =============================================================================
+
+[workflow]
+name = "end-of-day"
+description = "Daily end-of-day tasks, memory flush, and model experimentation"
+trigger = "cron:0 0 22 * * *"
+
+[[steps]]
+name = "verify-logs"
+agent = "orchestrator"
+prompt = """
+Review all logs from today in the current workspace's logs/ directory.
+Identify any errors, warnings, or incomplete tasks.
+Create a summary of the day's activity.
+"""
+
+[[steps]]
+name = "flush-memory"
+agent = "orchestrator"
+prompt = """
+Flush all .dev-notepads/ content to Honcho.
+Update the session state peer in Honcho with today's summary, active plans, and next steps.
+Ensure all coding agents (Claude, Codex) have their memory updated in Honcho.
+"""
+
+[[steps]]
+name = "generate-report"
+agent = "orchestrator"
+prompt = """
+Generate two end-of-day reports:
+1. Human-readable: Save to logs/eod_report_YYYY-MM-DD.md in the current workspace
+2. Peer-readable (JSON): Save to logs/eod_report_YYYY-MM-DD.json in the current workspace
+Include: completed tasks, system health, memory updates, next steps.
+Send the human-readable report to Justin via Telegram.
+"""
+
+[[steps]]
+name = "model-experimentation"
+agent = "orchestrator"
+prompt = """
+After completing the day's tasks, you are permitted to download and experiment with free-tier models from HuggingFace.
+Focus on models that could improve ManusLocal's local capabilities.
+Document findings in logs/model_experiments.md in the current workspace
+"""
