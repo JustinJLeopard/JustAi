@@ -1,0 +1,4 @@
+mini_model: gpt-5.3-codex
+codex_delegate_model: gpt-5.4
+openfang_default: claude-opus-4-6
+max_sonnet_count: 1
