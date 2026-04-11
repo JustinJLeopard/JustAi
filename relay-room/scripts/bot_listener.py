@@ -1,3 +1,4 @@
+import pathlib
 #!/usr/bin/env python3
 """
 bot_listener.py — Generic Agent Bot Listener for The Relay Room
@@ -58,7 +59,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 CONFIG_PATH = SCRIPT_DIR / "server_config.yaml"
 ENV_PATH = SCRIPT_DIR.parent / ".env"
 
-RELAY_BIN = "/home/justinleopard/.local/bin/relay"
+RELAY_BIN = str(pathlib.Path.home() / ".local" / "bin" / "relay")
 HEALTH_BASE_URL = os.environ.get("RELAY_HEALTH_BASE_URL", "http://127.0.0.1:8080")
 RELAY_WEB_URL = os.environ.get("RELAY_WEB_URL", "http://127.0.0.1:8765")
 
@@ -522,7 +523,8 @@ class ClaudeHandler(ActionHandler):
             parts.append(f"RELAY BOARD:\n{board_out[:500]}")
 
         # Recent dispatch log
-        log_out, _ = await bash("tail -10 /tmp/relay_dispatch.log 2>/dev/null || echo 'no log'")
+        dispatch_log = os.environ.get("JUSTAI_RELAY_DISPATCH_LOG_FILE", "/tmp/relay_dispatch.log")
+        log_out, _ = await bash(f"tail -10 {shlex.quote(dispatch_log)} 2>/dev/null || echo 'no log'")
         if log_out.strip():
             parts.append(f"RECENT DISPATCH:\n{log_out[:300]}")
 
@@ -1536,8 +1538,8 @@ def main():
 
     # Ensure ~/.local/bin is on PATH so relay can find spacetime
     import os as _os
-    _local_bin = "/home/justinleopard/.local/bin"
-    _cargo_bin = "/home/justinleopard/.cargo/bin"
+    _local_bin = str(pathlib.Path.home() / ".local" / "bin")
+    _cargo_bin = str(pathlib.Path.home() / ".cargo" / "bin")
     _current = _os.environ.get("PATH", "")
     if _local_bin not in _current:
         _os.environ["PATH"] = f"{_local_bin}:{_cargo_bin}:{_current}"

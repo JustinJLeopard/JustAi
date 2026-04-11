@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RR_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 JUSTAI_ROOT="${JUSTAI_ROOT:-$(cd "$RR_DIR/.." && pwd)}"
 JUSTAI_LOCALMANUS_ROOT="${JUSTAI_LOCALMANUS_ROOT:-$JUSTAI_ROOT/LocalManus}"
+JUSTAI_RUNTIME_ROOT="${JUSTAI_RUNTIME_ROOT:-/tmp/justai}"
+JUSTAI_RELAY_TRAJ_DIR="${JUSTAI_RELAY_TRAJ_DIR:-$JUSTAI_RUNTIME_ROOT/traj}"
+JUSTAI_RELAY_TASK_LOG_DIR="${JUSTAI_RELAY_TASK_LOG_DIR:-$JUSTAI_RUNTIME_ROOT/tasks}"
 
 export PATH="$PATH:$HOME/.local/bin:$HOME/.cargo/bin"
 LM_DIR="${LOCALMANUS_ROOT:-$JUSTAI_LOCALMANUS_ROOT}"
@@ -67,8 +70,8 @@ discord_alert() {
 }
 # ─────────────────────────────────────────────────────────────────────────────
 
-PID_FILE="${PID_FILE:-/tmp/relay_dispatch.pid}"
-LOG_FILE="${LOG_FILE:-/tmp/relay_dispatch.log}"
+PID_FILE="${PID_FILE:-${JUSTAI_RELAY_DISPATCH_PID_FILE:-$JUSTAI_RUNTIME_ROOT/relay_dispatch.pid}}"
+LOG_FILE="${LOG_FILE:-${JUSTAI_RELAY_DISPATCH_LOG_FILE:-$JUSTAI_RUNTIME_ROOT/relay_dispatch.log}}"
 INTERVAL_SECONDS=5
 STALE_TASK_THRESHOLD_SECONDS="${STALE_TASK_THRESHOLD_SECONDS:-900}"
 MAX_RETRIES="${MAX_RETRIES:-2}"
@@ -76,6 +79,8 @@ MODE="daemon"
 PARALLEL_LIMIT=1
 STOP_REQUESTED=0
 AUTO_INSTALL_LAST_ERROR=""
+
+mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")" "$JUSTAI_RELAY_TRAJ_DIR" "$JUSTAI_RELAY_TASK_LOG_DIR"
 
 log_line() {
     local message="$1"
@@ -85,7 +90,7 @@ log_line() {
 copy_traj_for_task() {
     local task_id="$1"
     local traj_source="${2:-$LM_DIR/logs/last_mini_run.traj.json}"
-    local traj_copy="/tmp/relay_traj_${task_id}.json"
+    local traj_copy="$JUSTAI_RELAY_TRAJ_DIR/relay_traj_${task_id}.json"
 
     if [[ -f "$traj_source" ]]; then
         cp "$traj_source" "$traj_copy"
@@ -211,7 +216,8 @@ default_root = sys.argv[2]
 matches = re.findall(r'(/[^ \n\t\r"\'`]+)', payload)
 for raw in matches:
     path = raw.rstrip('.,:;)]}')
-    if path.startswith("/home/justinleopard/projects/"):
+    home = str(pathlib.Path.home())
+    if path.startswith(home + "/projects/"):
         parts = path.split("/")
         if len(parts) >= 5:
             print("/".join(parts[:5]))
@@ -229,7 +235,7 @@ Repository root: $work_cwd
 Working directory: $work_cwd
 Operate only inside $work_cwd unless the task explicitly names another absolute path such as /tmp.
 Use Linux paths exactly as given. Do not translate repo paths to /mnt/c/home.
-For repository tasks, start by reading files under $work_cwd rather than scanning /home/justinleopard.
+For repository tasks, start by reading files under $work_cwd rather than scanning $HOME.
 EOF
 }
 
@@ -240,6 +246,8 @@ auto_install_relay_cli_if_needed() {
     local install_output=""
 
     AUTO_INSTALL_LAST_ERROR=""
+
+mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")" "$JUSTAI_RELAY_TRAJ_DIR" "$JUSTAI_RELAY_TASK_LOG_DIR"
     after_digest="$(rust_source_digest || true)"
     [[ -n "$before_digest" && -n "$after_digest" ]] || return 0
     [[ "$before_digest" != "$after_digest" ]] || return 0
@@ -651,7 +659,7 @@ run_cycle() {
     log_line "[dispatch] poll cycle: processing tasks"
     if [[ "$PARALLEL_LIMIT" -le 1 ]]; then
         for id in $ids; do
-            local run_log="/tmp/relay_dispatch_task_${id}.log"
+            local run_log="$JUSTAI_RELAY_TASK_LOG_DIR/relay_dispatch_task_${id}.log"
             : >"$run_log"
             (process_task "$id" "$run_log") >"$run_log" 2>&1
             if [[ "$STOP_REQUESTED" -eq 1 ]]; then
@@ -670,7 +678,7 @@ run_cycle() {
             prune_active_pids active_pids
         done
 
-        local run_log="/tmp/relay_dispatch_task_${id}.log"
+        local run_log="$JUSTAI_RELAY_TASK_LOG_DIR/relay_dispatch_task_${id}.log"
         : >"$run_log"
         (process_task "$id" "$run_log") >"$run_log" 2>&1 &
         local pid=$!

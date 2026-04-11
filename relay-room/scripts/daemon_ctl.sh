@@ -5,16 +5,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RR_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 JUSTAI_ROOT="${JUSTAI_ROOT:-$(cd "$RR_DIR/.." && pwd)}"
 JUSTAI_LOCALMANUS_ROOT="${JUSTAI_LOCALMANUS_ROOT:-$JUSTAI_ROOT/LocalManus}"
+JUSTAI_RUNTIME_ROOT="${JUSTAI_RUNTIME_ROOT:-/tmp/justai}"
 
-PID_FILE="${PID_FILE:-/tmp/relay_dispatch.pid}"
-LOG_FILE="${LOG_FILE:-/tmp/relay_dispatch.log}"
+PID_FILE="${PID_FILE:-${JUSTAI_RELAY_DISPATCH_PID_FILE:-$JUSTAI_RUNTIME_ROOT/relay_dispatch.pid}}"
+LOG_FILE="${LOG_FILE:-${JUSTAI_RELAY_DISPATCH_LOG_FILE:-$JUSTAI_RUNTIME_ROOT/relay_dispatch.log}}"
 LM_DIR="${LOCALMANUS_ROOT:-$JUSTAI_LOCALMANUS_ROOT}"
 LM_ENV_FILE="${LM_ENV_FILE:-$LM_DIR/.env}"
-MINI_BIN="${MINI_BIN:-/home/justinleopard/.venv/hermes/bin/mini}"
+MINI_BIN="${MINI_BIN:-/home/justinleopard/.local/bin/mini}"
+HEALTH_PID_FILE="${HEALTH_PID_FILE:-${JUSTAI_RELAY_HEALTH_PID_FILE:-$JUSTAI_RUNTIME_ROOT/relay_health_server.pid}}"
+HEALTH_LOG_FILE="${HEALTH_LOG_FILE:-${JUSTAI_RELAY_HEALTH_LOG_FILE:-$JUSTAI_RUNTIME_ROOT/relay_health_server.log}}"
+WEB_PID_FILE="${WEB_PID_FILE:-${JUSTAI_RELAY_WEB_PID_FILE:-$JUSTAI_RUNTIME_ROOT/relay_web.pid}}"
+WEB_LOG_FILE="${WEB_LOG_FILE:-${JUSTAI_RELAY_WEB_LOG_FILE:-$JUSTAI_RUNTIME_ROOT/relay_web.log}}"
+BOT_PID_DIR="${BOT_PID_DIR:-${JUSTAI_RELAY_BOT_PID_DIR:-$JUSTAI_RUNTIME_ROOT/bots}}"
+BOT_LOG_DIR="${BOT_LOG_DIR:-${JUSTAI_RELAY_BOT_LOG_DIR:-$JUSTAI_RUNTIME_ROOT/bots}}"
 
 VERBOSE=0
 WITH_BOTS=0
 WITH_CODEX=0
+NO_CODEX=0
 PARALLEL=1
 
 # Sprint 3 Task 2: Bot management
@@ -22,10 +30,7 @@ BOT_AGENTS=("relay-coordinator" "codex" "manuslocal" "coworkclaude" "claudecli")
 PYTHON="python3"
 BOT_SCRIPT="${SCRIPT_DIR}/bot_listener.py"
 HEALTH_SCRIPT="${SCRIPT_DIR}/health_server.py"
-HEALTH_PID_FILE="/tmp/relay_health_server.pid"
 WEB_SCRIPT="${SCRIPT_DIR}/relay_web.py"
-WEB_PID_FILE="/tmp/relay_web.pid"
-WEB_LOG_FILE="/tmp/relay_web.log"
 WITH_WEB=1
 
 C_RESET='\033[0m'
@@ -55,9 +60,28 @@ Options:
   -v, --verbose     Verbose logging
   --with-bots       Also start/stop/status all Discord bot listeners
   --with-codex      Also start/stop/status only the codex bot listener
+  --no-codex        Exclude codex when --with-bots is used
   --parallel N      Start relay_dispatch.sh with up to N concurrent tasks
   --no-web          Skip relay_web lifecycle management
 USAGE
+}
+
+active_bot_agents() {
+  local agents=()
+
+  if [[ "$WITH_BOTS" -eq 1 ]]; then
+    local agent
+    for agent in "${BOT_AGENTS[@]}"; do
+      if [[ "$NO_CODEX" -eq 1 && "$agent" == "codex" ]]; then
+        continue
+      fi
+      agents+=("$agent")
+    done
+  elif [[ "$WITH_CODEX" -eq 1 ]]; then
+    agents=("codex")
+  fi
+
+  printf '%s\n' "${agents[@]}"
 }
 
 is_pid_alive() {
@@ -97,7 +121,7 @@ start_daemon() {
 
   source_localmanus_env
 
-  mkdir -p "$(dirname "$LOG_FILE")"
+  mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")"
   touch "$LOG_FILE"
 
   local dispatch_args=(--daemon)
@@ -266,28 +290,35 @@ health_check() {
 # ── Sprint 3 Task 2: Bot Management ─────────────────────────────────────────
 
 start_bots() {
+  mapfile -t agents < <(active_bot_agents)
+  if [[ "${#agents[@]}" -eq 0 ]]; then
+    info "Bot lifecycle skipped"
+    return 0
+  fi
+
   info "Starting Discord bot listeners..."
   set -a
   # Export Discord tokens and guild id so detached child processes inherit them.
   source "${RR_DIR}/.env"
   set +a
-  for agent in "${BOT_AGENTS[@]}"; do
-    local pid_file="/tmp/relay_discord_${agent}.pid"
+  mkdir -p "$BOT_PID_DIR" "$BOT_LOG_DIR" "$(dirname "$HEALTH_PID_FILE")" "$(dirname "$HEALTH_LOG_FILE")"
+  for agent in "${agents[@]}"; do
+    local pid_file="${BOT_PID_DIR}/relay_discord_${agent}.pid"
     if [[ -f "${pid_file}" ]] && is_pid_alive "$(cat "${pid_file}")"; then
       warn "${agent} bot already running (PID $(cat "${pid_file}"))"
       continue
     fi
-    nohup "${PYTHON}" "${BOT_SCRIPT}" --agent "${agent}" --guild "${DISCORD_GUILD_ID}" >> "/tmp/relay_bot_${agent}.log" 2>&1 &
+    nohup "${PYTHON}" "${BOT_SCRIPT}" --agent "${agent}" --guild "${DISCORD_GUILD_ID}" >> "${BOT_LOG_DIR}/relay_bot_${agent}.log" 2>&1 &
     echo $! > "${pid_file}"
     ok "${agent} bot started (PID $!)"
   done
 
   # Start health server with watchdog
-  local hp="/tmp/relay_health_server.pid"
+  local hp="${HEALTH_PID_FILE}"
   if [[ -f "${hp}" ]] && is_pid_alive "$(cat "${hp}")"; then
     warn "health_server already running"
   else
-    nohup "${PYTHON}" "${HEALTH_SCRIPT}" >> /tmp/relay_health_server.log 2>&1 &
+    JUSTAI_BOT_AGENTS="$(IFS=,; echo "${agents[*]}")" nohup "${PYTHON}" "${HEALTH_SCRIPT}" >> "${HEALTH_LOG_FILE}" 2>&1 &
     echo $! > "${hp}"
     ok "health_server started (PID $!)"
   fi
@@ -304,15 +335,22 @@ start_web() {
     return 0
   fi
 
+  mkdir -p "$(dirname "$WEB_PID_FILE")" "$(dirname "$WEB_LOG_FILE")"
   nohup "${PYTHON}" "${WEB_SCRIPT}" >> "${WEB_LOG_FILE}" 2>&1 &
   echo $! > "${WEB_PID_FILE}"
   ok "relay_web started (PID $!)"
 }
 
 stop_bots() {
+  mapfile -t agents < <(active_bot_agents)
+  if [[ "${#agents[@]}" -eq 0 ]]; then
+    info "Bot lifecycle skipped"
+    return 0
+  fi
+
   info "Stopping Discord bot listeners..."
-  for agent in "${BOT_AGENTS[@]}"; do
-    local pid_file="/tmp/relay_discord_${agent}.pid"
+  for agent in "${agents[@]}"; do
+    local pid_file="${BOT_PID_DIR}/relay_discord_${agent}.pid"
     if [[ -f "${pid_file}" ]]; then
       local pid="$(cat "${pid_file}")"
       if is_pid_alive "${pid}"; then
@@ -325,7 +363,7 @@ stop_bots() {
     fi
   done
 
-  local hp="/tmp/relay_health_server.pid"
+  local hp="${HEALTH_PID_FILE}"
   if [[ -f "${hp}" ]]; then
     local pid="$(cat "${hp}")"
     if is_pid_alive "${pid}"; then
@@ -353,17 +391,23 @@ stop_web() {
 }
 
 status_bots() {
+  mapfile -t agents < <(active_bot_agents)
+  if [[ "${#agents[@]}" -eq 0 ]]; then
+    info "Bot lifecycle skipped"
+    return 0
+  fi
+
   echo ""
   info "=== Discord Bots ==="
-  for agent in "${BOT_AGENTS[@]}"; do
-    local pid_file="/tmp/relay_discord_${agent}.pid"
+  for agent in "${agents[@]}"; do
+    local pid_file="${BOT_PID_DIR}/relay_discord_${agent}.pid"
     if [[ -f "${pid_file}" ]] && is_pid_alive "$(cat "${pid_file}")"; then
       ok "${agent} bot — running (PID $(cat "${pid_file}"))"
     else
       fail "${agent} bot — stopped"
     fi
   done
-  local hp="/tmp/relay_health_server.pid"
+  local hp="${HEALTH_PID_FILE}"
   if [[ -f "${hp}" ]] && is_pid_alive "$(cat "${hp}")"; then
     ok "health_server — running (PID $(cat "${hp}"))"
   else
@@ -391,19 +435,20 @@ start_codex() {
   set -a
   source "${RR_DIR}/.env"
   set +a
-  local pid_file="/tmp/relay_discord_codex.pid"
+  mkdir -p "$BOT_PID_DIR" "$BOT_LOG_DIR"
+  local pid_file="${BOT_PID_DIR}/relay_discord_codex.pid"
   if [[ -f "${pid_file}" ]] && is_pid_alive "$(cat "${pid_file}")"; then
     warn "codex bot already running (PID $(cat "${pid_file}"))"
     return 0
   fi
   nohup "${PYTHON}" "${BOT_SCRIPT}" --agent codex --guild "${DISCORD_GUILD_ID}" \
-    >> "/tmp/relay_bot_codex.log" 2>&1 &
+    >> "${BOT_LOG_DIR}/relay_bot_codex.log" 2>&1 &
   echo $! > "${pid_file}"
   ok "codex bot started (PID $!)"
 }
 
 stop_codex() {
-  local pid_file="/tmp/relay_discord_codex.pid"
+  local pid_file="${BOT_PID_DIR}/relay_discord_codex.pid"
   if [[ -f "${pid_file}" ]]; then
     local pid
     pid="$(cat "${pid_file}")"
@@ -420,7 +465,7 @@ stop_codex() {
 }
 
 status_codex() {
-  local pid_file="/tmp/relay_discord_codex.pid"
+  local pid_file="${BOT_PID_DIR}/relay_discord_codex.pid"
   if [[ -f "${pid_file}" ]] && is_pid_alive "$(cat "${pid_file}")"; then
     ok "codex bot — running (PID $(cat "${pid_file}"))"
   else
@@ -434,6 +479,7 @@ while [[ $# -gt 0 ]]; do
     -v|--verbose) VERBOSE=1; shift ;;
     --with-bots)  WITH_BOTS=1; shift ;;
     --with-codex) WITH_CODEX=1; shift ;;
+    --no-codex)   NO_CODEX=1; shift ;;
     --parallel)
       [[ $# -ge 2 ]] || { fail "--parallel requires a value"; exit 2; }
       PARALLEL="$2"

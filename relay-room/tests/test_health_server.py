@@ -68,7 +68,7 @@ class TestHealthServer(unittest.TestCase):
         relay.write_text("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo relay 0.0.0; exit 0; fi\nexit 0\n", encoding="utf-8")
         relay.chmod(0o755)
 
-        mini_dir = Path.home() / ".venv" / "hermes" / "bin"
+        mini_dir = Path.home() / ".local" / "bin"
         mini_dir.mkdir(parents=True, exist_ok=True)
         mini = mini_dir / "mini"
         self.mini_original = None
@@ -100,7 +100,7 @@ class TestHealthServer(unittest.TestCase):
         if hasattr(self, "tmpdir"):
             self.tmpdir.cleanup()
 
-        mini = Path.home() / ".venv" / "hermes" / "bin" / "mini"
+        mini = Path.home() / ".local" / "bin" / "mini"
         if hasattr(self, "mini_original"):
             if self.mini_original is None:
                 if mini.exists():
@@ -197,7 +197,7 @@ class TestMetricsEndpoint(unittest.TestCase):
         self.fake_bin = Path(self.tmpdir.name) / "bin"
         self.fake_bin.mkdir(parents=True, exist_ok=True)
 
-        mini_dir = Path.home() / ".venv" / "hermes" / "bin"
+        mini_dir = Path.home() / ".local" / "bin"
         mini_dir.mkdir(parents=True, exist_ok=True)
         mini = mini_dir / "mini"
         self.mini_original = None
@@ -216,7 +216,7 @@ class TestMetricsEndpoint(unittest.TestCase):
         self._close_proc_streams()
         if hasattr(self, "tmpdir"):
             self.tmpdir.cleanup()
-        mini = Path.home() / ".venv" / "hermes" / "bin" / "mini"
+        mini = Path.home() / ".local" / "bin" / "mini"
         if hasattr(self, "mini_original"):
             if self.mini_original is None:
                 if mini.exists():

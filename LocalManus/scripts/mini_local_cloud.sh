@@ -16,7 +16,7 @@ LM_DIR="${LOCALMANUS_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 TASK=""
 TASK_INPUT=""
 TASK_PREFIX="${MINI_TASK_PREFIX:-}"
-WORK_CWD="${MINI_CWD:-/home/justinleopard/projects}"
+WORK_CWD="${MINI_CWD:-$HOME/projects}"
 HONCHO_TIMEOUT_SECONDS="${HONCHO_TIMEOUT_SECONDS:-12}"
 TRAJ_FILE="${MINI_TRAJ_FILE:-$PROJECT_DIR/logs/last_mini_run.traj.json}"
 HONCHO_POST_FILE="${MINI_HONCHO_POST_FILE:-$PROJECT_DIR/logs/last_honcho_post_task.txt}"
@@ -70,7 +70,7 @@ model = os.environ["_PATCH_MODEL"]
 base_url = os.environ["_PATCH_BASE_URL"]
 api_key = os.environ["_PATCH_API_KEY"]
 honcho_ctx = os.environ.get("_PATCH_HONCHO_CTX", "")
-work_cwd = os.environ.get("_PATCH_WORK_CWD", "/home/justinleopard/projects")
+work_cwd = os.environ.get("_PATCH_WORK_CWD", os.path.expanduser("~/projects"))
 
 with open(config_src) as f:
     content = f.read()
@@ -115,7 +115,7 @@ if [[ -n "$TASK" ]]; then
     
 # Dynamically inject available CLI-Anything SKILL.md content into instance_template
 SKILL_CONTENT=""
-for skill_file in /home/justinleopard/cli-harnesses/*/agent-harness/cli_anything/*/skills/SKILL.md; do
+for skill_file in "$HOME"/cli-harnesses/*/agent-harness/cli_anything/*/skills/SKILL.md; do
     if [ -f "$skill_file" ]; then
         tool_name=$(echo "$skill_file" | sed 's|.*/cli_anything/||;s|/skills/SKILL.md||')
         SKILL_CONTENT="${SKILL_CONTENT}### ${tool_name} CLI\\n$(head -30 "$skill_file" | tail -n +5)\\n\\n"
@@ -131,7 +131,7 @@ else
     
 # Dynamically inject available CLI-Anything SKILL.md content into instance_template
 SKILL_CONTENT=""
-for skill_file in /home/justinleopard/cli-harnesses/*/agent-harness/cli_anything/*/skills/SKILL.md; do
+for skill_file in "$HOME"/cli-harnesses/*/agent-harness/cli_anything/*/skills/SKILL.md; do
     if [ -f "$skill_file" ]; then
         tool_name=$(echo "$skill_file" | sed 's|.*/cli_anything/||;s|/skills/SKILL.md||')
         SKILL_CONTENT="${SKILL_CONTENT}### ${tool_name} CLI\\n$(head -30 "$skill_file" | tail -n +5)\\n\\n"

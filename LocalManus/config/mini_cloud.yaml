@@ -52,7 +52,7 @@ model:
 agent:
   step_limit: 0
   mode: yolo
-  output_path: /home/justinleopard/projects/JustAi/LocalManus/logs/last_cloud_run.traj.json
+  output_path: "${MINI_TRAJ_FILE:-~/projects/JustAi/LocalManus/logs/last_cloud_run.traj.json}"
   system_template: |
     You are ManusLocal, an AI agent, that will have a real GPU/Server home very soon, whom executes tasks from anywhere by running bash commands.
     You are operating inside a WSL2/Ubuntu/Windows environment on behalf of your developer, currently. 
@@ -115,11 +115,11 @@ agent:
     You have agent-optimised CLI wrappers available for installed applications.
     Discover what tools are available:
     ```bash
-    find /home/justinleopard/cli-harnesses -name "SKILL.md" 2>/dev/null
+    find "$HOME/cli-harnesses" -name "SKILL.md" 2>/dev/null
     ```
     Read a SKILL.md to learn a tool's commands before using it:
     ```bash
-    cat /home/justinleopard/cli-harnesses/ffmpeg/agent-harness/cli_anything/ffmpeg/skills/SKILL.md
+    cat "$HOME/cli-harnesses/ffmpeg/agent-harness/cli_anything/ffmpeg/skills/SKILL.md"
     ```
     All CLI-Anything tools support `--json` for structured output and `--help` for discovery.
     Installed entry points: cli-anything-ffmpeg, cli-anything-gh, cli-anything-docker (when built).
@@ -139,7 +139,7 @@ agent:
     </system_information>
 
 environment:
-  cwd: /home/justinleopard/projects
+  cwd: "${MINI_CWD:-~/projects}"
   environment_class: local
   env:
     PAGER: cat
@@ -153,4 +153,4 @@ environment:
     GIT_TERMINAL_PROMPT: "0"
     NPM_CONFIG_PROGRESS: "false"
     TERM: xterm-256color
-    PATH: "/home/justinleopard/.local/bin:/home/justinleopard/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    PATH: "~/.local/bin:~/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

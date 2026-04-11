@@ -45,7 +45,7 @@ model:
 agent:
   step_limit: 30
   mode: confirm
-  output_path: /home/justinleopard/projects/JustAi/LocalManus/logs/last_mini_run.traj.json
+  output_path: "${MINI_TRAJ_FILE:-~/projects/JustAi/LocalManus/logs/last_mini_run.traj.json}"
   system_template: |
     /no_think
     You are ManusLocal, an expert AI software engineering agent running on Linux.
@@ -75,7 +75,7 @@ agent:
     Do not repeat steps after success. Submit as soon as the task is verified done.
     System: {{system}} {{release}} {{machine}}
 environment:
-  cwd: /home/justinleopard/projects
+  cwd: "${MINI_CWD:-~/projects}"
   environment_class: local
   env:
     PAGER: cat
