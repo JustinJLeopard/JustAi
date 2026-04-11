@@ -1,12 +1,39 @@
 # JustAi v1 — Product Specification
 
-**Version:** 1.1 (Evidence-updated)
+**Version:** 1.2 (Testing standard added)
 **Date:** 2026-04-11
 **Status:** Pre-build — approved for implementation
 
 > *"The best code agent in the world was missing one thing. We built it."*
 > *JustAi — orchestration, memory, and control for mini-swe-agent.*
 > *Built on research from Princeton & Stanford, powered by rUv's agent infrastructure.*
+
+---
+
+## 0. Standing Engineering Rules
+
+These rules apply to every sprint without exception. They are not guidelines.
+
+### Testing — Non-Negotiable
+Every sprint must end with tests covering everything built in that sprint,
+committed in the same PR as the feature code. No sprint is complete without it.
+
+- New module → test file for that module
+- New function → at minimum one happy path + one failure/edge case test
+- New CLI command → test that it routes correctly and handles bad input
+- Bug fix → regression test that would have caught the bug
+- All tests run offline — mock external calls (LiteLLM, SpacetimeDB, Discord)
+- Target: no untested code paths in files touched during the sprint
+
+The practical check: `python3 -m pytest tests/` passes cleanly before any commit
+that closes a sprint. If it doesn't, the sprint is not done.
+
+### Why This Matters
+Prior sprint work (Sprints 1-9 of relay-room) had minimal test coverage on the
+actual product. The Codex robustness passes generated 400 tests — but they were
+testing Codex's own harness, not JustAi functionality. We are not repeating that.
+Tests are how we know the codebase. They are how future agents know the codebase.
+They are the ground truth for what the system is supposed to do.
 
 ---
 
@@ -142,29 +169,22 @@ need it. The recipe for 100% is well-scoped, unambiguous tasks — not model swi
 - LiteLLM config with full model routing and fallback chain
 - start_justai.sh with SpacetimeDB + LocalManus + relay startup sequence
 
-**Warning:** SpacetimeDB or OpenFang daemon had memory issues on start/stop cycles.
-Workaround was to inject/extract necessary context before start/stop. Investigate
-and resolve properly in Sprint 1 before building on top of it.
-
 ### To Build - New in v1
 1. JustAi Orchestrator core: intent intake, goal decomposition into mini-sized
-   tasks, delegation, result synthesis, checkpoint/approval gates
-2. Reviewer component: planning quality gate that validates task decomposition
-   before any tasks are posted to SpacetimeDB (pre-execution, not runtime)
+   tasks, delegation, result synthesis, checkpoint/approval gates ✅ Sprint 2
+2. Reviewer component: planning quality gate ✅ Sprint 2
 3. Web Dashboard: React frontend on SpacetimeDB real-time subscriptions,
-   task board, agent status, trajectory viewer, memory browser, LangFuse integration
-4. Memory bridge: claude-flow memory write on decisions/outcomes, surface at start
-5. Clean naming: remove LocalManus, ManusLocal references throughout
-6. Attribution layer: README, docs, landing page copy with proper credits
+   task board, agent status, trajectory viewer, memory browser, LangFuse
+4. Memory bridge: claude-flow memory write on decisions/outcomes
+5. Clean naming: remove LocalManus, ManusLocal references ✅ Sprint 1
+6. Attribution layer: README, docs, landing page copy ✅ Sprint 1
 7. Installer: single-command setup
 
 ### To Remove / Deprecate
-- Honcho references (relay-room honcho_writeback.py, LocalManus/memory/)
-  — replace with claude-flow memory. Audit .venv usage before removing.
-- relay-room .venv committed to repo — gitignore + remove from tracking
+- Honcho references — replaced with claude-flow memory ✅ Sprint 1
+- Hard-coded paths — normalized ✅ Sprint 1
 - OpenFang orchestrator routing — config files kept as future reference only
-- Hard-coded /home/justinleopard/ paths and any other machine-specific hardcoding
-- Unused configs/files/code — surface via log analysis vs. actual usage in Sprint 1
+- Unused configs/files/code — ongoing
 
 ---
 
@@ -247,8 +267,8 @@ The orchestrator is the brain. Evidence-based design from 10 sprints of prior wo
 
 ### Core Insight (from traj analysis)
 The proven recipe for 100% first-try success is not model switching or runtime
-judgment. It is: **well-scoped, unambiguous, mini-sized tasks fed to a capable
-model**. The orchestrator's entire job is task decomposition quality.
+judgment. It is: well-scoped, unambiguous, mini-sized tasks fed to a capable
+model. The orchestrator's entire job is task decomposition quality.
 
 ### Intake
 ```
@@ -267,33 +287,20 @@ Classify the goal:
 Decompose goal into ordered tasks. Each task must be:
 - Completable by mini in ~35 messages (empirically validated limit)
 - Unambiguous — zero decisions left to the executor
-- Scoped to one directory or one concern
-- Verifiable — has a concrete success condition
-
-Each task record:
-- Title and full description
-- Assigned agent type
-- Dependencies on prior tasks
-- Risk level (R0-R3)
-- Success criteria (testable)
+- One primary target. If it touches multiple files they must serve one atomic
+  concern. Signal: if you can't verify it with one bash command, split it.
+- Verifiable — has a concrete, testable success condition
 
 ### Reviewer (pre-execution quality gate)
-Before any tasks are posted to SpacetimeDB, the Reviewer validates the plan:
-- Are tasks small enough? (can each be done in ~35 steps?)
-- Are tasks unambiguous? (zero open decisions?)
-- Is the sequence correct? (dependencies ordered?)
-- Are success criteria testable?
-
-Evidence basis: coworkclaude's role as reviewer/planner was the primary driver
-of sprint success improvement. Its value was at planning time, not runtime.
+Before any tasks are posted to SpacetimeDB, the Reviewer validates the plan.
+Evidence basis: planning quality was the #1 driver of sprint success.
 
 ### Delegator
-Post validated tasks to SpacetimeDB. Agents claim and execute. Orchestrator
-monitors heartbeats and handles failures: retry same task up to 2x, then escalate.
+Post validated tasks to SpacetimeDB. Monitor via heartbeat. Retry up to 2x.
 
 ### Synthesizer
-Aggregate results into a final summary. Store outcome in claude-flow memory.
-Surface to operator via Discord and dashboard.
+Aggregate results. Store outcome in claude-flow memory. Surface via Discord
+and dashboard.
 
 ### Checkpoints (Human-in-the-loop gates)
 Default posture: autonomous. Bother the human only when genuinely necessary.
@@ -309,17 +316,16 @@ Default posture: autonomous. Bother the human only when genuinely necessary.
 
 ```
 ~/projects/JustAi/
-  justai/                    <- orchestrator core (new)
+  justai/                    <- orchestrator core ✅ Sprint 2
     __init__.py
-    orchestrator.py          <- main loop: intake -> plan -> review -> delegate -> synthesize
-    intent_gate.py           <- classify incoming goals
-    planner.py               <- goal decomposition into mini-sized tasks
-    reviewer.py              <- pre-execution plan quality gate
-    delegator.py             <- SpacetimeDB task posting + monitoring
-    synthesizer.py           <- result aggregation
-    checkpoint.py            <- R0-R3 gate logic (default: autonomous)
-    memory.py                <- claude-flow memory bridge
-  dashboard/                 <- web UI (new)
+    orchestrator.py
+    intent_gate.py
+    planner.py
+    reviewer.py
+    delegator.py
+    checkpoint.py
+    memory.py                <- claude-flow bridge (Sprint 4)
+  dashboard/                 <- web UI (Sprint 3+)
     src/
       App.tsx
       views/
@@ -328,28 +334,24 @@ Default posture: autonomous. Bother the human only when genuinely necessary.
         TrajectoryViewer.tsx
         MemoryBrowser.tsx
         AgentRegistry.tsx
-      components/
       lib/
-        spacetime.ts         <- SpacetimeDB TypeScript client
-        langfuse.ts          <- LangFuse observability client
-  tools/                     <- existing CLI (evolve)
-    justai_cli.py
+        spacetime.ts
+        langfuse.ts
+  tools/
+    justai_cli.py            <- justai run wired ✅ Sprint 2
     justai_runtime.py
-  agents/                    <- agent integration configs
-    mini_swe.py              <- mini-swe-agent v2 wrapper
-    ruflo.py                 <- Ruflo swarm bridge
-  relay-room/                <- existing (keep, clean naming)
-  LocalManus/                <- existing (reference only, deprecate gradually)
+  relay-room/
+  LocalManus/
   docs/
-    JUSTAI_V1_SPEC.md        <- this file
+    JUSTAI_V1_SPEC.md
     ARCHITECTURE.md
     ATTRIBUTION.md
     CONTRIBUTING.md
-    EVIDENCE.md              <- findings from prior sprint log/traj analysis
-  tests/
-  README.md                  <- marketing landing page copy
+    EVIDENCE.md              ✅ Sprint 1
+  tests/                     <- all tests live here
+  README.md                  ✅ Sprint 1
   .env.example
-  install.sh                 <- single-command installer
+  install.sh
 ```
 
 ---
@@ -399,7 +401,7 @@ Steps:
 7. Configure .env from .env.example (prompt for API keys)
 8. Start LiteLLM proxy
 9. Start JustAi dashboard
-10. Start Discord bot (optional, prompts for tokens — one token per bot, manual Discord setup)
+10. Start Discord bot (optional, prompts for tokens)
 11. Run preflight health check
 12. Print access URLs
 
@@ -407,48 +409,63 @@ Steps:
 
 ## 12. Build Order (Sprint Plan)
 
-### Sprint 1 - Clean Foundation
-- Kill zombie LiteLLM processes, verify clean harness startup
-- Investigate and resolve SpacetimeDB/OpenFang memory issue on start/stop
-- Gitignore and remove relay-room .venv (audit usage in sprint logs first)
-- Replace all Honcho references with claude-flow memory
-- Normalize all hard-coded paths to env-var-driven
-- Add logging to all ambiguous code paths
-- Source prior runtime logs and match against code — verify actual vs intended behavior
-- Document findings in docs/EVIDENCE.md
-- Update README with tagline and attribution
-- Verify existing mini + relay pipeline end-to-end
+> Rule: Every sprint ends with tests for everything built in that sprint,
+> committed in the same PR. No exceptions. `pytest tests/` must pass cleanly.
 
-### Sprint 2 - Orchestrator Core
-- justai/intent_gate.py
-- justai/planner.py (mini-sized task decomposition)
-- justai/reviewer.py (pre-execution quality gate)
-- justai/delegator.py (SpacetimeDB posting + heartbeat monitoring)
-- justai/checkpoint.py (R0-R3, default autonomous)
-- Wire: justai run "goal" -> intent -> plan -> review -> tasks in SpacetimeDB
-- Security and safety measures baseline
+### Sprint 1 — Clean Foundation ✅
+- Honcho replaced, paths normalized, EVIDENCE.md written, README updated
+- All health checks passing, committed and pushed to main
 
-### Sprint 3 - Dashboard Foundation
+### Sprint 2 — Orchestrator Core ✅
+- justai/ package: intent_gate, planner, reviewer, delegator, checkpoint, orchestrator
+- justai run "goal" wired end-to-end
+- 24 tests in tests/test_orchestrator.py, all passing
+
+### Sprint 2.5 — Test Coverage Audit
+Build on solid ground before the dashboard. No new features — only tests.
+
+**Scope: every untested file in the repo.**
+
+Priority order:
+1. justai/ package — integration tests for the full pipeline end-to-end
+   (intent -> plan -> review -> checkpoint -> delegate -> synthesize)
+2. relay-room/scripts/ — relay_dispatch.sh, health_server.py, session_capture.py,
+   bot_listener.py (the active runtime path files)
+3. relay-room/tests/ — audit existing tests, fill gaps
+4. LocalManus/memory/ — honcho_memory.py (claude-flow bridge), verify it works
+5. tools/ — justai_runtime.py, justai_cli.py deeper coverage
+6. scripts/ — start_justai.sh, check_justai.sh
+
+**Deliverables:**
+- Coverage report: which files have coverage and at what %
+- Every active runtime file has at least basic happy path + failure tests
+- `pytest tests/` passes cleanly with no skips
+- A TESTING.md doc explaining how to run tests and what each suite covers
+
+### Sprint 3 — Dashboard Foundation
 - SpacetimeDB TypeScript client setup
 - Mission Control (agent status + active pipeline)
 - Task Board (Kanban, real-time)
 - LangFuse integration baseline
+- Tests for all dashboard data-fetching and subscription logic
 
-### Sprint 4 - Dashboard Depth + Memory
+### Sprint 4 — Dashboard Depth + Memory
 - Trajectory Viewer (from .traj.json files)
 - Memory Browser
 - justai/memory.py bridge to claude-flow
 - Session context surfacing
 - Security hardening, enterprise-readiness thinking
+- Tests for all new components
 
-### Sprint 5 - Polish + Installer
+### Sprint 5 — Polish + Installer
 - install.sh
 - .env.example
 - docs/ARCHITECTURE.md + docs/ATTRIBUTION.md
 - README.md landing page copy
 - End-to-end dogfood: justai run a real task, watch in dashboard
+- Tests for installer and preflight check
 
-### Sprint 6 - v1 Release
+### Sprint 6 — v1 Release
 - Public GitHub repo
 - Landing page
 - Demo video
@@ -469,8 +486,9 @@ Steps:
 - [ ] mini-swe-agent benchmarks above 70% first-try on representative task set
 - [ ] Discord remote control works from mobile
 - [ ] LangFuse shows cost and latency per task in dashboard
+- [ ] pytest tests/ passes cleanly with meaningful coverage across all active files
 
 ---
 
-*End of JustAi v1 Specification — v1.1*
-*Next step: Sprint 1 kickoff — Clean Foundation*
+*End of JustAi v1 Specification — v1.2*
+*Current: Sprint 2.5 — Test Coverage Audit*
