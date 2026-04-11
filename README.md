@@ -1,14 +1,26 @@
 # JustAi
 
-JustAi is the combined WSL workspace for the LocalManus runtime and the relay-room task layer. The goal is to keep one product root at `/home/justinleopard/projects/JustAi` while preserving the copied source trees for reference and incremental migration.
+> **"The best code agent in the world was missing one thing. We built it."**
 
-## Layout
+JustAi is orchestration, memory, and control for the world-class, benchmark-leading
+mini-swe-agent. Built on research from Princeton & Stanford, powered by rUv's
+agent infrastructure.
 
-- `LocalManus/` copied runtime and operator tooling
-- `relay-room/` copied relay/task system
-- `scripts/` root-level startup and health wrappers
-- `tools/` root-level CLI entrypoints
-- `tests/` JustAi-owned integration tests
+---
+
+## What It Does
+
+JustAi gives mini-swe-agent — the world's highest-performing open-source agent at
+74% SWE-bench Verified — the planning, memory, human-in-the-loop control, and
+real-time visibility it was missing.
+
+- Takes a goal in plain English
+- Decomposes it into well-scoped tasks
+- Delegates execution to mini-swe-agent via SpacetimeDB
+- Persists all decisions and outcomes across sessions
+- Surfaces progress in real-time via Discord and a web dashboard
+
+---
 
 ## Quick Start
 
@@ -17,30 +29,53 @@ cd ~/projects/JustAi
 bash scripts/start_justai.sh
 ```
 
-## Root Commands
+## CLI Commands
 
 ```bash
-bash scripts/check_justai.sh
 python3 tools/justai_cli.py status
 python3 tools/justai_cli.py start
 python3 tools/justai_cli.py health
-python3 tools/justai_cli.py task "Reply with exactly READY."
-python3 tools/justai_cli.py relay status
+python3 tools/justai_cli.py task "your task description"
 python3 tools/justai_cli.py mini "summarize the workspace"
+python3 tools/justai_cli.py relay status
 ```
 
-## Environment
+## Environment Variables
 
-The root scripts read these variables when set:
+| Variable | Default | Purpose |
+|---|---|---|
+| `JUSTAI_ROOT` | auto-detected | Repo root |
+| `JUSTAI_LOCALMANUS_ROOT` | `$JUSTAI_ROOT/LocalManus` | LocalManus runtime |
+| `JUSTAI_RELAY_ROOT` | `$JUSTAI_ROOT/relay-room` | Relay task system |
+| `JUSTAI_SPACETIME_SESSION` | `spacetime` | SpacetimeDB tmux session |
+| `JUSTAI_RELAY_SERVER` | `local-server` | SpacetimeDB server |
 
-- `JUSTAI_ROOT`
-- `JUSTAI_LOCALMANUS_ROOT`
-- `JUSTAI_RELAY_ROOT`
-- `JUSTAI_SPACETIME_SESSION`
-- `JUSTAI_RELAY_SERVER`
+---
 
-If unset, they default to the current JustAi workspace and copied subrepos.
+## Built On
 
-## Current Scope
+JustAi stands on the shoulders of giants:
 
-This first scaffold keeps the copied repos intact and delegates into them. The next passes will consolidate shared behavior behind the JustAi root and replace the remaining hard-coded path assumptions with JustAi-owned config.
+- **mini-swe-agent** by the SWE-agent team at Princeton & Stanford University
+  (https://github.com/SWE-agent/mini-swe-agent) — MIT License
+  74% SWE-bench Verified. The world's best open-source agent.
+
+- **Ruflo / claude-flow / SAFLA / agentic-flow** by rUv (Reuven Cohen)
+  (https://github.com/ruvnet) — MIT License
+  6,000+ commit agent orchestration infrastructure. Used by Meta, NVIDIA, IBM.
+
+- **SpacetimeDB** by Clockwork Labs (https://spacetimedb.com) — BSL License
+  Real-time distributed database powering our task backbone.
+
+- **LiteLLM** by BerriAI (https://github.com/BerriAI/litellm) — MIT License
+  Model routing and fallback chain.
+
+- **LangFuse** (https://langfuse.com) — MIT License
+  LLM observability and cost tracking.
+
+---
+
+## Status
+
+v1 in active development. See [docs/JUSTAI_V1_SPEC.md](docs/JUSTAI_V1_SPEC.md)
+for the full product specification.

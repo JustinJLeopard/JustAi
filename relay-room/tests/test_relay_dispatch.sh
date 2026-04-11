@@ -3,9 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR="$(mktemp -d)"
+RUNTIME_ROOT="$TMPDIR/justai-runtime"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-rm -f /tmp/relay_traj_7.json /tmp/relay_dispatch_task_7.log /tmp/relay_dispatch_task_8.log
+rm -rf "$RUNTIME_ROOT"
 
 FAKE_BIN="$TMPDIR/bin"
 FAKE_LOCALMANUS="$TMPDIR/localmanus"
@@ -111,6 +112,9 @@ SUCCESS_DISPATCH_LOG="$TMPDIR/dispatch-success.log"
 touch "$LOG_FILE"
 
 PATH="$FAKE_BIN:$PATH" \
+JUSTAI_RUNTIME_ROOT="$RUNTIME_ROOT" \
+JUSTAI_RELAY_TRAJ_DIR="$RUNTIME_ROOT/traj" \
+JUSTAI_RELAY_TASK_LOG_DIR="$RUNTIME_ROOT/tasks" \
 LOCALMANUS_ROOT="$FAKE_LOCALMANUS" \
 RELAY_TEST_LOG="$LOG_FILE" \
 TARGET_FILE="$TMPDIR/.relay-db-target" \
@@ -122,7 +126,8 @@ grep -Fqx 'claim 7 --as manuslocal' "$LOG_FILE"
 grep -Fqx 'start 7 --as manuslocal' "$LOG_FILE"
 grep -Fqx 'show 7' "$LOG_FILE"
 grep -F 'done 7 --as manuslocal --result' "$LOG_FILE"
-test -f /tmp/relay_traj_7.json
+test -f "$RUNTIME_ROOT/traj/relay_traj_7.json"
+test -d "$RUNTIME_ROOT/tasks"
 
 FAKE_FAIL_LOCALMANUS="$TMPDIR/localmanus-fail"
 mkdir -p "$FAKE_FAIL_LOCALMANUS/scripts"
@@ -211,6 +216,9 @@ chmod +x "$FAKE_BIN/relay_fail"
 mv "$FAKE_BIN/relay_fail" "$FAKE_BIN/relay"
 
 PATH="$FAKE_BIN:$PATH" \
+JUSTAI_RUNTIME_ROOT="$RUNTIME_ROOT" \
+JUSTAI_RELAY_TRAJ_DIR="$RUNTIME_ROOT/traj" \
+JUSTAI_RELAY_TASK_LOG_DIR="$RUNTIME_ROOT/tasks" \
 LOCALMANUS_ROOT="$FAKE_FAIL_LOCALMANUS" \
 RELAY_TEST_LOG="$FAIL_LOG_FILE" \
 TARGET_FILE="$TMPDIR/.relay-db-target" \
@@ -222,5 +230,5 @@ grep -Fqx 'claim 8 --as manuslocal' "$FAIL_LOG_FILE"
 grep -Fqx 'start 8 --as manuslocal' "$FAIL_LOG_FILE"
 grep -Fqx 'show 8' "$FAIL_LOG_FILE"
 grep -F 'fail 8 --as manuslocal --error mini exited 23:' "$FAIL_LOG_FILE"
-test -f /tmp/relay_dispatch_task_8.log
+test -f "$RUNTIME_ROOT/tasks/relay_dispatch_task_8.log"
 grep -Fq '[dispatch] task 8 nonzero exit=23' "$FAIL_DISPATCH_LOG"

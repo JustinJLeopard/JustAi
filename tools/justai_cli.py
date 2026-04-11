@@ -2,50 +2,49 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
-from pathlib import Path
 
-
-def repo_root() -> Path:
-    return Path(os.environ.get("JUSTAI_ROOT", Path(__file__).resolve().parents[1]))
-
-
-def localmanus_root() -> Path:
-    return Path(os.environ.get("JUSTAI_LOCALMANUS_ROOT", repo_root() / "LocalManus"))
-
-
-def relay_root() -> Path:
-    return Path(os.environ.get("JUSTAI_RELAY_ROOT", repo_root() / "relay-room"))
-
-
-def base_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["JUSTAI_ROOT"] = str(repo_root())
-    env["JUSTAI_LOCALMANUS_ROOT"] = str(localmanus_root())
-    env["JUSTAI_RELAY_ROOT"] = str(relay_root())
-    env["LOCALMANUS_ROOT"] = env["JUSTAI_LOCALMANUS_ROOT"]
-    env["RELAY_ROOT"] = env["JUSTAI_RELAY_ROOT"]
-    env.setdefault("JUSTAI_RELAY_SERVER", "local-server")
-    env.setdefault("JUSTAI_SPACETIME_SESSION", "spacetime")
-    return env
+from justai_runtime import localmanus_root, relay_root, repo_root, runtime_env
 
 
 def run(cmd: list[str]) -> int:
-    return subprocess.call(cmd, env=base_env())
+    return subprocess.call(cmd, env=runtime_env())
 
 
-def start_cmd(_: argparse.Namespace) -> int:
-    return run(["bash", str(repo_root() / "scripts" / "start_justai.sh")])
+def start_cmd(args: argparse.Namespace) -> int:
+    cmd = ["bash", str(repo_root() / "scripts" / "start_justai.sh")]
+    for flag in ("no_bots", "no_codex", "force_bootstrap", "skip_relay_bootstrap"):
+        if getattr(args, flag):
+            cmd.append(f"--{flag.replace('_', '-')}")
+    return run(cmd)
 
 
-def status_cmd(_: argparse.Namespace) -> int:
-    return run(["bash", str(repo_root() / "scripts" / "check_justai.sh")])
+def check_cmd(args: argparse.Namespace) -> int:
+    cmd = ["bash", str(repo_root() / "scripts" / "check_justai.sh")]
+    if args.mode == "status":
+        cmd.append("--status-only")
+    elif args.mode == "health":
+        cmd.append("--health-only")
+    if getattr(args, "with_bots", False):
+        cmd.append("--with-bots")
+        if getattr(args, "with_codex", False):
+            cmd.append("--with-codex")
+    return run(cmd)
 
 
-def health_cmd(_: argparse.Namespace) -> int:
-    return status_cmd(_)
+def status_cmd(args: argparse.Namespace) -> int:
+    return check_cmd(
+        argparse.Namespace(
+            mode="status",
+            with_bots=getattr(args, "with_bots", False),
+            with_codex=getattr(args, "with_codex", False),
+        )
+    )
+
+
+def health_cmd(args: argparse.Namespace) -> int:
+    return check_cmd(argparse.Namespace(mode="health"))
 
 
 def task_cmd(args: argparse.Namespace) -> int:
@@ -73,17 +72,32 @@ def relay_cmd(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="justai")
+    parser = argparse.ArgumentParser(prog="justai", description="Operate the JustAi top-level runtime")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("start", help="Start the combined JustAi stack")
+    p.add_argument("--no-bots", action="store_true", help="Start relay-room without Discord bots or watchdog")
+    p.add_argument("--no-codex", action="store_true", help="Start relay-room bots but leave codex out")
+    p.add_argument("--force-bootstrap", action="store_true", help="Force relay-room bootstrap even if a target exists")
+    p.add_argument(
+        "--skip-relay-bootstrap",
+        action="store_true",
+        help="Skip the relay-room bootstrap step and only start runtime services",
+    )
     p.set_defaults(func=start_cmd)
 
     p = sub.add_parser("status", help="Check JustAi status")
-    p.set_defaults(func=status_cmd)
+    p.add_argument("--with-bots", action="store_true", help="Include relay bot status in the status view")
+    p.add_argument("--with-codex", action="store_true", help="Include codex bot status when bots are included")
+    p.set_defaults(mode="status", func=status_cmd)
 
     p = sub.add_parser("health", help="Check JustAi health")
-    p.set_defaults(func=health_cmd)
+    p.set_defaults(mode="health", func=health_cmd)
+
+    p = sub.add_parser("check", help="Run the combined JustAi check")
+    p.add_argument("--with-bots", action="store_true", help="Include relay bot status in the status view")
+    p.add_argument("--with-codex", action="store_true", help="Include codex bot status when bots are included")
+    p.set_defaults(mode="all", func=check_cmd)
 
     p = sub.add_parser("task", help="Run a LocalManus task")
     p.add_argument("description")

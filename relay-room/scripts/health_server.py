@@ -14,14 +14,22 @@ from pathlib import Path
 
 SPACETIMEDB_PORT = 3000
 LITELLM_PORT = 4000
-RELAY_PID_FILE = "/tmp/relay_dispatch.pid"
-MINI_BIN = "/home/justinleopard/.venv/hermes/bin/mini"
+RELAY_PID_FILE = os.environ.get(
+    "JUSTAI_RELAY_DISPATCH_PID_FILE",
+    os.environ.get("RELAY_PID_FILE", "/tmp/relay_dispatch.pid"),
+)
+MINI_BIN = "/home/justinleopard/.local/bin/mini"
 DEFAULT_PORT = 8080
-RELAY_WEB_PORT = 8765
+RELAY_WEB_PORT = int(os.environ.get("RELAY_WEB_PORT", "8765"))
 
 
 # Sprint 3 Task 4: Watchdog configuration
-BOT_AGENTS = ["relay-coordinator", "codex", "manuslocal", "coworkclaude", "claudecli"]
+DEFAULT_BOT_AGENTS = ["relay-coordinator", "codex", "manuslocal", "coworkclaude", "claudecli"]
+BOT_AGENTS = [
+    agent.strip()
+    for agent in os.environ.get("JUSTAI_BOT_AGENTS", ",".join(DEFAULT_BOT_AGENTS)).split(",")
+    if agent.strip()
+]
 HEARTBEAT_INTERVAL = 300       # 5 minutes
 STALE_THRESHOLD = 900          # 15 minutes
 WATCHDOG_INTERVAL = 30         # Check every 30 seconds
@@ -217,7 +225,8 @@ DISCORD_BOT_TOKENS = {
     "coworkclaude":      os.getenv("COWORKCLAUDE_TOKEN", ""),
     "claudecli":         os.getenv("CLAUDECLI_TOKEN", ""),
 }
-DISCORD_BOT_PID_DIR = "/tmp"
+DISCORD_BOT_PID_DIR = os.environ.get("JUSTAI_RELAY_BOT_PID_DIR", "/tmp")
+DISCORD_BOT_LOG_DIR = os.environ.get("JUSTAI_RELAY_BOT_LOG_DIR", "/tmp")
 
 
 def check_discord_bot(agent_name: str) -> dict:
@@ -257,7 +266,7 @@ def _parse_last_heartbeat(agent: str) -> "datetime | None":
       [HEARTBEAT] <agent> | alive | ... | 2025-07-12T10:00:00Z
     Returns the most recent datetime found, or None.
     """
-    log_path = f"/tmp/relay_bot_{agent}.log"
+    log_path = os.path.join(DISCORD_BOT_LOG_DIR, f"relay_bot_{agent}.log")
     if not os.path.exists(log_path):
         return None
     # Read last 200 lines to avoid scanning huge files
@@ -425,7 +434,8 @@ def _attempt_restart(agent: str):
     # Restart bot
     try:
         bot_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_listener.py")
-        log_file = f"/tmp/relay_bot_{agent}.log"
+        log_file = os.path.join(DISCORD_BOT_LOG_DIR, f"relay_bot_{agent}.log")
+        os.makedirs(DISCORD_BOT_LOG_DIR, exist_ok=True)
         with open(log_file, "a") as lf:
             proc = subprocess.Popen(
                 ["python3", bot_script, "--agent", agent],

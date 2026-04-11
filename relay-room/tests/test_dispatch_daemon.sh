@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR="$(mktemp -d)"
+RUNTIME_ROOT="$TMPDIR/justai-runtime"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 FAKE_BIN="$TMPDIR/bin"
@@ -86,17 +87,25 @@ EOF
 chmod +x "$FAKE_BIN/relay"
 
 RELAY_TEST_LOG="$TMPDIR/relay.log"
-DISPATCH_LOG="$TMPDIR/dispatch.log"
-PID_FILE="$TMPDIR/relay_dispatch.pid"
+DISPATCH_LOG="$RUNTIME_ROOT/relay_dispatch.log"
+PID_FILE="$RUNTIME_ROOT/relay_dispatch.pid"
 mkdir -p "$TMPDIR/state"
 touch "$RELAY_TEST_LOG"
 
 PATH="$FAKE_BIN:$PATH" \
+JUSTAI_RUNTIME_ROOT="$RUNTIME_ROOT" \
+JUSTAI_RELAY_DISPATCH_PID_FILE="$RUNTIME_ROOT/relay_dispatch.pid" \
+JUSTAI_RELAY_DISPATCH_LOG_FILE="$RUNTIME_ROOT/relay_dispatch.log" \
+JUSTAI_RELAY_HEALTH_PID_FILE="$RUNTIME_ROOT/relay_health_server.pid" \
+JUSTAI_RELAY_HEALTH_LOG_FILE="$RUNTIME_ROOT/relay_health_server.log" \
+JUSTAI_RELAY_WEB_PID_FILE="$RUNTIME_ROOT/relay_web.pid" \
+JUSTAI_RELAY_WEB_LOG_FILE="$RUNTIME_ROOT/relay_web.log" \
+JUSTAI_RELAY_BOT_PID_DIR="$RUNTIME_ROOT/bots" \
+JUSTAI_RELAY_BOT_LOG_DIR="$RUNTIME_ROOT/bots" \
 LOCALMANUS_ROOT="$FAKE_LOCALMANUS" \
 RELAY_TEST_LOG="$RELAY_TEST_LOG" \
 RELAY_TEST_STATE="$TMPDIR/state" \
 PID_FILE="$PID_FILE" \
-LOG_FILE="$DISPATCH_LOG" \
 bash "$ROOT/scripts/relay_dispatch.sh" --daemon --interval 1 &
 
 daemon_pid=$!
@@ -107,6 +116,7 @@ for _ in $(seq 1 30); do
 done
 [[ -f "$PID_FILE" ]]
 grep -Fqx "$daemon_pid" "$PID_FILE"
+test -f "$RUNTIME_ROOT/relay_dispatch.log"
 
 for _ in $(seq 1 30); do
   grep -Fq 'start 7 --as manuslocal' "$RELAY_TEST_LOG" && break
