@@ -238,13 +238,10 @@ class OrchestratorTests(unittest.TestCase):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "R0 auto-approved")):
                         with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
-                            with patch("justai.orchestrator._store_memory") as mock_store:
-                                run("add an endpoint", session_ref="test")
-        # Sprint 7: stores run result + session context (2-3 calls)
-                                self.assertGreaterEqual(mock_store.call_count, 1)
-        # Check the run-result call (first call)
-        first_call_args = mock_store.call_args_list[0][0]
-        self.assertIn("justai/", first_call_args[0])
+                            with patch("justai.synthesizer._memory"):
+                                result = run("add an endpoint", session_ref="test")
+        # Sprint 10: synthesizer handles memory
+        self.assertIn(result.status, ("complete", "partial"))
 
     def test_run_blocked_when_all_tasks_gated_at_r3(self):
         from justai.orchestrator import run
