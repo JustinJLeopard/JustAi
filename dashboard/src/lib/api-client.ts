@@ -77,3 +77,79 @@ export async function triggerRun(goal: string, auto = false, session = ''): Prom
   })
   return res.json()
 }
+
+// ── Observability Types ─────────────────────────────────────────────────────
+
+export interface ObservabilitySummary {
+  cost_24h: number
+  cost_trend: number[]
+  avg_latency_ms: number
+  latency_trend: number[]
+  p50: number
+  p90: number
+}
+
+export interface CostDay {
+  date: string
+  total: number
+  by_model?: Record<string, number>
+  by_stage?: Record<string, number>
+}
+
+export interface CostData {
+  daily: CostDay[]
+  total: number
+  by_model: Record<string, number>
+  by_stage: Record<string, number>
+}
+
+export interface LatencyDay {
+  date: string
+  avg_ms: number
+  p50: number
+  p90: number
+  p99: number
+  by_stage: Record<string, number>
+}
+
+export interface LatencyData {
+  daily: LatencyDay[]
+  p50: number
+  p90: number
+  p99: number
+  avg_ms: number
+  bottleneck: string
+  by_stage: Record<string, number>
+}
+
+export interface QualityDay {
+  date: string
+  total: number
+  success: number
+  failed: number
+  rate: number
+}
+
+export interface QualityData {
+  daily: QualityDay[]
+  overall_rate: number
+  failure_categories: Record<string, number>
+}
+
+// ── Observability Fetch Functions ───────────────────────────────────────────
+
+export async function fetchObservabilitySummary(): Promise<ObservabilitySummary> {
+  return apiFetch('/api/observability/summary')
+}
+
+export async function fetchCostData(days = 7): Promise<CostData> {
+  return apiFetch(`/api/observability/cost?days=${days}`)
+}
+
+export async function fetchLatencyData(days = 7): Promise<LatencyData> {
+  return apiFetch(`/api/observability/latency?days=${days}`)
+}
+
+export async function fetchQualityData(days = 7): Promise<QualityData> {
+  return apiFetch(`/api/observability/quality?days=${days}`)
+}

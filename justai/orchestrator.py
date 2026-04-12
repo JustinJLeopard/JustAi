@@ -160,38 +160,45 @@ def run(
     if prior_context:
         extra_context += f"Prior session context:\n{prior_context}\n\n"
 
-    plan: Plan = decompose(goal, session_ref=session_ref, context=extra_context)
+    with trace_generation("planner", input_text=goal,
+                          session_id=session_ref, tags=["planner"]) as _t2:
+        plan: Plan = decompose(goal, session_ref=session_ref, context=extra_context)
+        _t2.end(output_text=f"{len(plan.tasks)} tasks: {', '.join(t.title for t in plan.tasks[:5])}")
     print(f"      {len(plan.tasks)} task(s) generated")
     print()
     print(format_plan(plan))
 
     # ── Stage 3: Plan Review ──────────────────────────────────────────────────
     print("[3/5] Reviewing plan quality...")
-    review_result: ReviewResult = review(plan)
+    with trace_generation("reviewer", input_text=format_plan(plan),
+                          session_id=session_ref, tags=["reviewer"]) as _t3:
+        review_result: ReviewResult = review(plan)
 
-    attempts = 0
-    while not review_result.approved and attempts < MAX_REPLAN_ATTEMPTS:
-        print(f"      Plan rejected (attempt {attempts + 1}/{MAX_REPLAN_ATTEMPTS}):")
-        for issue in review_result.feedback:
-            print(f"        ! {issue}")
+        attempts = 0
+        while not review_result.approved and attempts < MAX_REPLAN_ATTEMPTS:
+            print(f"      Plan rejected (attempt {attempts + 1}/{MAX_REPLAN_ATTEMPTS}):")
+            for issue in review_result.feedback:
+                print(f"        ! {issue}")
 
-        # Replan with feedback as context
-        context = "Previous plan was rejected. Issues to fix:\n" + "\n".join(review_result.feedback)
-        plan = decompose(goal, session_ref=session_ref, context=context)
-        review_result = review(plan)
-        attempts += 1
+            # Replan with feedback as context
+            context = "Previous plan was rejected. Issues to fix:\n" + "\n".join(review_result.feedback)
+            plan = decompose(goal, session_ref=session_ref, context=context)
+            review_result = review(plan)
+            attempts += 1
 
-    if not review_result.approved:
-        print("      Plan could not be approved after replanning. Review manually.")
-        for issue in review_result.feedback:
-            print(f"        ! {issue}")
-        return OrchestrationResult(
-            goal=goal, intent=intent_result.intent.value,
-            task_count=len(plan.tasks), results=[],
-            duration_seconds=time.time() - start,
-            status="blocked",
-        )
+        if not review_result.approved:
+            _t3.end(output_text=f"rejected after {attempts} attempts", level="WARNING")
+            print("      Plan could not be approved after replanning. Review manually.")
+            for issue in review_result.feedback:
+                print(f"        ! {issue}")
+            return OrchestrationResult(
+                goal=goal, intent=intent_result.intent.value,
+                task_count=len(plan.tasks), results=[],
+                duration_seconds=time.time() - start,
+                status="blocked",
+            )
 
+        _t3.end(output_text=f"approved (attempts: {attempts + 1})")
     print("      Plan approved ✓")
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
@@ -217,30 +224,43 @@ def run(
         )
 
     # ── Stage 5: Execute / Delegate ──────────────────────────────────────────
-    if local:
-        print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
-        exec_results = execute_plan(approved_tasks)
-        # Convert ExecResult to DelegationResult for compatibility
-        results = []
-        for er in exec_results:
-            results.append(DelegationResult(
-                task_id=er.task_id, title=er.title,
-                status=er.status, result=er.result,
-                duration_seconds=er.duration_seconds,
-            ))
-    else:
-        print(f"\n[5/5] Delegating {len(approved_tasks)} task(s) to agents...")
-        results = delegate_plan(approved_tasks, session_ref=session_ref)
+    stage5_name = "executor" if local else "delegator"
+    with trace_generation(stage5_name,
+                          input_text=f"{len(approved_tasks)} tasks",
+                          session_id=session_ref,
+                          tags=[stage5_name]) as _t5:
+        if local:
+            print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
+            exec_results = execute_plan(approved_tasks)
+            # Convert ExecResult to DelegationResult for compatibility
+            results = []
+            for er in exec_results:
+                results.append(DelegationResult(
+                    task_id=er.task_id, title=er.title,
+                    status=er.status, result=er.result,
+                    duration_seconds=er.duration_seconds,
+                ))
+        else:
+            print(f"\n[5/5] Delegating {len(approved_tasks)} task(s) to agents...")
+            results = delegate_plan(approved_tasks, session_ref=session_ref)
+
+        done_count = sum(1 for r in results if r.status == "done")
+        _t5.end(output_text=f"{done_count}/{len(results)} done")
 
     # ── Synthesize ────────────────────────────────────────────────────────────
     duration = time.time() - start
-    summary = synthesize(
-        goal=goal,
-        intent=intent_result.intent.value,
-        results=results,
-        session_ref=session_ref,
-        duration=duration,
-    )
+    with trace_generation("synthesizer",
+                          input_text=f"{len(results)} results",
+                          session_id=session_ref,
+                          tags=["synthesizer"]) as _t6:
+        summary = synthesize(
+            goal=goal,
+            intent=intent_result.intent.value,
+            results=results,
+            session_ref=session_ref,
+            duration=duration,
+        )
+        _t6.end(output_text=f"{summary.status}: {summary.done}/{summary.total_tasks} done, {duration:.1f}s")
     print(format_summary(summary))
 
     flush_traces()

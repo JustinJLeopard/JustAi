@@ -9,6 +9,10 @@ Endpoints:
   GET  /api/runs     — recent run history from memory
   GET  /api/config   — current config
   POST /api/run      — trigger orchestrator run (async)
+  GET  /api/observability/cost     — cost metrics from LangFuse traces
+  GET  /api/observability/latency  — latency metrics + percentiles
+  GET  /api/observability/quality  — success rates + failure categories
+  GET  /api/observability/summary  — aggregate summary for dashboard cards
 
 Usage:
   python3 -m justai.api              # starts on :3002
@@ -26,6 +30,7 @@ from urllib.parse import urlparse, parse_qs
 
 from justai.health import preflight
 from justai.memory import Memory
+from justai.tracing import get_aggregated_metrics
 
 
 API_PORT = int(os.environ.get("JUSTAI_API_PORT", "3002"))
@@ -131,6 +136,19 @@ def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
     return {"started": True, "run_id": run_id}
 
 
+def _get_observability(section: str, days: int = 7) -> dict | list:
+    """Fetch observability metrics from LangFuse traces.
+
+    Args:
+        section: "cost", "latency", "quality", or "summary"
+        days: lookback window
+    """
+    metrics = get_aggregated_metrics(days=days)
+    if section in metrics:
+        return metrics[section]
+    return {"error": f"unknown section: {section}"}
+
+
 class APIHandler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -165,6 +183,12 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == "/api/run/status":
             with _run_lock:
                 self._json(_active_run or {"status": "idle"})
+        elif path.startswith("/api/observability"):
+            section = path.replace("/api/observability/", "").replace("/api/observability", "")
+            if not section:
+                section = "summary"
+            days = int(params.get("days", ["7"])[0])
+            self._json(_get_observability(section, days=days))
         else:
             self._json({"error": "not found"}, 404)
 
@@ -201,6 +225,10 @@ def serve(port: int = API_PORT):
     print(f"  GET  /api/runs")
     print(f"  GET  /api/config")
     print(f"  POST /api/run")
+    print(f"  GET  /api/observability/cost")
+    print(f"  GET  /api/observability/latency")
+    print(f"  GET  /api/observability/quality")
+    print(f"  GET  /api/observability/summary")
     server.serve_forever()
 
 

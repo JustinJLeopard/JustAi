@@ -9,6 +9,7 @@ import { TrajectoryViewer } from '@/views/TrajectoryViewer'
 import { MemoryBrowser } from '@/views/MemoryBrowser'
 import { RunHistory } from '@/views/RunHistory'
 import AgentRegistry from '@/views/AgentRegistry'
+import { Observability } from '@/views/Observability'
 
 const EMPTY_DATA: LiveData = {
   tasks: [], agents: [], events: [],
@@ -104,7 +105,7 @@ export default function App() {
             {view === 'runs' && <RunHistory />}
             {view === 'trajectories' && <TrajectoryViewer />}
             {view === 'memory' && <MemoryBrowser />}
-            {view === 'observability' && <PlaceholderView name="Observability" description="Coming in Slice 2" />}
+            {view === 'observability' && <Observability onNavigate={handleNavigate} />}
             {view === 'agents' && <AgentRegistry data={data} />}
           </div>
         </main>

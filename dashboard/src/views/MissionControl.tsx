@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LiveData, msAgo } from '@/lib/spacetime'
-import { fetchHealth, fetchRuns } from '../lib/api-client'
-import type { HealthData, RunEntry } from '../lib/api-client'
+import { fetchHealth, fetchRuns, fetchObservabilitySummary } from '../lib/api-client'
+import type { HealthData, RunEntry, ObservabilitySummary } from '../lib/api-client'
 import { MetricCard } from '@/components/MetricCard'
 import { Pipeline } from '@/components/Pipeline'
 import type { PipelineStage } from '@/components/Pipeline'
@@ -138,6 +138,7 @@ export function MissionControl({ data }: MissionControlProps) {
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('24h')
   const [scopeTab, setScopeTab] = useState<'run' | 'sprint'>('run')
   const [secondsAgo, setSecondsAgo] = useState(0)
+  const [obsSummary, setObsSummary] = useState<ObservabilitySummary | null>(null)
 
   // ── Data loading ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -147,6 +148,16 @@ export function MissionControl({ data }: MissionControlProps) {
     }
     load()
     const id = setInterval(load, 10_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ── Observability data (30s poll — slower than SpacetimeDB) ───────────────
+  useEffect(() => {
+    const loadObs = () => {
+      fetchObservabilitySummary().then(setObsSummary).catch(() => {})
+    }
+    loadObs()
+    const id = setInterval(loadObs, 30_000)
     return () => clearInterval(id)
   }, [])
 
@@ -206,7 +217,7 @@ export function MissionControl({ data }: MissionControlProps) {
   // ── Gantt tasks (up to 6 for display) ─────────────────────────────────────
   const ganttTasks = tasks.slice(0, 6)
 
-  // ── Sparkline dummy data (will be real in Slice 2) ────────────────────────
+  // ── Sparkline data (active/done from task counts, cost/latency from observability API)
   const activeSparkline = [0, 1, 2, 1, 3, 2, activeTasks.length]
   const doneSparkline   = [0, 0, 1, 2, 3, doneTasks.length - 1, doneTasks.length].map(v => Math.max(0, v))
 
@@ -315,34 +326,39 @@ export function MissionControl({ data }: MissionControlProps) {
 
         <MetricCard
           label="Cost (24h)"
-          value="$—"
+          value={obsSummary && obsSummary.cost_24h > 0 ? `$${obsSummary.cost_24h.toFixed(2)}` : '$—'}
           color="var(--gold-300)"
-          trend="data in Slice 2"
-          trendDirection="flat"
+          trend={obsSummary && obsSummary.cost_24h > 0
+            ? `avg $${(obsSummary.cost_24h / Math.max(obsSummary.cost_trend.length, 1)).toFixed(2)}/run`
+            : 'no data yet'}
+          trendDirection={obsSummary && obsSummary.cost_24h > 0 ? 'flat' : 'flat'}
+          sparklinePoints={obsSummary?.cost_trend?.length ? obsSummary.cost_trend : undefined}
+          sparklineColor="var(--gold-400)"
           popoverContent={
             <>
               <PopoverTitle>Cost</PopoverTitle>
-              <PopoverRow label="Input tokens" value="—" />
-              <PopoverRow label="Output tokens" value="—" />
+              <PopoverRow label="24h total" value={obsSummary ? `$${obsSummary.cost_24h.toFixed(4)}` : '—'} color="var(--gold-300)" />
               <PopoverDivider />
-              <PopoverRow label="Total cost" value="$—" color="var(--gold-300)" />
+              <PopoverRow label="7d trend points" value={String(obsSummary?.cost_trend?.length ?? 0)} />
             </>
           }
         />
 
         <MetricCard
           label="Avg Latency"
-          value="—"
+          value={obsSummary && obsSummary.avg_latency_ms > 0 ? `${(obsSummary.avg_latency_ms / 1000).toFixed(1)}s` : '—'}
           color="var(--text-primary)"
-          trend="data in Slice 2"
-          trendDirection="flat"
+          trend={obsSummary && obsSummary.avg_latency_ms > 0 ? 'across pipeline' : 'no data yet'}
+          trendDirection={obsSummary && obsSummary.avg_latency_ms > 0 ? 'flat' : 'flat'}
+          sparklinePoints={obsSummary?.latency_trend?.length ? obsSummary.latency_trend : undefined}
+          sparklineColor="var(--rose-400)"
           popoverContent={
             <>
               <PopoverTitle>Latency</PopoverTitle>
-              <PopoverRow label="p50" value="—" />
-              <PopoverRow label="p95" value="—" />
+              <PopoverRow label="p50" value={obsSummary && obsSummary.p50 > 0 ? `${(obsSummary.p50 / 1000).toFixed(1)}s` : '—'} />
+              <PopoverRow label="p90" value={obsSummary && obsSummary.p90 > 0 ? `${(obsSummary.p90 / 1000).toFixed(1)}s` : '—'} />
               <PopoverDivider />
-              <PopoverRow label="Avg" value="—" />
+              <PopoverRow label="Avg" value={obsSummary && obsSummary.avg_latency_ms > 0 ? `${(obsSummary.avg_latency_ms / 1000).toFixed(1)}s` : '—'} />
             </>
           }
         />
