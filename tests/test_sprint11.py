@@ -100,7 +100,7 @@ class TestPackageStructure(unittest.TestCase):
     def test_module_count(self):
         """JustAi should have exactly 14 Python modules."""
         py_files = list((PROJECT_ROOT / "justai").glob("*.py"))
-        self.assertEqual(len(py_files), 18)  # 17 modules + __init__.py
+        self.assertEqual(len(py_files), 19)  # 18 modules + __init__.py
 
     def test_test_count(self):
         """Should have test files for sprints 4-11."""
