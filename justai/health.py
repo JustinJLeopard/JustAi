@@ -63,6 +63,31 @@ def check_memory() -> ServiceStatus:
         return ServiceStatus("claude-flow MCP", url, False, str(e)[:120])
 
 
+def check_swarm() -> ServiceStatus:
+    """Check claude-flow swarm status via MCP."""
+    url = os.environ.get("JUSTAI_MCP_URL", "http://127.0.0.1:3100")
+    rpc_url = f"{url}/rpc"
+    try:
+        payload = json.dumps({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "tools/call",
+            "params": {"name": "swarm_status", "arguments": {}},
+        }).encode()
+        req = urllib.request.Request(rpc_url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            content = data.get("result", {}).get("content", [])
+            for item in content:
+                if item.get("type") == "text":
+                    info = json.loads(item["text"])
+                    status = info.get("status", "unknown")
+                    agents = info.get("agentCount", 0)
+                    return ServiceStatus("Swarm", url, True, f"{status} ({agents} agents)")
+        return ServiceStatus("Swarm", url, True, "reachable")
+    except Exception as e:
+        return ServiceStatus("Swarm", url, False, str(e)[:120])
+
+
 def preflight() -> list[ServiceStatus]:
     """Run all service checks. Returns list of statuses."""
     return [check_litellm(), check_spacetimedb(), check_memory()]
