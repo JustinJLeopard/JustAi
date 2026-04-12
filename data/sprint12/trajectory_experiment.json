@@ -1,0 +1,42 @@
+{
+  "experiment": "trajectory-assisted vs unassisted",
+  "results": [
+    {
+      "goal": "implement a REST API for user management with JWT authentication",
+      "matches_found": 3,
+      "top_similarity": 0.798,
+      "top_match_goal": "implement user authentication with JWT",
+      "top_match_outcome": "success",
+      "context_length_chars": 737,
+      "search_time_ms": 48.9
+    },
+    {
+      "goal": "build a real-time dashboard with WebSocket updates",
+      "matches_found": 1,
+      "top_similarity": 0.757,
+      "top_match_goal": "build React dashboard with real-time updates",
+      "top_match_outcome": "success",
+      "context_length_chars": 295,
+      "search_time_ms": 12.3
+    },
+    {
+      "goal": "add SQLite cost tracking for multi-agent execution",
+      "matches_found": 0,
+      "top_similarity": 0,
+      "top_match_goal": "",
+      "top_match_outcome": "",
+      "context_length_chars": 0,
+      "search_time_ms": 12.3
+    },
+    {
+      "goal": "create Discord webhook integration for pipeline notifications",
+      "matches_found": 2,
+      "top_similarity": 0.681,
+      "top_match_goal": "add REST API endpoints for task management",
+      "top_match_outcome": "success",
+      "context_length_chars": 487,
+      "search_time_ms": 14.5
+    }
+  ],
+  "timestamp": "2026-04-12T19:13:03"
+}
