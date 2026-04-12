@@ -87,13 +87,18 @@ export interface ObservabilitySummary {
   latency_trend: number[]
   p50: number
   p90: number
+  input_tokens: number
+  output_tokens: number
 }
 
 export interface CostDay {
   date: string
   total: number
-  by_model?: Record<string, number>
-  by_stage?: Record<string, number>
+  running_total: number
+  by_model: Record<string, number>
+  by_stage: Record<string, number>
+  input_tokens: number
+  output_tokens: number
 }
 
 export interface CostData {
@@ -101,6 +106,9 @@ export interface CostData {
   total: number
   by_model: Record<string, number>
   by_stage: Record<string, number>
+  models: string[]
+  input_tokens: number
+  output_tokens: number
 }
 
 export interface LatencyDay {
@@ -122,18 +130,30 @@ export interface LatencyData {
   by_stage: Record<string, number>
 }
 
+export interface CostQualityPoint {
+  cost: number
+  success: number
+  session_id: string
+}
+
 export interface QualityDay {
   date: string
   total: number
   success: number
   failed: number
   rate: number
+  first_try: number
+  retry: number
 }
 
 export interface QualityData {
   daily: QualityDay[]
   overall_rate: number
   failure_categories: Record<string, number>
+  first_try_total: number
+  retry_total: number
+  cost_quality: CostQualityPoint[]
+  ai_insight: string
 }
 
 // ── Observability Fetch Functions ───────────────────────────────────────────
@@ -189,7 +209,7 @@ export interface AuditData {
   step_count: number
   total_cost: number
   api_calls: number
-  events: { step: number; action_type: string; command: string; target: string; returncode: number | null }[]
+  events: { step: number; action_type: string; command: string; target: string; returncode: number | null; reasoning_length?: number; result_length?: number }[]
   files_changed: { file: string; first_touch_step: number; modifications: number }[]
   version: string
   error?: string

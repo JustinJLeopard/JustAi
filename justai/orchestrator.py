@@ -26,9 +26,9 @@ import sys
 import time
 from dataclasses import dataclass
 
-from justai.intent_gate import classify, Intent, IntentResult
-from justai.planner import decompose, Plan, format_plan
-from justai.reviewer import review, ReviewResult
+from justai.intent_gate import classify, Intent, IntentResult, INTENT_MODEL
+from justai.planner import decompose, Plan, format_plan, PLANNER_MODEL
+from justai.reviewer import review, ReviewResult, REVIEWER_MODEL
 from justai.checkpoint import evaluate
 from justai.delegator import delegate_plan, DelegationResult
 from justai.executor import execute_plan, ExecResult
@@ -138,10 +138,13 @@ def run(
 
     # ── Stage 1: Intent Classification ───────────────────────────────────────
     print("[1/5] Classifying intent...")
-    with trace_generation("intent-gate", input_text=goal,
-                          session_id=session_ref, tags=["intent"]) as _t1:
+    with trace_generation("intent-gate", model=INTENT_MODEL, input_text=goal,
+                          session_id=session_ref, tags=["intent"],
+                          metadata={"stage": "intent-gate", "model": INTENT_MODEL}) as _t1:
         intent_result: IntentResult = classify(goal)
-        _t1.end(output_text=f"{intent_result.intent.value} ({intent_result.confidence:.2f})")
+        _t1.end(output_text=f"{intent_result.intent.value} ({intent_result.confidence:.2f})",
+                metadata={"classification": intent_result.intent.value,
+                           "confidence": intent_result.confidence})
     print(f"      Intent: {intent_result.intent.value} (confidence: {intent_result.confidence:.2f})")
     print(f"      Reason: {intent_result.reasoning}")
 
@@ -160,18 +163,21 @@ def run(
     if prior_context:
         extra_context += f"Prior session context:\n{prior_context}\n\n"
 
-    with trace_generation("planner", input_text=goal,
-                          session_id=session_ref, tags=["planner"]) as _t2:
+    with trace_generation("planner", model=PLANNER_MODEL, input_text=goal,
+                          session_id=session_ref, tags=["planner"],
+                          metadata={"stage": "planner", "model": PLANNER_MODEL}) as _t2:
         plan: Plan = decompose(goal, session_ref=session_ref, context=extra_context)
-        _t2.end(output_text=f"{len(plan.tasks)} tasks: {', '.join(t.title for t in plan.tasks[:5])}")
+        _t2.end(output_text=f"{len(plan.tasks)} tasks: {', '.join(t.title for t in plan.tasks[:5])}",
+                metadata={"task_count": len(plan.tasks)})
     print(f"      {len(plan.tasks)} task(s) generated")
     print()
     print(format_plan(plan))
 
     # ── Stage 3: Plan Review ──────────────────────────────────────────────────
     print("[3/5] Reviewing plan quality...")
-    with trace_generation("reviewer", input_text=format_plan(plan),
-                          session_id=session_ref, tags=["reviewer"]) as _t3:
+    with trace_generation("reviewer", model=REVIEWER_MODEL, input_text=format_plan(plan),
+                          session_id=session_ref, tags=["reviewer"],
+                          metadata={"stage": "reviewer", "model": REVIEWER_MODEL}) as _t3:
         review_result: ReviewResult = review(plan)
 
         attempts = 0
@@ -187,7 +193,9 @@ def run(
             attempts += 1
 
         if not review_result.approved:
-            _t3.end(output_text=f"rejected after {attempts} attempts", level="WARNING")
+            _t3.end(output_text=f"rejected after {attempts} attempts", level="WARNING",
+                    metadata={"verdict": "rejected", "attempts": attempts,
+                               "issues": review_result.feedback[:5]})
             print("      Plan could not be approved after replanning. Review manually.")
             for issue in review_result.feedback:
                 print(f"        ! {issue}")
@@ -198,7 +206,9 @@ def run(
                 status="blocked",
             )
 
-        _t3.end(output_text=f"approved (attempts: {attempts + 1})")
+        _t3.end(output_text=f"approved (attempts: {attempts + 1})",
+                metadata={"verdict": "approved", "attempts": attempts + 1,
+                           "first_try": attempts == 0})
     print("      Plan approved ✓")
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
@@ -228,7 +238,9 @@ def run(
     with trace_generation(stage5_name,
                           input_text=f"{len(approved_tasks)} tasks",
                           session_id=session_ref,
-                          tags=[stage5_name]) as _t5:
+                          tags=[stage5_name],
+                          metadata={"stage": stage5_name, "task_count": len(approved_tasks),
+                                     "mode": "local" if local else "delegated"}) as _t5:
         if local:
             print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
             exec_results = execute_plan(approved_tasks)
@@ -245,14 +257,18 @@ def run(
             results = delegate_plan(approved_tasks, session_ref=session_ref)
 
         done_count = sum(1 for r in results if r.status == "done")
-        _t5.end(output_text=f"{done_count}/{len(results)} done")
+        failed_count = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
+        _t5.end(output_text=f"{done_count}/{len(results)} done",
+                metadata={"done": done_count, "failed": failed_count,
+                           "total": len(results)})
 
     # ── Synthesize ────────────────────────────────────────────────────────────
     duration = time.time() - start
     with trace_generation("synthesizer",
                           input_text=f"{len(results)} results",
                           session_id=session_ref,
-                          tags=["synthesizer"]) as _t6:
+                          tags=["synthesizer"],
+                          metadata={"stage": "synthesizer"}) as _t6:
         summary = synthesize(
             goal=goal,
             intent=intent_result.intent.value,
@@ -260,7 +276,10 @@ def run(
             session_ref=session_ref,
             duration=duration,
         )
-        _t6.end(output_text=f"{summary.status}: {summary.done}/{summary.total_tasks} done, {duration:.1f}s")
+        _t6.end(output_text=f"{summary.status}: {summary.done}/{summary.total_tasks} done, {duration:.1f}s",
+                metadata={"status": summary.status, "done": summary.done,
+                           "failed": summary.failed, "total": summary.total_tasks,
+                           "duration_s": round(duration, 2)})
     print(format_summary(summary))
 
     flush_traces()

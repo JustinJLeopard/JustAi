@@ -650,7 +650,7 @@ function LearningMode({ patterns, loading }: { patterns: PatternReport | null; l
       {patterns.efficiency_trend.length > 1 && (
         <div className="panel panel-pad">
           <SectionLabel>Efficiency Trend</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-4)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--sp-4)' }}>
             <div>
               <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 8, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1.5px' }}>
                 Steps per Run
@@ -662,6 +662,20 @@ function LearningMode({ patterns, loading }: { patterns: PatternReport | null; l
                   <YAxis tick={{ fontSize: 9, fill: 'var(--text-dim)' }} axisLine={false} tickLine={false} width={30} />
                   <Tooltip content={<ChartTooltip />} />
                   <Bar dataKey="avg_steps" name="Avg Steps" fill="var(--rose-400)" fillOpacity={0.6} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 8, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                Cost per Run
+              </div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={patterns.efficiency_trend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text-dim)' }} tickFormatter={d => d.slice(5)} axisLine={{ stroke: 'var(--border-subtle)' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: 'var(--text-dim)' }} tickFormatter={v => `$${v}`} axisLine={false} tickLine={false} width={36} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="avg_cost" name="Avg Cost" fill="var(--gold-400)" fillOpacity={0.6} radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -801,25 +815,37 @@ function AuditMode({
         </div>
       )}
 
+      {/* Chain of Evidence — Token Accounting */}
+      <div className="panel" style={{ padding: '14px 20px' }}>
+        <SectionLabel>Chain of Evidence</SectionLabel>
+        <div style={{ display: 'flex', gap: 'var(--sp-4)', marginBottom: 'var(--sp-3)', flexWrap: 'wrap' }}>
+          <MetaTag label="Model" value={auditData.model} />
+          <MetaTag label="Total Cost" value={`$${auditData.total_cost.toFixed(4)}`} color="var(--gold-300)" />
+          <MetaTag label="API Calls" value={String(auditData.api_calls)} />
+          <MetaTag label="Total Steps" value={String(auditData.step_count)} />
+        </div>
+      </div>
+
       {/* Chronological Event Log */}
       <div className="panel" style={{ padding: '14px 20px' }}>
         <SectionLabel>Chronological Event Log</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: '50px 60px 1fr 60px 50px',
+            display: 'grid', gridTemplateColumns: '50px 60px 1fr 60px 60px 50px',
             padding: '6px 0', borderBottom: '1px solid var(--border-subtle)',
             fontSize: 9, fontWeight: 600, color: 'var(--text-dim)',
             textTransform: 'uppercase', letterSpacing: '0.8px',
           }}>
             <span>Step</span>
             <span>Type</span>
-            <span>Command / Target</span>
+            <span>Command</span>
             <span style={{ textAlign: 'right' }}>Target</span>
+            <span style={{ textAlign: 'right' }}>Chars</span>
             <span style={{ textAlign: 'right' }}>Exit</span>
           </div>
           {auditData.events.map((evt, i) => (
             <div key={i} style={{
-              display: 'grid', gridTemplateColumns: '50px 60px 1fr 60px 50px',
+              display: 'grid', gridTemplateColumns: '50px 60px 1fr 60px 60px 50px',
               padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.02)',
               fontSize: 11, color: 'var(--text-secondary)', fontWeight: 300,
               fontFamily: 'var(--font-mono)',
@@ -831,6 +857,9 @@ function AuditMode({
               </span>
               <span style={{ textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-muted)' }}>
                 {evt.target ? evt.target.split('/').pop() : '—'}
+              </span>
+              <span style={{ textAlign: 'right', color: 'var(--text-dim)', fontSize: 10 }}>
+                {((evt.reasoning_length || 0) + (evt.result_length || 0)).toLocaleString()}
               </span>
               <span style={{
                 textAlign: 'right', fontWeight: 600,

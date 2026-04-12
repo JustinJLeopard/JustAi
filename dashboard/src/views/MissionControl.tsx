@@ -340,7 +340,17 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
               <PopoverTitle>Cost</PopoverTitle>
               <PopoverRow label="24h total" value={obsSummary ? `$${obsSummary.cost_24h.toFixed(4)}` : '—'} color="var(--gold-300)" />
               <PopoverDivider />
-              <PopoverRow label="7d trend points" value={String(obsSummary?.cost_trend?.length ?? 0)} />
+              <PopoverRow label="Input tokens" value={obsSummary ? obsSummary.input_tokens.toLocaleString() : '—'} />
+              <PopoverRow label="Output tokens" value={obsSummary ? obsSummary.output_tokens.toLocaleString() : '—'} />
+              <PopoverDivider />
+              {onNavigate && (
+                <div
+                  onClick={() => onNavigate('observability')}
+                  style={{ fontSize: 10, color: 'var(--rose-400)', cursor: 'pointer', marginTop: 4, fontWeight: 400 }}
+                >
+                  View details →
+                </div>
+              )}
             </>
           }
         />
@@ -360,6 +370,14 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
               <PopoverRow label="p90" value={obsSummary && obsSummary.p90 > 0 ? `${(obsSummary.p90 / 1000).toFixed(1)}s` : '—'} />
               <PopoverDivider />
               <PopoverRow label="Avg" value={obsSummary && obsSummary.avg_latency_ms > 0 ? `${(obsSummary.avg_latency_ms / 1000).toFixed(1)}s` : '—'} />
+              {onNavigate && (
+                <div
+                  onClick={() => onNavigate('observability')}
+                  style={{ fontSize: 10, color: 'var(--rose-400)', cursor: 'pointer', marginTop: 4, fontWeight: 400 }}
+                >
+                  View details →
+                </div>
+              )}
             </>
           }
         />
