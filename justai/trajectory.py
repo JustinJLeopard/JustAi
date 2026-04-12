@@ -572,3 +572,130 @@ def get_audit_data(filename: str) -> dict:
         "files_changed": list(files_modified.values()),
         "version": info.get("mini_version", "unknown"),
     }
+
+
+# ── Trajectory Learning Store ──────────────────────────────────────────────
+# Stores trajectory outcomes in claude-flow memory (HNSW vector search)
+# so future tasks can retrieve similar past trajectories as context.
+
+MCP_URL = os.environ.get("JUSTAI_MCP_URL", "http://127.0.0.1:3100")
+MCP_RPC = f"{MCP_URL}/rpc"
+TRAJECTORY_NAMESPACE = "justai-trajectories"
+
+
+@dataclass
+class TrajectoryMatch:
+    key: str
+    goal: str
+    steps: list[str]
+    outcome: str
+    similarity: float
+    duration: float = 0.0
+    tech_stack: list[str] = field(default_factory=list)
+
+
+def _mcp_call(method: str, params: dict) -> dict:
+    """Make a JSON-RPC 2.0 call to claude-flow MCP."""
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": int(time.time() * 1000),
+        "method": "tools/call",
+        "params": {"name": method, "arguments": params},
+    }).encode()
+    req = urllib.request.Request(MCP_RPC, data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read())
+    content = data.get("result", {}).get("content", [])
+    for item in content:
+        if item.get("type") == "text":
+            return json.loads(item["text"])
+    return {}
+
+
+class TrajectoryStore:
+    """Store and retrieve trajectory outcomes via claude-flow memory."""
+
+    def store(
+        self,
+        goal: str,
+        steps: list[str],
+        outcome: str,
+        duration: float = 0.0,
+        tech_stack: list[str] | None = None,
+    ) -> bool:
+        """Store a trajectory outcome for future retrieval."""
+        key = f"trajectory/{goal[:50].replace(' ', '-').lower()}-{int(time.time())}"
+        value = json.dumps({
+            "goal": goal,
+            "steps": steps,
+            "outcome": outcome,
+            "duration": duration,
+            "tech_stack": tech_stack or [],
+            "stored_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+        result = _mcp_call("memory_store", {
+            "key": key,
+            "value": value,
+            "namespace": TRAJECTORY_NAMESPACE,
+        })
+        return result.get("success", False) or result.get("stored", False)
+
+    def search(self, query: str, limit: int = 5) -> list[TrajectoryMatch]:
+        """Search for similar trajectories using HNSW vector search."""
+        result = _mcp_call("memory_search", {
+            "query": query,
+            "namespace": TRAJECTORY_NAMESPACE,
+            "limit": limit,
+        })
+        matches = []
+        for r in result.get("results", []):
+            key = r.get("key", "")
+            similarity = r.get("similarity", 0.0)
+            raw_value = r.get("value", "{}")
+
+            # Search results may truncate long values — retrieve full value
+            try:
+                data = json.loads(raw_value)
+            except (json.JSONDecodeError, TypeError):
+                # Truncated — do a full retrieve
+                try:
+                    full = _mcp_call("memory_retrieve", {"key": key, "namespace": TRAJECTORY_NAMESPACE})
+                    val = full.get("value", {})
+                    data = val if isinstance(val, dict) else json.loads(str(val))
+                except Exception:
+                    continue
+
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            matches.append(TrajectoryMatch(
+                key=key,
+                goal=data.get("goal", ""),
+                steps=data.get("steps", []),
+                outcome=data.get("outcome", ""),
+                similarity=similarity,
+                duration=data.get("duration", 0.0),
+                tech_stack=data.get("tech_stack", []),
+            ))
+        matches.sort(key=lambda m: m.similarity, reverse=True)
+        return matches
+
+    @staticmethod
+    def format_as_context(matches: list[TrajectoryMatch]) -> str:
+        """Format trajectory matches as context for an agent prompt."""
+        if not matches:
+            return ""
+        lines = ["Similar past trajectories (use as reference):"]
+        for i, m in enumerate(matches):
+            lines.append(f"\n--- Trajectory {i+1} (similarity: {m.similarity:.2f}) ---")
+            lines.append(f"Goal: {m.goal}")
+            lines.append(f"Outcome: {m.outcome}")
+            lines.append(f"Steps: {' → '.join(m.steps)}")
+            if m.tech_stack:
+                lines.append(f"Tech: {', '.join(m.tech_stack)}")
+            if m.duration:
+                lines.append(f"Duration: {m.duration:.1f}s")
+        return "\n".join(lines)
