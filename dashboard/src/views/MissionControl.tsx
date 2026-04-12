@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react'
 import { LiveData } from '@/lib/spacetime'
+import { fetchHealth } from '../lib/api-client'
+import type { HealthData } from '../lib/api-client'
 import { AgentCard } from '@/components/AgentCard'
 import { TaskCard } from '@/components/TaskCard'
 
@@ -23,6 +26,17 @@ function HealthDot({ ok, label }: { ok: boolean; label: string }) {
 
 export function MissionControl({ data }: MissionControlProps) {
   const { tasks, agents, connected, lastUpdated, error } = data
+  const [health, setHealth] = useState<HealthData | null>(null)
+
+  useEffect(() => {
+    const load = () => fetchHealth().then(setHealth).catch(() => {})
+    load()
+    const id = setInterval(load, 10000)
+    return () => clearInterval(id)
+  }, [])
+
+  const litellmOk = health?.services.find(s => s.name === 'LiteLLM')?.ok ?? false
+  const mcpOk = health?.services.find(s => s.name === 'claude-flow MCP')?.ok ?? false
 
   const activeTasks = tasks.filter(t =>
     t.status === 'in_progress' || t.status === 'claimed'
@@ -52,7 +66,8 @@ export function MissionControl({ data }: MissionControlProps) {
           System
         </span>
         <HealthDot ok={connected} label="SpacetimeDB" />
-        <HealthDot ok={true} label="LiteLLM" />
+        <HealthDot ok={litellmOk} label="LiteLLM" />
+        <HealthDot ok={mcpOk} label="Memory" />
         <HealthDot ok={onlineAgents.length > 0} label={`${onlineAgents.length} agent${onlineAgents.length !== 1 ? 's' : ''} online`} />
         {error && (
           <span style={{ fontSize: '12px', color: 'var(--accent-red)', marginLeft: 'auto' }}>
