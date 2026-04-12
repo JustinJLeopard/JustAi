@@ -195,8 +195,8 @@ class PlannerLiteLLMTests(unittest.TestCase):
         from justai.planner import decompose
         with patch("justai.planner._call_litellm", return_value={"tasks": []}):
             plan = decompose("add endpoint")
-        # Empty task list from LiteLLM — planner returns it as-is
-        self.assertEqual(len(plan.tasks), 0)
+        # Empty task list triggers heuristic fallback (Sprint 7 retry logic)
+        self.assertGreaterEqual(len(plan.tasks), 2)
 
 
 # ── reviewer — LiteLLM path, format, suggestions merged into feedback ─────────

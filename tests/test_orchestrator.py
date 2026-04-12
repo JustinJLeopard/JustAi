@@ -134,8 +134,9 @@ class PlannerTests(unittest.TestCase):
         from justai.planner import decompose
         with patch("justai.planner._call_litellm", side_effect=Exception("timeout")):
             plan = decompose("add /health/agents endpoint")
-        self.assertEqual(len(plan.tasks), 1)
-        self.assertIn("verify manually", plan.tasks[0].success_criteria)
+        # Heuristic fallback: explore + execute + verify (Sprint 7)
+        self.assertGreaterEqual(len(plan.tasks), 2)
+        self.assertEqual(plan.goal, "add /health/agents endpoint")
 
     def test_format_plan_includes_all_tasks(self):
         from justai.planner import decompose, format_plan

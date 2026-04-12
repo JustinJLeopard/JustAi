@@ -12,6 +12,12 @@ Bother the human only when genuinely necessary. R2 and R3 are rare.
   R2 — hard gate, wait for explicit approval (Discord or dashboard)
   R3 — blocked, operator must manually unlock before anything proceeds
 
+AUTO MODE (JUSTAI_AUTO_MODE=1 or --auto):
+  R0 → proceed immediately (no change)
+  R1 → proceed immediately (skip the 60s wait)
+  R2 → still requires explicit approval
+  R3 → still blocked
+
 Discord integration: posts to DISCORD_RELAY_CHANNEL_ID if token is set.
 If Discord is not configured, R1 auto-proceeds silently, R2/R3 block
 until a local signal file is written by the operator.
@@ -30,6 +36,11 @@ DISCORD_BOT_TOKEN = os.environ.get("RELAY_COORDINATOR_TOKEN", "")
 DISCORD_CHANNEL_ID = os.environ.get("DISCORD_RELAY_CHANNEL_ID", "1491134768077865090")
 R1_TIMEOUT_SECONDS = int(os.environ.get("JUSTAI_R1_TIMEOUT", "60"))
 GATE_SIGNAL_DIR = Path(os.environ.get("JUSTAI_RUNTIME_ROOT", "/tmp/justai")) / "gates"
+
+
+def _is_auto_mode() -> bool:
+    """Check if auto mode is enabled (skip R1 waits)."""
+    return os.environ.get("JUSTAI_AUTO_MODE", "").lower() in ("1", "true", "yes")
 
 
 def _discord_notify(message: str) -> bool:
@@ -86,6 +97,7 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
 
     R0 → (True, "auto-approved")
     R1 → notify, wait up to 60s for veto, then (True, "auto-approved after timeout")
+         In auto mode: (True, "R1 auto-approved (auto mode)") — no wait
     R2 → block until gate file written with status=approved
     R3 → always (False, "blocked — operator must manually unlock")
     """
@@ -95,8 +107,11 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
     if risk == RiskLevel.R0:
         return True, "R0 auto-approved"
 
-    # R1: notify and auto-proceed after timeout
+    # R1: notify and auto-proceed after timeout (or immediately in auto mode)
     if risk == RiskLevel.R1:
+        if _is_auto_mode():
+            return True, "R1 auto-approved (auto mode)"
+
         msg = (
             f"[JustAi R1] Task starting in {R1_TIMEOUT_SECONDS}s — veto to stop:\n"
             f"  **{task.title}**\n"

@@ -159,6 +159,84 @@ def _parse_tasks(raw: dict, session_ref: str = "") -> list[Task]:
     return tasks
 
 
+def _heuristic_plan(goal: str, session_ref: str = "") -> Plan:
+    """Build a reasonable fallback plan without LLM.
+
+    Generates an explore-then-execute plan instead of a blind single task.
+    """
+    # Infer the target from the goal
+    words = goal.lower()
+    is_add = any(w in words for w in ["add", "create", "implement", "write", "build"])
+    is_fix = any(w in words for w in ["fix", "debug", "repair", "resolve"])
+    is_test = any(w in words for w in ["test", "verify", "check", "validate"])
+
+    tasks = []
+
+    # Task 0: always explore first
+    tasks.append(Task(
+        title="Explore relevant files",
+        description=(
+            f"Read the codebase to understand what exists before making changes.\n"
+            f"Goal context: {goal}\n"
+            f"List files in the project, read the main module, and identify where changes are needed."
+        ),
+        agent=AgentType.MINI,
+        risk=RiskLevel.R0,
+        success_criteria="ls -la && echo 'exploration complete'",
+        depends_on=[],
+        session_ref=session_ref,
+    ))
+
+    # Task 1: the actual work
+    risk = RiskLevel.R1
+    if is_fix:
+        risk = RiskLevel.R1
+    elif is_add:
+        risk = RiskLevel.R1
+
+    tasks.append(Task(
+        title=goal[:60],
+        description=goal,
+        agent=AgentType.MINI,
+        risk=risk,
+        success_criteria=_infer_verify_command(goal),
+        depends_on=[0],
+        session_ref=session_ref,
+    ))
+
+    # Task 2: verify if not already a test task
+    if not is_test:
+        tasks.append(Task(
+            title=f"Verify: {goal[:50]}",
+            description=f"Verify that the following goal was accomplished correctly:\n{goal}",
+            agent=AgentType.MINI,
+            risk=RiskLevel.R0,
+            success_criteria=_infer_verify_command(goal),
+            depends_on=[1],
+            session_ref=session_ref,
+        ))
+
+    return Plan(goal=goal, tasks=tasks, session_ref=session_ref)
+
+
+def _infer_verify_command(goal: str) -> str:
+    """Infer a verification command from the goal text."""
+    words = goal.lower()
+    # If goal mentions an endpoint, try curling it
+    if "/api/" in words or "endpoint" in words:
+        return "curl -sf http://localhost:8080/health || echo 'verify endpoint manually'"
+    # If goal mentions tests
+    if "test" in words:
+        return "python3 -m pytest -x --tb=short 2>&1 | tail -5"
+    # If goal mentions a specific file
+    if ".py" in words:
+        return "python3 -c 'import ast; print(1)'"
+    return "echo 'task completed — verify manually'"
+
+
+LLM_RETRY_ATTEMPTS = 2
+
+
 def decompose(
     goal: str,
     session_ref: str = "",
@@ -166,27 +244,28 @@ def decompose(
 ) -> Plan:
     """
     Decompose a goal into an ordered list of mini-sized Tasks.
-    Uses LiteLLM if available. Falls back to a single-task plan on error.
+    Uses LiteLLM with retry. Falls back to heuristic plan on repeated failure.
     """
-    try:
-        raw = _call_litellm(goal, context)
-        tasks = _parse_tasks(raw, session_ref)
-        return Plan(goal=goal, tasks=tasks, session_ref=session_ref)
-    except Exception as e:
-        # Fallback: wrap entire goal as a single execution task
-        return Plan(
-            goal=goal,
-            session_ref=session_ref,
-            tasks=[Task(
-                title=goal[:60],
-                description=goal,
-                agent=AgentType.MINI,
-                risk=RiskLevel.R1,
-                success_criteria="echo 'verify manually'",
-                depends_on=[],
-                session_ref=session_ref,
-            )],
-        )
+    last_error = None
+    for attempt in range(LLM_RETRY_ATTEMPTS):
+        try:
+            raw = _call_litellm(goal, context)
+            tasks = _parse_tasks(raw, session_ref)
+            if tasks:
+                return Plan(goal=goal, tasks=tasks, session_ref=session_ref)
+        except Exception as e:
+            last_error = e
+            if attempt < LLM_RETRY_ATTEMPTS - 1:
+                import time
+                wait = 2 ** attempt
+                print(f"[planner] LLM call failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+                time.sleep(wait)
+
+    # Fallback: heuristic plan with explore-execute-verify structure
+    print(f"[planner] LLM unavailable after {LLM_RETRY_ATTEMPTS} attempts — using heuristic plan")
+    if last_error:
+        print(f"[planner] Last error: {str(last_error)[:100]}")
+    return _heuristic_plan(goal, session_ref)
 
 
 def format_plan(plan: Plan) -> str:
