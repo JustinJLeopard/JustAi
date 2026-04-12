@@ -9,6 +9,7 @@ import { PopoverTitle, PopoverRow, PopoverDivider } from '@/components/Popover'
 
 interface MissionControlProps {
   data: LiveData
+  onNavigate?: (view: import('@/components/Sidebar').View) => void
 }
 
 // ── Time range button ─────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ function ScopeTab({ label, active, onClick }: { label: string; active: boolean; 
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function MissionControl({ data }: MissionControlProps) {
+export function MissionControl({ data, onNavigate }: MissionControlProps) {
   const { tasks, agents, connected, lastUpdated, error } = data
   const [health, setHealth] = useState<HealthData | null>(null)
   const [runs, setRuns] = useState<RunEntry[]>([])
