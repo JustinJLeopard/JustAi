@@ -21,7 +21,6 @@ Evidence-based design:
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -31,10 +30,11 @@ from justai.planner import decompose, Plan, format_plan
 from justai.reviewer import review, ReviewResult
 from justai.checkpoint import evaluate
 from justai.delegator import delegate_plan, DelegationResult
+from justai.memory import Memory
+from justai.tracing import trace_generation, trace_event, flush_traces
 
 MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
-MEMORY_DB = os.path.expanduser("~/projects/ruv-research")
 
 
 @dataclass
@@ -47,13 +47,14 @@ class OrchestrationResult:
     status: str   # "complete" | "partial" | "blocked" | "ambiguous"
 
 
+# Shared memory client — talks to MCP HTTP at :3100 (~5ms vs ~300ms CLI)
+_memory = Memory()
+
+
 def _store_memory(key: str, value: str) -> None:
-    """Store outcome in claude-flow memory."""
+    """Store outcome in claude-flow memory via MCP HTTP."""
     try:
-        subprocess.run(
-            ["claude-flow", "memory", "store", "-k", key, "-v", value],
-            capture_output=True, cwd=MEMORY_DB, timeout=10
-        )
+        _memory.store(key, value)
     except Exception:
         pass
 
@@ -76,7 +77,10 @@ def run(goal: str, session_ref: str = SESSION_REF) -> OrchestrationResult:
 
     # ── Stage 1: Intent Classification ───────────────────────────────────────
     print("[1/5] Classifying intent...")
-    intent_result: IntentResult = classify(goal)
+    with trace_generation("intent-gate", input_text=goal,
+                          session_id=session_ref, tags=["intent"]) as _t1:
+        intent_result: IntentResult = classify(goal)
+        _t1.end(output_text=f"{intent_result.intent.value} ({intent_result.confidence:.2f})")
     print(f"      Intent: {intent_result.intent.value} (confidence: {intent_result.confidence:.2f})")
     print(f"      Reason: {intent_result.reasoning}")
 
@@ -127,6 +131,8 @@ def run(goal: str, session_ref: str = SESSION_REF) -> OrchestrationResult:
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
     print("\n[4/5] Evaluating checkpoints...")
+    trace_event("checkpoint", metadata={"task_count": len(plan.tasks)},
+               session_id=session_ref)
     approved_tasks = []
     for i, task in enumerate(plan.tasks):
         task_id = f"{session_ref}-plan-{i}"
@@ -175,6 +181,7 @@ def run(goal: str, session_ref: str = SESSION_REF) -> OrchestrationResult:
     )
     _store_memory(f"justai/runs/{session_ref}-{int(time.time())}", summary)
 
+    flush_traces()
     return OrchestrationResult(
         goal=goal,
         intent=intent_result.intent.value,

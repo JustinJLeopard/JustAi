@@ -2,12 +2,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { SpacetimePoller, LiveData, Task } from '@/lib/spacetime'
 import { MissionControl } from '@/views/MissionControl'
 import { TaskBoard } from '@/views/TaskBoard'
+import { TrajectoryViewer } from '@/views/TrajectoryViewer'
+import { MemoryBrowser } from '@/views/MemoryBrowser'
 
-type View = 'mission-control' | 'task-board'
+type View = 'mission-control' | 'task-board' | 'trajectories' | 'memory'
 
 const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: 'mission-control', label: 'Mission Control', icon: '⬡' },
   { id: 'task-board',      label: 'Task Board',      icon: '⊞' },
+  { id: 'trajectories',    label: 'Trajectories',    icon: '⇥' },
+  { id: 'memory',          label: 'Memory',           icon: '⧫' },
 ]
 
 const EMPTY_DATA: LiveData = {
@@ -130,10 +134,16 @@ export default function App() {
         {view === 'task-board' && (
           <TaskBoard data={data} onTaskClick={setSelectedTask} />
         )}
+        {view === 'trajectories' && (
+          <TrajectoryViewer />
+        )}
+        {view === 'memory' && (
+          <MemoryBrowser />
+        )}
       </main>
 
-      {/* Task detail panel */}
-      {selectedTask && (
+      {/* Task detail panel (only for task-board view) */}
+      {selectedTask && view === 'task-board' && (
         <aside style={{
           width: '360px',
           flexShrink: 0,
