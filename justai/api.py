@@ -34,8 +34,10 @@ from justai.tracing import get_aggregated_metrics
 from justai.trajectory import analyze_trajectory, get_patterns, get_audit_data
 from justai.discord import is_configured as discord_configured, notify as discord_notify
 from justai.ledger import Ledger
+from justai.auth import AuthManager
 
 _ledger = Ledger()
+_auth = AuthManager()
 
 
 API_PORT = int(os.environ.get("JUSTAI_API_PORT", "3002"))
@@ -251,6 +253,38 @@ class APIHandler(BaseHTTPRequestHandler):
             msg = body.get("message", "Test notification from JustAi dashboard")
             sent = discord_notify(msg, title="Test Notification")
             self._json({"sent": sent, "configured": discord_configured()})
+        elif path == "/api/auth/login":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            result = _auth.login(body.get("username", ""), body.get("password", ""))
+            if result.success:
+                self._json({"token": result.token, "user": {"username": result.user.username, "role": result.user.role}})
+            else:
+                self._json({"error": result.error}, 401)
+        elif path == "/api/auth/register":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            result = _auth.register(
+                body.get("username", ""), body.get("password", ""),
+                role=body.get("role", "operator"),
+            )
+            if result.success:
+                self._json({"registered": True})
+            else:
+                self._json({"error": result.error}, 400)
+        elif path == "/api/auth/me":
+            auth_header = self.headers.get("Authorization", "")
+            token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
+            if not _auth.is_enabled():
+                self._json({"username": "local", "role": "admin", "auth_enabled": False})
+            elif not token:
+                self._json({"error": "Not authenticated"}, 401)
+            else:
+                user = _auth.verify(token)
+                if user:
+                    self._json({"username": user.username, "role": user.role, "auth_enabled": True})
+                else:
+                    self._json({"error": "Invalid or expired token"}, 401)
         else:
             self._json({"error": "not found"}, 404)
 
