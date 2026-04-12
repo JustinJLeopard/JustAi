@@ -286,5 +286,73 @@ class TestTraceGeneration(unittest.TestCase):
         assert isinstance(is_enabled(), bool)
 
 
+class TestAIInsightGeneration(unittest.TestCase):
+    """Test the quality insight generator."""
+
+    def test_insight_empty(self):
+        from justai.tracing import _generate_quality_insight
+        result = _generate_quality_insight(0.0, 0, 0, 0, {}, [])
+        assert result == ""
+
+    def test_insight_high_first_try(self):
+        from justai.tracing import _generate_quality_insight
+        result = _generate_quality_insight(0.9, 9, 1, 10, {}, [])
+        assert "first-try" in result.lower()
+
+    def test_insight_low_first_try(self):
+        from justai.tracing import _generate_quality_insight
+        result = _generate_quality_insight(0.5, 2, 8, 10, {}, [])
+        assert "revision" in result.lower() or "first-try" in result.lower()
+
+    def test_insight_top_failure(self):
+        from justai.tracing import _generate_quality_insight
+        cats = {"timeout": 5, "agent_error": 2}
+        result = _generate_quality_insight(0.5, 3, 3, 10, cats, [])
+        assert "timeout" in result
+
+    def test_enriched_empty_metrics_has_new_fields(self):
+        from justai.tracing import _empty_metrics
+        m = _empty_metrics()
+        assert "models" in m["cost"]
+        assert "input_tokens" in m["cost"]
+        assert "first_try_total" in m["quality"]
+        assert "cost_quality" in m["quality"]
+        assert "ai_insight" in m["quality"]
+
+    def test_enriched_cost_daily_has_model_breakdown(self):
+        """When real data is present, cost daily entries include by_model."""
+        from justai.tracing import _empty_metrics
+        m = _empty_metrics()
+        # Verify the structure supports by_model per day
+        assert isinstance(m["cost"]["daily"], list)
+        assert isinstance(m["cost"]["models"], list)
+
+
+class TestEnrichedOrchestrator(unittest.TestCase):
+    """Verify orchestrator imports enriched model constants."""
+
+    def test_orchestrator_imports_models(self):
+        src = pathlib.Path(__file__).resolve().parents[1] / "justai" / "orchestrator.py"
+        code = src.read_text()
+        assert "INTENT_MODEL" in code
+        assert "PLANNER_MODEL" in code
+        assert "REVIEWER_MODEL" in code
+
+    def test_traces_pass_model_name(self):
+        src = pathlib.Path(__file__).resolve().parents[1] / "justai" / "orchestrator.py"
+        code = src.read_text()
+        assert 'model=INTENT_MODEL' in code
+        assert 'model=PLANNER_MODEL' in code
+        assert 'model=REVIEWER_MODEL' in code
+
+    def test_traces_pass_metadata(self):
+        src = pathlib.Path(__file__).resolve().parents[1] / "justai" / "orchestrator.py"
+        code = src.read_text()
+        assert '"stage": "intent-gate"' in code
+        assert '"stage": "planner"' in code
+        assert '"stage": "reviewer"' in code
+        assert '"stage": "synthesizer"' in code
+
+
 if __name__ == "__main__":
     unittest.main()

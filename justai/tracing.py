@@ -266,28 +266,60 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 
     # ── Cost aggregation ─────────────────────────────────────────────────
     daily_cost: dict[str, float] = {}
+    daily_cost_by_model: dict[str, dict[str, float]] = {}
+    daily_cost_by_stage: dict[str, dict[str, float]] = {}
+    daily_tokens: dict[str, dict[str, int]] = {}
     by_model: dict[str, float] = {}
     by_stage: dict[str, float] = {}
     cost_24h = 0.0
+    running_total = 0.0
+    input_tokens_total = 0
+    output_tokens_total = 0
 
     for t in recent:
         cost = t.get("total_cost") or 0.0
         day = _day_key(t.get("timestamp"))
         daily_cost[day] = daily_cost.get(day, 0.0) + cost
 
+        # Per-day model breakdown (for stacked bars)
+        model = (t.get("metadata") or {}).get("model", "unknown")
+        daily_cost_by_model.setdefault(day, {})
+        daily_cost_by_model[day][model] = daily_cost_by_model[day].get(model, 0.0) + cost
+        by_model[model] = by_model.get(model, 0.0) + cost
+
+        # Per-day stage breakdown
         stage = _stage_from_name(t.get("name", ""))
         if stage:
             by_stage[stage] = by_stage.get(stage, 0.0) + cost
+            daily_cost_by_stage.setdefault(day, {})
+            daily_cost_by_stage[day][stage] = daily_cost_by_stage[day].get(stage, 0.0) + cost
 
-        model = (t.get("metadata") or {}).get("model", "unknown")
-        by_model[model] = by_model.get(model, 0.0) + cost
+        # Token counts per day
+        tin = t.get("input_tokens") or 0
+        tout = t.get("output_tokens") or 0
+        daily_tokens.setdefault(day, {"input": 0, "output": 0})
+        daily_tokens[day]["input"] += tin
+        daily_tokens[day]["output"] += tout
+        input_tokens_total += tin
+        output_tokens_total += tout
 
         ts = t.get("timestamp")
         if ts and _parse_ts(ts) >= cutoff_24h:
             cost_24h += cost
 
-    cost_daily = [{"date": d, "total": round(v, 4)} for d, v in sorted(daily_cost.items())]
-    cost_total = round(sum(daily_cost.values()), 4)
+    cost_daily = []
+    for d in sorted(daily_cost):
+        running_total += daily_cost[d]
+        cost_daily.append({
+            "date": d,
+            "total": round(daily_cost[d], 4),
+            "running_total": round(running_total, 4),
+            "by_model": {k: round(v, 4) for k, v in daily_cost_by_model.get(d, {}).items()},
+            "by_stage": {k: round(v, 4) for k, v in daily_cost_by_stage.get(d, {}).items()},
+            "input_tokens": daily_tokens.get(d, {}).get("input", 0),
+            "output_tokens": daily_tokens.get(d, {}).get("output", 0),
+        })
+    cost_total = round(running_total, 4)
 
     # ── Latency aggregation ──────────────────────────────────────────────
     latencies: list[int] = []
@@ -328,34 +360,64 @@ def get_aggregated_metrics(days: int = 7) -> dict:
     # ── Quality aggregation ──────────────────────────────────────────────
     daily_quality: dict[str, dict[str, int]] = {}
     failure_cats: dict[str, int] = {}
+    cost_quality_pairs: list[dict] = []  # For cost-vs-quality scatter
 
     for t in recent:
         day = _day_key(t.get("timestamp"))
-        daily_quality.setdefault(day, {"total": 0, "success": 0, "failed": 0})
+        daily_quality.setdefault(day, {"total": 0, "success": 0, "failed": 0,
+                                        "first_try": 0, "retry": 0})
         daily_quality[day]["total"] += 1
 
         status = t.get("status", "")
+        meta = t.get("metadata") or {}
         if status == "error":
             daily_quality[day]["failed"] += 1
-            cat = (t.get("metadata") or {}).get("error_category", "unknown")
+            cat = meta.get("error_category", "unknown")
             failure_cats[cat] = failure_cats.get(cat, 0) + 1
         else:
             daily_quality[day]["success"] += 1
 
+        # Track first-try vs retry (from reviewer metadata)
+        first_try = meta.get("first_try")
+        if first_try is True:
+            daily_quality[day]["first_try"] += 1
+        elif first_try is False:
+            daily_quality[day]["retry"] += 1
+
+        # Cost-vs-quality data point
+        cost = t.get("total_cost") or 0.0
+        if cost > 0:
+            cost_quality_pairs.append({
+                "cost": round(cost, 4),
+                "success": 1 if status != "error" else 0,
+                "session_id": t.get("session_id", ""),
+            })
+
     total_runs = sum(dq["total"] for dq in daily_quality.values())
     total_success = sum(dq["success"] for dq in daily_quality.values())
+    total_first_try = sum(dq["first_try"] for dq in daily_quality.values())
+    total_retry = sum(dq["retry"] for dq in daily_quality.values())
     overall_rate = round(total_success / total_runs, 3) if total_runs > 0 else 0.0
 
     quality_daily = []
     for d in sorted(daily_quality):
         dq = daily_quality[d]
         rate = round(dq["success"] / dq["total"], 3) if dq["total"] > 0 else 0.0
-        quality_daily.append({"date": d, "total": dq["total"], "success": dq["success"],
-                              "failed": dq["failed"], "rate": rate})
+        quality_daily.append({
+            "date": d, "total": dq["total"], "success": dq["success"],
+            "failed": dq["failed"], "rate": rate,
+            "first_try": dq["first_try"], "retry": dq["retry"],
+        })
 
     # ── Build cost/latency trends (last 7 daily values) ──────────────────
     cost_trend = [e["total"] for e in cost_daily[-7:]]
     latency_trend = [e["avg_ms"] for e in latency_daily[-7:]]
+
+    # ── AI insight (heuristic — real AI call deferred to API layer) ────────
+    ai_insight = _generate_quality_insight(
+        overall_rate, total_first_try, total_retry, total_runs,
+        failure_cats, cost_quality_pairs,
+    )
 
     return {
         "cost": {
@@ -363,6 +425,9 @@ def get_aggregated_metrics(days: int = 7) -> dict:
             "total": cost_total,
             "by_model": {k: round(v, 4) for k, v in by_model.items()},
             "by_stage": {k: round(v, 4) for k, v in by_stage.items()},
+            "models": sorted(by_model.keys()),
+            "input_tokens": input_tokens_total,
+            "output_tokens": output_tokens_total,
         },
         "latency": {
             "daily": latency_daily,
@@ -375,6 +440,10 @@ def get_aggregated_metrics(days: int = 7) -> dict:
             "daily": quality_daily,
             "overall_rate": overall_rate,
             "failure_categories": failure_cats,
+            "first_try_total": total_first_try,
+            "retry_total": total_retry,
+            "cost_quality": cost_quality_pairs[:100],
+            "ai_insight": ai_insight,
         },
         "summary": {
             "cost_24h": round(cost_24h, 4),
@@ -383,6 +452,8 @@ def get_aggregated_metrics(days: int = 7) -> dict:
             "latency_trend": latency_trend,
             "p50": p50,
             "p90": p90,
+            "input_tokens": input_tokens_total,
+            "output_tokens": output_tokens_total,
         },
     }
 
@@ -390,13 +461,63 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 def _empty_metrics() -> dict:
     """Return zero-valued metrics structure."""
     return {
-        "cost": {"daily": [], "total": 0.0, "by_model": {}, "by_stage": {}},
+        "cost": {"daily": [], "total": 0.0, "by_model": {}, "by_stage": {},
+                 "models": [], "input_tokens": 0, "output_tokens": 0},
         "latency": {"daily": [], "p50": 0, "p90": 0, "p99": 0, "avg_ms": 0,
                      "bottleneck": "", "by_stage": {}},
-        "quality": {"daily": [], "overall_rate": 0.0, "failure_categories": {}},
+        "quality": {"daily": [], "overall_rate": 0.0, "failure_categories": {},
+                     "first_try_total": 0, "retry_total": 0,
+                     "cost_quality": [], "ai_insight": ""},
         "summary": {"cost_24h": 0.0, "cost_trend": [], "avg_latency_ms": 0,
-                     "latency_trend": [], "p50": 0, "p90": 0},
+                     "latency_trend": [], "p50": 0, "p90": 0,
+                     "input_tokens": 0, "output_tokens": 0},
     }
+
+
+def _generate_quality_insight(
+    overall_rate: float,
+    first_try: int,
+    retry: int,
+    total: int,
+    failure_cats: dict[str, int],
+    cost_quality: list[dict],
+) -> str:
+    """Generate a heuristic AI insight about quality trends."""
+    if total == 0:
+        return ""
+
+    parts = []
+
+    # First-try rate insight
+    if first_try + retry > 0:
+        ft_rate = first_try / (first_try + retry)
+        if ft_rate >= 0.8:
+            parts.append(f"Strong first-try success rate ({ft_rate:.0%}) — plans are well-formed.")
+        elif ft_rate >= 0.5:
+            parts.append(f"First-try rate is {ft_rate:.0%}. Consider adding clearer success criteria to goals.")
+        else:
+            parts.append(f"Low first-try rate ({ft_rate:.0%}) — plans frequently need revision.")
+
+    # Failure pattern insight
+    if failure_cats:
+        top_cat = max(failure_cats, key=failure_cats.get)  # type: ignore
+        top_count = failure_cats[top_cat]
+        if top_count >= 3:
+            parts.append(f"Most common failure: '{top_cat}' ({top_count} occurrences).")
+
+    # Cost-quality correlation
+    if len(cost_quality) >= 5:
+        successes = [p["cost"] for p in cost_quality if p["success"]]
+        failures = [p["cost"] for p in cost_quality if not p["success"]]
+        if successes and failures:
+            avg_s = sum(successes) / len(successes)
+            avg_f = sum(failures) / len(failures)
+            if avg_f > avg_s * 1.5:
+                parts.append("Failed runs cost significantly more than successful ones — early failure detection could save budget.")
+            elif avg_s > avg_f * 1.5:
+                parts.append("Higher-cost runs tend to succeed — the extra tokens may be paying for thoroughness.")
+
+    return " ".join(parts) if parts else "Insufficient data for insights."
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
