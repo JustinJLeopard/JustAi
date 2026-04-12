@@ -32,6 +32,7 @@ from justai.health import preflight
 from justai.memory import Memory
 from justai.tracing import get_aggregated_metrics
 from justai.trajectory import analyze_trajectory, get_patterns, get_audit_data
+from justai.discord import is_configured as discord_configured, notify as discord_notify
 
 
 API_PORT = int(os.environ.get("JUSTAI_API_PORT", "3002"))
@@ -202,6 +203,8 @@ class APIHandler(BaseHTTPRequestHandler):
             # /api/trajectory/<filename>/audit
             filename = path.replace("/api/trajectory/", "").replace("/audit", "")
             self._json(get_audit_data(filename))
+        elif path == "/api/discord/status":
+            self._json({"configured": discord_configured()})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -222,6 +225,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 session=body.get("session", ""),
             )
             self._json(result, 200 if result.get("started") else 409)
+        elif path == "/api/discord/test":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            msg = body.get("message", "Test notification from JustAi dashboard")
+            sent = discord_notify(msg, title="Test Notification")
+            self._json({"sent": sent, "configured": discord_configured()})
         else:
             self._json({"error": "not found"}, 404)
 
