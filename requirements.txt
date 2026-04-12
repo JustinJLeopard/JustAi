@@ -1,0 +1,8 @@
+# JustAi Python dependencies
+# Install: pip install -r requirements.txt
+
+# Observability (optional — tracing is no-op without LANGFUSE_* env vars)
+langfuse>=2.0
+
+# Testing
+pytest>=8.0

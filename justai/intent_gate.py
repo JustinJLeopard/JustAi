@@ -62,7 +62,7 @@ Respond with JSON only, no prose, no markdown fences:
 }
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
 INTENT_MODEL = os.environ.get("JUSTAI_INTENT_MODEL", "openai/claude-opus-4-6")
 
 

@@ -68,7 +68,7 @@ If approved, feedback and suggestions should be empty arrays.
 Be direct. One sentence per issue. Reference the task title.
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
 REVIEWER_MODEL = os.environ.get("JUSTAI_REVIEWER_MODEL", "openai/claude-opus-4-6")
 
 

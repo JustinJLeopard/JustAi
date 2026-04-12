@@ -2,80 +2,131 @@
 
 > **"The best code agent in the world was missing one thing. We built it."**
 
-JustAi is orchestration, memory, and control for the world-class, benchmark-leading
-mini-swe-agent. Built on research from Princeton & Stanford, powered by rUv's
-agent infrastructure.
+JustAi is orchestration, memory, and control for [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) — the world's highest-performing open-source coding agent at 74% SWE-bench Verified. Built on research from Princeton & Stanford, powered by [rUv's agent infrastructure](https://github.com/ruvnet/ruflo).
 
 ---
 
 ## What It Does
 
-JustAi gives mini-swe-agent — the world's highest-performing open-source agent at
-74% SWE-bench Verified — the planning, memory, human-in-the-loop control, and
-real-time visibility it was missing.
+Give JustAi a goal in plain English. It decomposes it into well-scoped tasks, delegates execution to mini-swe-agent via SpacetimeDB, persists all decisions in memory, and surfaces everything in real-time.
 
-- Takes a goal in plain English
-- Decomposes it into well-scoped tasks
-- Delegates execution to mini-swe-agent via SpacetimeDB
-- Persists all decisions and outcomes across sessions
-- Surfaces progress in real-time via Discord and a web dashboard
+```
+You                    JustAi                         mini-swe-agent
+ │                       │                                  │
+ │  "add /health         │                                  │
+ │   endpoint"           │                                  │
+ │ ─────────────────────►│  1. classify intent              │
+ │                       │  2. decompose into tasks         │
+ │                       │  3. review plan quality          │
+ │                       │  4. evaluate risk gates          │
+ │                       │  5. post to SpacetimeDB ────────►│
+ │                       │                                  │  execute bash
+ │                       │                                  │  write .traj.json
+ │                       │  6. collect results ◄────────────│
+ │  ◄────────────────────│  7. store in memory              │
+ │  "done — 1 task,      │                                  │
+ │   12s, /health added" │                                  │
+```
 
----
+## Install
+
+```bash
+git clone https://github.com/user/JustAi.git
+cd JustAi
+bash install.sh
+```
+
+The installer checks prerequisites (Python 3.12+, Node 20+), installs dependencies, creates `.env` from the template, and runs tests to verify.
+
+Run `bash install.sh --check` for preflight only (no changes).
 
 ## Quick Start
 
 ```bash
+# 1. Start the harness services
+source ~/.ruv_env && ~/ruv_start.sh
+
+# 2. Run a task
 cd ~/projects/JustAi
-bash scripts/start_justai.sh
+python3 -m justai.orchestrator "add a /health endpoint to server.py"
+
+# 3. Open the dashboard
+cd dashboard && npm run dev
+# → http://localhost:3001
 ```
 
-## CLI Commands
+## Dashboard
+
+Four views, all real-time:
+
+| View | What it shows |
+|------|---------------|
+| **Mission Control** | Agent status, system health, active pipeline |
+| **Task Board** | 5-column Kanban (pending → done) |
+| **Trajectory Viewer** | Step-by-step replay of any agent run |
+| **Memory Browser** | Browse, search, store claude-flow memory |
+
+## CLI
 
 ```bash
-python3 tools/justai_cli.py status
-python3 tools/justai_cli.py start
-python3 tools/justai_cli.py health
-python3 tools/justai_cli.py task "your task description"
-python3 tools/justai_cli.py mini "summarize the workspace"
-python3 tools/justai_cli.py relay status
+python3 tools/justai_cli.py status     # service health
+python3 tools/justai_cli.py start      # start all services
+python3 tools/justai_cli.py health     # detailed health check
+python3 tools/justai_cli.py task "..."  # post a task
+python3 tools/justai_cli.py mini "..."  # run mini-swe-agent directly
+python3 tools/justai_cli.py relay status  # relay task system status
 ```
 
-## Environment Variables
+## Architecture
+
+```
+Orchestrator (Python)  ──►  LiteLLM (:4000)  ──►  Model APIs
+       │
+       ▼
+SpacetimeDB (:3000)   ◄──►  mini-swe-agent (bash execution)
+       │
+       ▼
+claude-flow MCP (:3100)     Dashboard (:3001)
+264 tools, HNSW memory      React + Vite, 4 views
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram.
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in your API keys:
+
+```bash
+cp .env.example .env
+```
+
+Key variables:
 
 | Variable | Default | Purpose |
-|---|---|---|
-| `JUSTAI_ROOT` | auto-detected | Repo root |
-| `JUSTAI_LOCALMANUS_ROOT` | `$JUSTAI_ROOT/LocalManus` | LocalManus runtime |
-| `JUSTAI_RELAY_ROOT` | `$JUSTAI_ROOT/relay-room` | Relay task system |
-| `JUSTAI_SPACETIME_SESSION` | `spacetime` | SpacetimeDB tmux session |
-| `JUSTAI_RELAY_SERVER` | `local-server` | SpacetimeDB server |
+|----------|---------|---------|
+| `LITELLM_BASE_URL` | `http://localhost:4000` | Model routing proxy |
+| `LITELLM_KEY` | `sk-justai` | LiteLLM auth token |
+| `JUSTAI_MCP_URL` | `http://127.0.0.1:3100` | Memory MCP server |
+| `LANGFUSE_PUBLIC_KEY` | *(optional)* | LLM tracing |
+| `LANGFUSE_SECRET_KEY` | *(optional)* | LLM tracing |
 
----
+## Testing
+
+```bash
+python3 -m pytest tests/ -v
+# 49+ tests, all run offline (mocked LLM + MCP calls)
+```
 
 ## Built On
 
-JustAi stands on the shoulders of giants:
+- **[mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)** — Princeton & Stanford. 74% SWE-bench Verified. MIT License.
+- **[Ruflo / claude-flow](https://github.com/ruvnet/ruflo)** — rUv. 6,000+ commit orchestration platform. MIT License.
+- **[SpacetimeDB](https://spacetimedb.com)** — Clockwork Labs. Real-time distributed database. BSL License.
+- **[LiteLLM](https://github.com/BerriAI/litellm)** — BerriAI. Model routing. MIT License.
+- **[LangFuse](https://langfuse.com)** — LLM observability. MIT License.
 
-- **mini-swe-agent** by the SWE-agent team at Princeton & Stanford University
-  (https://github.com/SWE-agent/mini-swe-agent) — MIT License
-  74% SWE-bench Verified. The world's best open-source agent.
-
-- **Ruflo / claude-flow / SAFLA / agentic-flow** by rUv (Reuven Cohen)
-  (https://github.com/ruvnet) — MIT License
-  6,000+ commit agent orchestration infrastructure. Used by Meta, NVIDIA, IBM.
-
-- **SpacetimeDB** by Clockwork Labs (https://spacetimedb.com) — BSL License
-  Real-time distributed database powering our task backbone.
-
-- **LiteLLM** by BerriAI (https://github.com/BerriAI/litellm) — MIT License
-  Model routing and fallback chain.
-
-- **LangFuse** (https://langfuse.com) — MIT License
-  LLM observability and cost tracking.
+See [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) for the complete credits.
 
 ---
 
-## Status
-
-v1 in active development. See [docs/JUSTAI_V1_SPEC.md](docs/JUSTAI_V1_SPEC.md)
-for the full product specification.
+**Status:** v1 in active development. See [docs/JUSTAI_V1_SPEC.md](docs/JUSTAI_V1_SPEC.md) for the full specification.

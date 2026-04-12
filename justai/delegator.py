@@ -53,35 +53,61 @@ def _relay(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     )
 
 
+def _sanitize_payload(text: str) -> str:
+    """Sanitize text for relay CLI -> spacetime call pipeline.
+
+    The relay CLI passes payload as a positional arg to 'spacetime call',
+    which parses it as JSON. Inner double quotes and backslashes break
+    the parser. Replace them with safe alternatives.
+    """
+    return (
+        text
+        .replace('\\', '/')       # backslashes → forward slashes
+        .replace('"', "'")         # double quotes → single quotes
+        .replace('`', "'")         # backticks → single quotes
+        .replace('$', '')          # strip shell vars
+    )
+
+
 def _post_task(task: Task, session_ref: str = "") -> str | None:
     """Post a task to SpacetimeDB. Returns task_id or None on failure."""
-    args = ["post", task.description, "--to", AGENT]
+    args = [
+        "post",
+        "--from", "justai-orchestrator",
+        "--to", AGENT,
+        "--title", _sanitize_payload((task.title or task.description[:60])[:80]),
+        "--payload", _sanitize_payload(task.description),
+    ]
     if session_ref:
         args += ["--session", session_ref]
-    if task.title:
-        args += ["--title", task.title[:80]]
 
     result = _relay(*args)
     if result.returncode != 0:
         print(f"[delegator] post failed: {result.stderr[:200]}")
         return None
 
-    # Extract task ID from output — relay post prints "Posted task #N"
+    # Extract task ID from relay output.
+    # relay v2 prints: "posted task_uuid=<uuid>"
+    # relay v1 printed: "Posted task #N"
     for line in result.stdout.splitlines():
+        if "task_uuid=" in line:
+            uuid = line.split("task_uuid=")[1].strip()
+            if uuid:
+                return uuid
         if "task" in line.lower() and "#" in line:
             parts = line.split("#")
             if len(parts) > 1:
                 tid = parts[1].strip().split()[0].strip()
-                if tid.isdigit():
+                if tid:
                     return tid
 
-    print(f"[delegator] could not parse task ID from: {result.stdout[:100]}")
+    print(f"[delegator] could not parse task ID from: {result.stdout[:200]}")
     return None
 
 
 def _get_task_status(task_id: str) -> dict | None:
     """Get current task status via relay show --json."""
-    result = _relay("show", task_id, "--json")
+    result = _relay("show", str(task_id), "--json")
     if result.returncode != 0:
         return None
     try:

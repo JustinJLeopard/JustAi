@@ -106,7 +106,7 @@ as a complete, unambiguous instruction. Include file paths, expected behavior,
 and how to verify. Do not leave any decisions to mini.
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
 PLANNER_MODEL = os.environ.get("JUSTAI_PLANNER_MODEL", "openai/claude-opus-4-6")
 
 
