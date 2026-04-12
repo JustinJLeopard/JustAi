@@ -36,6 +36,8 @@ from justai.synthesizer import synthesize, format_summary
 from justai.memory import Memory
 from justai.tracing import trace_generation, trace_event, flush_traces
 from justai.health import preflight, print_preflight
+from justai.ledger import Ledger
+from justai.discord import OrchestratorHook
 
 MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
@@ -55,6 +57,7 @@ class OrchestrationResult:
 
 # Shared memory client — talks to MCP HTTP at :3100 (~5ms vs ~300ms CLI)
 _memory = Memory()
+_ledger = Ledger()
 
 
 def _store_memory(key: str, value: str) -> None:
@@ -115,7 +118,11 @@ def run(
         local: If True, execute tasks locally instead of delegating to agent.
     """
     start = time.time()
+    run_id = f"{session_ref}-{int(start)}"
     _print_header(goal, auto=auto)
+
+    # Discord notifications (no-op if webhook not configured)
+    _hook = OrchestratorHook(run_id=run_id)
 
     # Export auto mode so checkpoint.py can read it
     if auto:
@@ -145,6 +152,8 @@ def run(
         _t1.end(output_text=f"{intent_result.intent.value} ({intent_result.confidence:.2f})",
                 metadata={"classification": intent_result.intent.value,
                            "confidence": intent_result.confidence})
+    _hook.on_stage("intent-gate", f"{intent_result.intent.value} ({intent_result.confidence:.2f})")
+    _ledger.record(run_id=run_id, agent=session_ref, model=INTENT_MODEL, stage="intent-gate")
     print(f"      Intent: {intent_result.intent.value} (confidence: {intent_result.confidence:.2f})")
     print(f"      Reason: {intent_result.reasoning}")
 
@@ -169,6 +178,8 @@ def run(
         plan: Plan = decompose(goal, session_ref=session_ref, context=extra_context)
         _t2.end(output_text=f"{len(plan.tasks)} tasks: {', '.join(t.title for t in plan.tasks[:5])}",
                 metadata={"task_count": len(plan.tasks)})
+    _hook.on_stage("planner", f"{len(plan.tasks)} tasks generated")
+    _ledger.record(run_id=run_id, agent=session_ref, model=PLANNER_MODEL, stage="planner")
     print(f"      {len(plan.tasks)} task(s) generated")
     print()
     print(format_plan(plan))
@@ -196,6 +207,8 @@ def run(
             _t3.end(output_text=f"rejected after {attempts} attempts", level="WARNING",
                     metadata={"verdict": "rejected", "attempts": attempts,
                                "issues": review_result.feedback[:5]})
+            _hook.on_error("Plan rejected after replanning", stage="reviewer",
+                          root_cause="; ".join(review_result.feedback[:3]))
             print("      Plan could not be approved after replanning. Review manually.")
             for issue in review_result.feedback:
                 print(f"        ! {issue}")
@@ -209,6 +222,8 @@ def run(
         _t3.end(output_text=f"approved (attempts: {attempts + 1})",
                 metadata={"verdict": "approved", "attempts": attempts + 1,
                            "first_try": attempts == 0})
+    _hook.on_stage("reviewer", f"approved (attempts: {attempts + 1})")
+    _ledger.record(run_id=run_id, agent=session_ref, model=REVIEWER_MODEL, stage="reviewer")
     print("      Plan approved ✓")
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
@@ -261,6 +276,8 @@ def run(
         _t5.end(output_text=f"{done_count}/{len(results)} done",
                 metadata={"done": done_count, "failed": failed_count,
                            "total": len(results)})
+    _hook.on_stage(stage5_name, f"{done_count}/{len(results)} done")
+    _ledger.record(run_id=run_id, agent=session_ref, stage=stage5_name)
 
     # ── Synthesize ────────────────────────────────────────────────────────────
     duration = time.time() - start
@@ -280,6 +297,13 @@ def run(
                 metadata={"status": summary.status, "done": summary.done,
                            "failed": summary.failed, "total": summary.total_tasks,
                            "duration_s": round(duration, 2)})
+    _ledger.record(run_id=run_id, agent=session_ref, stage="synthesizer",
+                   duration_s=round(duration, 2))
+    _hook.on_complete({
+        "goal": goal, "status": summary.status,
+        "done": summary.done, "total": summary.total_tasks,
+        "failed": summary.failed, "duration": duration,
+    })
     print(format_summary(summary))
 
     flush_traces()

@@ -10,6 +10,8 @@ import { MemoryBrowser } from '@/views/MemoryBrowser'
 import { RunHistory } from '@/views/RunHistory'
 import AgentRegistry from '@/views/AgentRegistry'
 import { Observability } from '@/views/Observability'
+import { LoginPage } from '@/components/LoginPage'
+import { checkAuth, type AuthState } from '@/lib/auth'
 
 const EMPTY_DATA: LiveData = {
   tasks: [], agents: [], events: [],
@@ -44,16 +46,27 @@ export default function App() {
   const [view, setView] = useState<View>('mission-control')
   const [data, setData] = useState<LiveData>(EMPTY_DATA)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [auth, setAuth] = useState<AuthState | null>(null)
+
+  // Check auth on mount
+  useEffect(() => {
+    checkAuth().then(setAuth)
+  }, [])
+
+  const handleLogin = useCallback(() => {
+    checkAuth().then(setAuth)
+  }, [])
 
   const handleData = useCallback((incoming: LiveData) => {
     setData(incoming)
   }, [])
 
   useEffect(() => {
+    if (auth && !auth.authenticated) return // Don't poll if not authenticated
     const client = new SpacetimeClient(handleData)
     client.start()
     return () => client.stop()
-  }, [handleData])
+  }, [handleData, auth])
 
   const handleNavigate = useCallback((v: View) => {
     setView(v)
@@ -78,6 +91,16 @@ export default function App() {
   Object.keys(counts).forEach(k => {
     if (counts[k as View] === undefined) delete counts[k as View]
   })
+
+  // Auth loading state
+  if (auth === null) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)', color: 'var(--text-muted)', fontSize: 13 }}>Loading...</div>
+  }
+
+  // Login gate (only when auth is enabled and user is not authenticated)
+  if (auth.authEnabled && !auth.authenticated) {
+    return <LoginPage onLogin={handleLogin} />
+  }
 
   return (
     <div
