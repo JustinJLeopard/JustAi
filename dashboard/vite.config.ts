@@ -77,6 +77,23 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api\/memory/, ''),
       },
+      // Proxy orchestrator API endpoints
+      '/api/health': {
+        target: 'http://127.0.0.1:3002',
+        changeOrigin: true,
+      },
+      '/api/runs': {
+        target: 'http://127.0.0.1:3002',
+        changeOrigin: true,
+      },
+      '/api/config': {
+        target: 'http://127.0.0.1:3002',
+        changeOrigin: true,
+      },
+      '/api/run': {
+        target: 'http://127.0.0.1:3002',
+        changeOrigin: true,
+      },
     },
   },
 })

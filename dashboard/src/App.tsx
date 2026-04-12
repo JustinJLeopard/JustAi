@@ -4,12 +4,14 @@ import { MissionControl } from '@/views/MissionControl'
 import { TaskBoard } from '@/views/TaskBoard'
 import { TrajectoryViewer } from '@/views/TrajectoryViewer'
 import { MemoryBrowser } from '@/views/MemoryBrowser'
+import { RunHistory } from '@/views/RunHistory'
 
-type View = 'mission-control' | 'task-board' | 'trajectories' | 'memory'
+type View = 'mission-control' | 'task-board' | 'runs' | 'trajectories' | 'memory'
 
 const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: 'mission-control', label: 'Mission Control', icon: '⬡' },
   { id: 'task-board',      label: 'Task Board',      icon: '⊞' },
+  { id: 'runs',            label: 'Runs',             icon: '▶' },
   { id: 'trajectories',    label: 'Trajectories',    icon: '⇥' },
   { id: 'memory',          label: 'Memory',           icon: '⧫' },
 ]
