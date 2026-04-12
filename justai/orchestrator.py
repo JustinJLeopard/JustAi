@@ -31,6 +31,8 @@ from justai.planner import decompose, Plan, format_plan
 from justai.reviewer import review, ReviewResult
 from justai.checkpoint import evaluate
 from justai.delegator import delegate_plan, DelegationResult
+from justai.executor import execute_plan, ExecResult
+from justai.synthesizer import synthesize, format_summary
 from justai.memory import Memory
 from justai.tracing import trace_generation, trace_event, flush_traces
 from justai.health import preflight, print_preflight
@@ -38,6 +40,7 @@ from justai.health import preflight, print_preflight
 MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
 AUTO_MODE = os.environ.get("JUSTAI_AUTO_MODE", "").lower() in ("1", "true", "yes")
+LOCAL_EXEC = os.environ.get("JUSTAI_LOCAL_EXEC", "").lower() in ("1", "true", "yes")
 
 
 @dataclass
@@ -100,6 +103,7 @@ def run(
     goal: str,
     session_ref: str = SESSION_REF,
     auto: bool = AUTO_MODE,
+    local: bool = LOCAL_EXEC,
 ) -> OrchestrationResult:
     """
     Full orchestration pipeline for a given goal.
@@ -108,6 +112,7 @@ def run(
         goal: The task to accomplish.
         session_ref: Session identifier for tracing and memory.
         auto: If True, R1 checkpoints auto-approve immediately (no 60s wait).
+        local: If True, execute tasks locally instead of delegating to agent.
     """
     start = time.time()
     _print_header(goal, auto=auto)
@@ -211,65 +216,64 @@ def run(
             status="blocked",
         )
 
-    # ── Stage 5: Delegate + Monitor ───────────────────────────────────────────
-    print(f"\n[5/5] Delegating {len(approved_tasks)} task(s) to agents...")
-    results = delegate_plan(approved_tasks, session_ref=session_ref)
+    # ── Stage 5: Execute / Delegate ──────────────────────────────────────────
+    if local:
+        print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
+        exec_results = execute_plan(approved_tasks)
+        # Convert ExecResult to DelegationResult for compatibility
+        results = []
+        for er in exec_results:
+            results.append(DelegationResult(
+                task_id=er.task_id, title=er.title,
+                status=er.status, result=er.result,
+                duration_seconds=er.duration_seconds,
+            ))
+    else:
+        print(f"\n[5/5] Delegating {len(approved_tasks)} task(s) to agents...")
+        results = delegate_plan(approved_tasks, session_ref=session_ref)
 
     # ── Synthesize ────────────────────────────────────────────────────────────
-    done = sum(1 for r in results if r.status == "done")
-    failed = sum(1 for r in results if r.status == "failed")
-    total = len(results)
     duration = time.time() - start
-    overall_status = "complete" if failed == 0 else "partial"
-
-    print()
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║  Results                                             ║")
-    print("╠══════════════════════════════════════════════════════╣")
-    for r in results:
-        icon = "✔" if r.status == "done" else "✖"
-        print(f"║  {icon} [{r.task_id}] {r.title[:40]:<40}  ║")
-    print("╠══════════════════════════════════════════════════════╣")
-    print(f"║  {done}/{total} tasks completed in {duration:.0f}s{'':<25}  ║")
-    print("╚══════════════════════════════════════════════════════╝")
-
-    # Store run result + session context
-    summary = (
-        f"goal={goal[:80]} | intent={intent_result.intent.value} | "
-        f"tasks={total} | done={done} | failed={failed} | "
-        f"duration={duration:.0f}s | session={session_ref}"
+    summary = synthesize(
+        goal=goal,
+        intent=intent_result.intent.value,
+        results=results,
+        session_ref=session_ref,
+        duration=duration,
     )
-    _store_memory(f"justai/runs/{session_ref}-{int(time.time())}", summary)
-    _save_session_context(session_ref, summary)
+    print(format_summary(summary))
 
     flush_traces()
     return OrchestrationResult(
         goal=goal,
         intent=intent_result.intent.value,
-        task_count=total,
+        task_count=summary.total_tasks,
         results=results,
         duration_seconds=duration,
-        status=overall_status,
+        status=summary.status,
     )
 
 
-def _parse_args(argv: list[str]) -> tuple[str, bool]:
-    """Parse CLI args. Returns (goal, auto_mode)."""
+def _parse_args(argv: list[str]) -> tuple[str, bool, bool]:
+    """Parse CLI args. Returns (goal, auto_mode, local_mode)."""
     auto = False
+    local = False
     remaining = []
     for arg in argv:
         if arg == "--auto":
             auto = True
+        elif arg == "--local":
+            local = True
         else:
             remaining.append(arg)
     goal = " ".join(remaining)
-    return goal, auto
+    return goal, auto, local
 
 
 if __name__ == "__main__":
-    goal, auto_flag = _parse_args(sys.argv[1:])
+    goal, auto_flag, local_flag = _parse_args(sys.argv[1:])
     if not goal:
-        print("Usage: python3 -m justai.orchestrator [--auto] \"your goal here\"")
+        print("Usage: python3 -m justai.orchestrator [--auto] [--local] \"your goal here\"")
         sys.exit(1)
-    result = run(goal, auto=auto_flag or AUTO_MODE)
+    result = run(goal, auto=auto_flag or AUTO_MODE, local=local_flag or LOCAL_EXEC)
     sys.exit(0 if result.status in ("complete", "ambiguous") else 1)

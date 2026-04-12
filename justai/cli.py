@@ -34,7 +34,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Usage: justai run \"your goal here\"")
         return 1
 
-    result = run(goal, session_ref=args.session, auto=args.auto)
+    result = run(goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False))
     return 0 if result.status in ("complete", "ambiguous") else 1
 
 
@@ -129,6 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("goal", nargs="*", help="The goal to accomplish")
     p_run.add_argument("--auto", action="store_true",
                        help="Auto-approve R1 checkpoints (no 60s wait)")
+    p_run.add_argument("--local", action="store_true",
+                       help="Execute tasks locally instead of delegating to agent")
     p_run.add_argument("--session", default="",
                        help="Session reference for tracing")
     p_run.set_defaults(func=cmd_run)

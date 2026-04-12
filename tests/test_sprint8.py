@@ -119,7 +119,7 @@ class TestCLICommands(unittest.TestCase):
         args = argparse.Namespace(goal=["test", "goal"], auto=True, session="test-8")
         with patch("justai.orchestrator.run", return_value=mock_result) as mock_run:
             result = cmd_run(args)
-        mock_run.assert_called_once_with("test goal", session_ref="test-8", auto=True)
+        mock_run.assert_called_once_with("test goal", session_ref="test-8", auto=True, local=False)
         self.assertEqual(result, 0)
 
     def test_cmd_plan_calls_decompose(self):
