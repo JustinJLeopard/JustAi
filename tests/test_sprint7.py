@@ -246,25 +246,25 @@ class TestOrchestratorCLIParsing(unittest.TestCase):
 
     def test_parse_args_basic(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args(["hello", "world"])
+        goal, auto, local, _swarm = _parse_args(["hello", "world"])
         self.assertEqual(goal, "hello world")
         self.assertFalse(auto)
 
     def test_parse_args_auto_flag(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args(["--auto", "do", "something"])
+        goal, auto, local, _swarm = _parse_args(["--auto", "do", "something"])
         self.assertEqual(goal, "do something")
         self.assertTrue(auto)
 
     def test_parse_args_auto_at_end(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args(["do", "something", "--auto"])
+        goal, auto, local, _swarm = _parse_args(["do", "something", "--auto"])
         self.assertEqual(goal, "do something")
         self.assertTrue(auto)
 
     def test_parse_args_empty(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args([])
+        goal, auto, local, _swarm = _parse_args([])
         self.assertEqual(goal, "")
         self.assertFalse(auto)
 
