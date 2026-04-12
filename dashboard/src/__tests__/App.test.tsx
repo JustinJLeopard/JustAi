@@ -1,18 +1,35 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import App from '../App'
 
+// Mock auth to bypass login gate
+vi.mock('../lib/auth', () => ({
+  checkAuth: vi.fn().mockResolvedValue({
+    authenticated: true,
+    user: { username: 'local', role: 'admin' },
+    authEnabled: false,
+  }),
+  getToken: vi.fn().mockReturnValue(null),
+  setToken: vi.fn(),
+  clearToken: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
+}))
+
 describe('App', () => {
-  it('renders the sidebar with grouped navigation', () => {
+  it('renders the sidebar with grouped navigation', async () => {
     render(<App />)
-    expect(screen.getByText('Operations')).toBeInTheDocument()
-    expect(screen.getByText('Intelligence')).toBeInTheDocument()
-    // 'System' may appear in multiple places (sidebar group label + MissionControl); just check at least one exists
-    expect(screen.getAllByText('System').length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getByText('Operations')).toBeInTheDocument()
+      expect(screen.getByText('Intelligence')).toBeInTheDocument()
+      expect(screen.getAllByText('System').length).toBeGreaterThan(0)
+    })
   })
 
-  it('renders JUSTAI logo', () => {
+  it('renders JUSTAI logo', async () => {
     render(<App />)
-    expect(screen.getByText('JUSTAI')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('JUSTAI')).toBeInTheDocument()
+    })
   })
 })
