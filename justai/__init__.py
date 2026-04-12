@@ -8,7 +8,7 @@ regardless of whether source ~/.ruv_env was run first.
 """
 from __future__ import annotations
 
-__version__ = "0.8.0"
+__version__ = "1.0.0"
 
 import os
 from pathlib import Path

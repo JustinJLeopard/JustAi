@@ -53,7 +53,7 @@ class TestAPIEndpoints(unittest.TestCase):
         result = _get_config()
         self.assertIsInstance(result, dict)
         self.assertIn("version", result)
-        self.assertEqual(result["version"], "0.8.0")
+        self.assertEqual(result["version"], "1.0.0")
 
     def test_get_config_has_required_fields(self):
         from justai.api import _get_config

@@ -79,7 +79,7 @@ def _get_runs(limit: int = 20) -> list[dict]:
 
 def _get_config() -> dict:
     return {
-        "version": "0.8.0",
+        "version": "1.0.0",
         "session_ref": os.environ.get("JUSTAI_SESSION_REF", ""),
         "auto_mode": os.environ.get("JUSTAI_AUTO_MODE", "") in ("1", "true"),
         "litellm_url": os.environ.get("LITELLM_BASE_URL", "http://localhost:4000"),
