@@ -20,3 +20,24 @@ relay-room/tests/__pycache__/
 
 /tmp/
 .worktrees/
+
+# Tool/plugin configs (per-machine, not project)
+.codex
+.playwright-mcp/
+.serena/
+.superpowers/
+.swarm/
+.vscode/
+
+# Node
+node_modules/
+
+# Runtime databases
+data/*.db
+
+# Coverage
+.coverage
+htmlcov/
+
+# Dashboard screenshots (kept locally, not in repo)
+dashboard-*.png
