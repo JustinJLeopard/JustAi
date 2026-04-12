@@ -1,0 +1,104 @@
+{
+  "tier": 1,
+  "max_agents": 15,
+  "agents_spawned": 15,
+  "tasks": 15,
+  "duration_seconds": 0.05,
+  "spawn_duration": 0.015,
+  "dispatch_duration": 0.001,
+  "shutdown_duration": 0.012,
+  "results": [
+    {
+      "idx": 0,
+      "status": "done",
+      "agent": "agent-1776034681069-6ql6gz",
+      "dur": 0.0
+    },
+    {
+      "idx": 1,
+      "status": "done",
+      "agent": "agent-1776034681070-2m6rjl",
+      "dur": 0.0
+    },
+    {
+      "idx": 2,
+      "status": "done",
+      "agent": "agent-1776034681071-gzpit1",
+      "dur": 0.0
+    },
+    {
+      "idx": 3,
+      "status": "done",
+      "agent": "agent-1776034681072-8tfyhc",
+      "dur": 0.0
+    },
+    {
+      "idx": 4,
+      "status": "done",
+      "agent": "agent-1776034681073-mkuock",
+      "dur": 0.0
+    },
+    {
+      "idx": 5,
+      "status": "done",
+      "agent": "agent-1776034681074-cecost",
+      "dur": 0.0
+    },
+    {
+      "idx": 6,
+      "status": "done",
+      "agent": "agent-1776034681075-k5e5tl",
+      "dur": 0.0
+    },
+    {
+      "idx": 7,
+      "status": "done",
+      "agent": "agent-1776034681076-xwzis4",
+      "dur": 0.0
+    },
+    {
+      "idx": 8,
+      "status": "done",
+      "agent": "agent-1776034681077-ucchui",
+      "dur": 0.0
+    },
+    {
+      "idx": 9,
+      "status": "done",
+      "agent": "agent-1776034681078-wsx75e",
+      "dur": 0.0
+    },
+    {
+      "idx": 10,
+      "status": "done",
+      "agent": "agent-1776034681079-qgm35x",
+      "dur": 0.0
+    },
+    {
+      "idx": 11,
+      "status": "done",
+      "agent": "agent-1776034681080-1dwaeo",
+      "dur": 0.0
+    },
+    {
+      "idx": 12,
+      "status": "done",
+      "agent": "agent-1776034681081-8oo2xy",
+      "dur": 0.0
+    },
+    {
+      "idx": 13,
+      "status": "done",
+      "agent": "agent-1776034681082-wyo860",
+      "dur": 0.0
+    },
+    {
+      "idx": 14,
+      "status": "done",
+      "agent": "agent-1776034681082-4k74em",
+      "dur": 0.0
+    }
+  ],
+  "success_rate": 1.0,
+  "timestamp": "2026-04-12T18:58:01"
+}

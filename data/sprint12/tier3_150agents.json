@@ -1,0 +1,12 @@
+{
+  "tier": 3,
+  "max_agents": 150,
+  "agents_spawned": 150,
+  "tasks": 150,
+  "duration_seconds": 0.412,
+  "spawn_duration": 0.191,
+  "dispatch_duration": 0.001,
+  "shutdown_duration": 0.198,
+  "success_rate": 1.0,
+  "timestamp": "2026-04-12T18:58:30"
+}
