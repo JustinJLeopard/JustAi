@@ -182,7 +182,7 @@ class TestPyprojectToml(unittest.TestCase):
     def test_pyproject_has_version(self):
         pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
         content = pyproject.read_text()
-        self.assertIn('version = "0.8.0"', content)
+        self.assertIn('version = "1.0.0"', content)
 
     def test_pyproject_python_requires(self):
         pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
