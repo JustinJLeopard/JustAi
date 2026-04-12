@@ -89,23 +89,49 @@ export function MemoryBrowser() {
     }
   }
 
+  // Collect known namespaces for tab filter
+  const knownNamespaces = stats?.namespaces?.length
+    ? stats.namespaces
+    : ['justai']
+
+  const inputStyle = {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--r-sm)',
+    color: 'var(--text-primary)',
+    outline: 'none',
+    fontFamily: 'var(--font-sans)',
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: 'calc(100vh - 120px)' }}>
 
+      {/* Page Header */}
+      <div>
+        <div style={{ fontSize: '22px', fontWeight: 200, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+          Memory
+        </div>
+        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+          {connected ? 'MCP :3100 connected' : 'Disconnected'}
+        </div>
+      </div>
+
       {/* Top Bar: Health + Stats + Actions */}
       <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
-        borderRadius: '10px', padding: '14px 20px',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--r-md)',
+        padding: '14px 20px',
         display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap',
       }}>
         {/* Health indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{
             width: '8px', height: '8px', borderRadius: '50%',
-            background: connected ? 'var(--accent-green)' : 'var(--accent-red)',
-            boxShadow: connected ? '0 0 6px var(--accent-green)' : 'none',
+            background: connected ? 'var(--emerald-400)' : 'var(--red-500)',
+            boxShadow: connected ? '0 0 6px var(--emerald-glow)' : 'none',
           }} />
-          <span style={{ fontSize: '12px', color: connected ? 'var(--text-secondary)' : 'var(--accent-red)' }}>
+          <span style={{ fontSize: '12px', color: connected ? 'var(--text-secondary)' : 'var(--red-500)' }}>
             {connected ? 'MCP :3100' : 'Disconnected'}
           </span>
         </div>
@@ -118,16 +144,15 @@ export function MemoryBrowser() {
           </>
         )}
 
-        {/* Namespace selector */}
+        {/* Namespace input */}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>NS:</label>
+          <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>NS:</label>
           <input
             value={namespace}
             onChange={e => setNamespace(e.target.value)}
             style={{
+              ...inputStyle,
               width: '100px', padding: '4px 8px', fontSize: '12px',
-              background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderRadius: '4px', color: 'var(--text-primary)',
             }}
           />
         </div>
@@ -136,8 +161,11 @@ export function MemoryBrowser() {
           onClick={() => setShowStore(!showStore)}
           style={{
             padding: '5px 12px', fontSize: '12px', fontWeight: 500,
-            background: 'var(--accent-blue)', color: '#fff',
-            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            background: 'rgba(244,63,94,0.1)',
+            color: 'var(--rose-400)',
+            border: '1px solid rgba(244,63,94,0.2)',
+            borderRadius: 'var(--r-sm)', cursor: 'pointer',
+            transition: 'opacity var(--t-fast)',
           }}
         >
           + Store
@@ -147,44 +175,67 @@ export function MemoryBrowser() {
           onClick={refresh}
           style={{
             padding: '5px 12px', fontSize: '12px',
-            background: 'transparent', color: 'var(--text-muted)',
-            border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer',
+            background: 'transparent', color: 'var(--text-secondary)',
+            border: '1px solid var(--border-default)', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+            transition: 'border-color var(--t-fast)',
           }}
         >
           Refresh
         </button>
       </div>
 
+      {/* Namespace Filter Tabs */}
+      <div style={{ display: 'flex', gap: '4px' }}>
+        {knownNamespaces.map(ns => (
+          <button
+            key={ns}
+            onClick={() => setNamespace(ns)}
+            style={{
+              padding: '4px 12px', fontSize: '12px',
+              background: namespace === ns ? 'var(--bg-elevated)' : 'transparent',
+              color: namespace === ns ? 'var(--text-primary)' : 'var(--text-secondary)',
+              border: `1px solid ${namespace === ns ? 'var(--border-default)' : 'var(--border-subtle)'}`,
+              borderRadius: 'var(--r-sm)', cursor: 'pointer',
+              transition: 'all var(--t-fast)',
+            }}
+          >
+            {ns}
+          </button>
+        ))}
+      </div>
+
       {/* Store Form (collapsible) */}
       {showStore && (
         <div style={{
-          background: 'var(--bg-card)', border: '1px solid var(--accent-blue)',
-          borderRadius: '10px', padding: '14px 20px',
+          background: 'var(--bg-surface)',
+          border: '1px solid rgba(244,63,94,0.2)',
+          borderRadius: 'var(--r-md)',
+          padding: '14px 20px',
           display: 'flex', gap: '10px', alignItems: 'flex-end',
         }}>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Key</label>
+            <label style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Key</label>
             <input
               value={storeKey}
               onChange={e => setStoreKey(e.target.value)}
               placeholder="justai/my-key"
               style={{
+                ...inputStyle,
                 width: '100%', padding: '6px 8px', fontSize: '12px', marginTop: '4px',
-                background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                borderRadius: '4px', color: 'var(--text-primary)',
+                display: 'block',
               }}
             />
           </div>
           <div style={{ flex: 2 }}>
-            <label style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value</label>
+            <label style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Value</label>
             <input
               value={storeValue}
               onChange={e => setStoreValue(e.target.value)}
               placeholder="Value to store..."
               style={{
+                ...inputStyle,
                 width: '100%', padding: '6px 8px', fontSize: '12px', marginTop: '4px',
-                background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                borderRadius: '4px', color: 'var(--text-primary)',
+                display: 'block',
               }}
             />
           </div>
@@ -192,8 +243,10 @@ export function MemoryBrowser() {
             onClick={handleStore}
             style={{
               padding: '6px 16px', fontSize: '12px', fontWeight: 500,
-              background: 'var(--accent-green)', color: '#fff',
-              border: 'none', borderRadius: '6px', cursor: 'pointer',
+              background: 'rgba(52,211,153,0.1)',
+              color: 'var(--emerald-400)',
+              border: '1px solid rgba(52,211,153,0.2)',
+              borderRadius: 'var(--r-sm)', cursor: 'pointer',
             }}
           >
             Save
@@ -202,26 +255,25 @@ export function MemoryBrowser() {
       )}
 
       {/* Search Bar */}
-      <div style={{
-        display: 'flex', gap: '8px',
-      }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
         <input
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder="Semantic search (HNSW vector) or leave empty to list all..."
           style={{
+            ...inputStyle,
             flex: 1, padding: '8px 14px', fontSize: '13px',
-            background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: '8px', color: 'var(--text-primary)',
           }}
         />
         <button
           onClick={handleSearch}
           style={{
             padding: '8px 20px', fontSize: '13px', fontWeight: 500,
-            background: 'var(--accent-purple)', color: '#fff',
-            border: 'none', borderRadius: '8px', cursor: 'pointer',
+            background: 'rgba(244,63,94,0.1)',
+            color: 'var(--rose-400)',
+            border: '1px solid rgba(244,63,94,0.2)',
+            borderRadius: 'var(--r-sm)', cursor: 'pointer',
           }}
         >
           Search
@@ -230,9 +282,9 @@ export function MemoryBrowser() {
 
       {error && (
         <div style={{
-          padding: '10px 14px', borderRadius: '8px',
-          background: 'rgba(239,68,68,0.1)', border: '1px solid var(--accent-red)',
-          color: 'var(--accent-red)', fontSize: '12px',
+          padding: '10px 14px', borderRadius: 'var(--r-sm)',
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+          color: 'var(--red-500)', fontSize: '12px',
         }}>
           {error}
         </div>
@@ -244,25 +296,25 @@ export function MemoryBrowser() {
         {/* Key List */}
         <div style={{
           width: '340px', flexShrink: 0,
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: '10px', overflow: 'auto',
+          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--r-md)', overflow: 'auto',
         }}>
           <div style={{
-            padding: '10px 16px', borderBottom: '1px solid var(--border)',
-            fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)',
-            textTransform: 'uppercase', letterSpacing: '1px',
+            padding: '10px 16px', borderBottom: '1px solid var(--border-subtle)',
+            fontSize: '9px', fontWeight: 600, color: 'var(--text-tertiary)',
+            textTransform: 'uppercase' as const, letterSpacing: '0.8px',
           }}>
             {searchQuery ? 'Search Results' : 'All Keys'} ({entries.length})
           </div>
 
           {loading && (
-            <div style={{ padding: '20px 16px', color: 'var(--text-muted)', fontSize: '12px' }}>
+            <div style={{ padding: '20px 16px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
               Loading...
             </div>
           )}
 
           {!loading && entries.length === 0 && (
-            <div style={{ padding: '20px 16px', color: 'var(--text-muted)', fontSize: '12px' }}>
+            <div style={{ padding: '20px 16px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
               {connected ? 'No entries found.' : 'Connect to MCP to browse memory.'}
             </div>
           )}
@@ -276,27 +328,31 @@ export function MemoryBrowser() {
                 style={{
                   width: '100%', display: 'block', textAlign: 'left',
                   padding: '10px 16px',
-                  background: active ? 'var(--bg-primary)' : 'transparent',
-                  borderLeft: active ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                  border: 'none', borderBottom: '1px solid var(--border)',
+                  background: active ? 'var(--bg-elevated)' : 'transparent',
+                  borderLeft: active ? '2px solid var(--rose-500)' : '2px solid transparent',
+                  border: 'none', borderBottom: '1px solid var(--border-subtle)',
                   cursor: 'pointer',
+                  transition: 'background var(--t-fast)',
                 }}
+                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)' }}
+                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
               >
                 <div style={{
-                  fontSize: '12px', fontWeight: active ? 600 : 400,
+                  fontSize: '12px',
                   color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
                 }}>
                   {entry.key}
                 </div>
                 <div style={{
-                  fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
                 }}>
                   {entry.value.slice(0, 80)}
                 </div>
                 {entry.similarity !== undefined && entry.similarity > 0 && (
-                  <div style={{ fontSize: '10px', color: 'var(--accent-purple)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--rose-400)', marginTop: '2px' }}>
                     similarity: {entry.similarity.toFixed(3)}
                   </div>
                 )}
@@ -307,13 +363,14 @@ export function MemoryBrowser() {
 
         {/* Value Detail */}
         <div style={{
-          flex: 1, background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: '10px', overflow: 'auto', padding: '16px',
+          flex: 1,
+          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--r-md)', overflow: 'auto', padding: '16px',
         }}>
           {!selected ? (
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              height: '100%', color: 'var(--text-muted)', fontSize: '14px',
+              height: '100%', color: 'var(--text-tertiary)', fontSize: '14px',
             }}>
               Select a key to view its value
             </div>
@@ -321,9 +378,9 @@ export function MemoryBrowser() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <h3 style={{
-                  margin: 0, fontSize: '14px', fontWeight: 600,
-                  color: 'var(--text-primary)', flex: 1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  margin: 0, fontSize: '14px', fontWeight: 400,
+                  color: 'var(--text-secondary)', flex: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
                 }}>
                   {selected.key}
                 </h3>
@@ -331,8 +388,8 @@ export function MemoryBrowser() {
                   onClick={() => handleDelete(selected.key)}
                   style={{
                     padding: '3px 10px', fontSize: '11px',
-                    background: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)',
-                    border: '1px solid var(--accent-red)', borderRadius: '4px',
+                    background: 'rgba(239,68,68,0.08)', color: 'var(--red-500)',
+                    border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--r-sm)',
                     cursor: 'pointer',
                   }}
                 >
@@ -341,15 +398,16 @@ export function MemoryBrowser() {
               </div>
 
               {selected.namespace && (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                   Namespace: {selected.namespace}
                 </div>
               )}
 
               <pre style={{
-                margin: 0, padding: '14px', borderRadius: '8px',
-                background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                fontSize: '13px', lineHeight: 1.6, color: 'var(--text-secondary)',
+                margin: 0, padding: '14px', borderRadius: 'var(--r-sm)',
+                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px', lineHeight: 1.6, color: 'var(--text-secondary)',
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 flex: 1, overflow: 'auto',
               }}>
@@ -366,10 +424,10 @@ export function MemoryBrowser() {
 function StatBadge({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-      <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <span style={{ fontSize: '9px', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.8px', fontWeight: 600 }}>
         {label}
       </span>
-      <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
         {value}
       </span>
     </div>
