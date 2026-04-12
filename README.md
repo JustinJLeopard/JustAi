@@ -1,5 +1,10 @@
 # JustAi
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Tests: 464 passing](https://img.shields.io/badge/tests-464%20passing-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JustinJLeopard/JustAi/releases/tag/v1.0.0)
+
 > **"The best code agent in the world was missing one thing. We built it."**
 
 JustAi is orchestration, memory, and control for [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) — the world's highest-performing open-source coding agent at 74% SWE-bench Verified. Built on research from Princeton & Stanford, powered by [rUv's agent infrastructure](https://github.com/ruvnet/ruflo).
@@ -33,7 +38,7 @@ You                    JustAi                         mini-swe-agent
 ## Install
 
 ```bash
-git clone https://github.com/user/JustAi.git
+git clone https://github.com/JustinJLeopard/JustAi.git
 cd JustAi
 bash install.sh          # full install
 bash install.sh --check  # preflight only
@@ -61,6 +66,7 @@ cd dashboard && npm run dev    # http://localhost:3001
 justai run "goal"                  # full pipeline with agent delegation
 justai run --auto "goal"           # skip R1 checkpoint 60s wait
 justai run --auto --local "goal"   # execute locally (no agent needed)
+justai run --auto --swarm "goal"   # parallel dispatch via claude-flow swarm
 justai plan "goal"                 # decompose into tasks (no execution)
 justai status                      # service health + memory stats
 justai history                     # recent runs from memory
@@ -71,15 +77,17 @@ All commands also work via `python3 -m justai <command>`.
 
 ## Dashboard
 
-Five views, all real-time:
+Seven views, all real-time:
 
 | View | What it shows |
 |------|---------------|
 | **Mission Control** | System health, agent status, active pipeline, task stats |
 | **Task Board** | 5-column Kanban (pending -> done) from SpacetimeDB |
 | **Runs** | Run history, trigger new runs, active run status |
-| **Trajectory Viewer** | Step-by-step replay of any agent execution |
+| **Trajectory Viewer** | Step-by-step replay of any agent execution (3 modes) |
 | **Memory Browser** | Browse, search, store claude-flow memory (HNSW vector) |
+| **Observability** | LangFuse traces, token costs, latency metrics |
+| **Agents** | Live swarm status, SpacetimeDB + swarm agents |
 
 Start the API server for full dashboard features:
 ```bash
@@ -97,7 +105,7 @@ cd dashboard && npm run dev   # Dashboard on :3001
 | 3 | Plan | `planner.py` | Decompose into mini-sized tasks with verify commands |
 | 4 | Review | `reviewer.py` | LLM validates plan quality, replan if rejected |
 | 5 | Checkpoint | `checkpoint.py` | R0-R3 risk gates (auto mode skips R1 wait) |
-| 6 | Execute | `executor.py` / `delegator.py` | Local subprocess or agent via SpacetimeDB |
+| 6 | Execute | `executor.py` / `delegator.py` / `swarm_delegator.py` | Local, agent via SpacetimeDB, or parallel swarm |
 | 7 | Synthesize | `synthesizer.py` | Aggregate results, store to memory |
 
 ## Architecture
@@ -135,7 +143,7 @@ cp .env.example .env
 
 ```bash
 python3 -m pytest tests/ -v
-# 267+ tests across 11 sprints
+# 464 tests across 12 sprints
 ```
 
 ## Built On
@@ -150,4 +158,4 @@ See [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) for the complete credits.
 
 ---
 
-**v1.0.0** — First release. Full pipeline, local execution, dashboard, CLI.
+**v1.0.0** — First release. Full 9-stage pipeline, local + swarm execution (tested to 1500 agents), 7-view dashboard, CLI, trajectory learning, Discord integration, JWT auth, 464 tests.

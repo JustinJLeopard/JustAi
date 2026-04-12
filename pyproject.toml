@@ -5,13 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "justai"
 version = "1.0.0"
-description = "Self-hostable AI development orchestrator"
+description = "Self-hostable AI development orchestrator for mini-swe-agent"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Justin Leopard"},
 ]
+keywords = [
+    "ai-agent", "orchestration", "swe-bench", "mini-swe-agent",
+    "coding-agent", "llm", "developer-tools",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/JustinJLeopard/JustAi"
+Repository = "https://github.com/JustinJLeopard/JustAi"
+Issues = "https://github.com/JustinJLeopard/JustAi/issues"
 
 dependencies = [
     "langfuse>=2.0",
