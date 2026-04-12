@@ -45,13 +45,16 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+export type TransportMode = 'websocket' | 'polling' | 'disconnected'
+
 export interface SidebarProps {
   activeView: View
   onNavigate: (view: View) => void
   counts?: Partial<Record<View, number>>
+  transport?: TransportMode
 }
 
-export function Sidebar({ activeView, onNavigate, counts }: SidebarProps) {
+export function Sidebar({ activeView, onNavigate, counts, transport }: SidebarProps) {
   return (
     <aside
       style={{
@@ -284,7 +287,7 @@ export function Sidebar({ activeView, onNavigate, counts }: SidebarProps) {
             letterSpacing: 0.3,
           }}
         >
-          All systems operational
+          {transport === 'websocket' ? 'Live (WebSocket)' : transport === 'polling' ? 'Live (polling)' : 'All systems operational'}
         </span>
 
         <ThemeToggle />
