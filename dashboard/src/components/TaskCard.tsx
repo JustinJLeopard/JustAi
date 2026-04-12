@@ -5,20 +5,20 @@ interface TaskCardProps {
   onClick?: () => void
 }
 
-const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  pending:     { color: 'var(--text-muted)',    bg: 'rgba(85,85,112,0.15)',  label: 'Pending' },
-  claimed:     { color: 'var(--accent-blue)',   bg: 'rgba(77,124,254,0.12)', label: 'Claimed' },
-  in_progress: { color: 'var(--accent-purple)', bg: 'rgba(139,92,246,0.12)', label: 'Running' },
-  done:        { color: 'var(--accent-green)',  bg: 'rgba(34,197,94,0.12)',  label: 'Done' },
-  failed:      { color: 'var(--accent-red)',    bg: 'rgba(239,68,68,0.12)',  label: 'Failed' },
-  archived:    { color: 'var(--text-muted)',    bg: 'rgba(85,85,112,0.10)',  label: 'Archived' },
+const STATUS_CONFIG: Record<string, { dotColor: string; label: string }> = {
+  pending:     { dotColor: 'var(--text-muted)',    label: 'Pending' },
+  claimed:     { dotColor: 'var(--text-secondary)', label: 'Claimed' },
+  in_progress: { dotColor: 'var(--rose-400)',       label: 'Running' },
+  done:        { dotColor: 'var(--emerald-400)',    label: 'Done' },
+  failed:      { dotColor: 'var(--red-500)',        label: 'Failed' },
+  archived:    { dotColor: 'var(--text-muted)',     label: 'Archived' },
 }
 
 const RISK_COLOR: Record<string, string> = {
-  R0: 'var(--accent-green)',
-  R1: 'var(--accent-blue)',
-  R2: 'var(--accent-yellow)',
-  R3: 'var(--accent-red)',
+  R0: 'var(--emerald-400)',
+  R1: 'var(--text-secondary)',
+  R2: 'var(--gold-400)',
+  R3: 'var(--red-500)',
 }
 
 export function TaskCard({ task, onClick }: TaskCardProps) {
@@ -30,48 +30,65 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
     <div
       onClick={onClick}
       style={{
-        background: 'var(--bg-card)',
-        border: `1px solid var(--border)`,
-        borderRadius: '8px',
-        padding: '12px',
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--r-md)',
+        padding: 'var(--sp-3)',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'all 0.15s',
+        transition: 'border-color var(--t-fast)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
+        gap: 'var(--sp-2)',
       }}
       onMouseEnter={e => {
         if (onClick) {
-          e.currentTarget.style.borderColor = 'var(--border-bright)'
-          e.currentTarget.style.transform = 'translateY(-1px)'
+          e.currentTarget.style.borderColor = 'var(--border-hover)'
         }
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'var(--border)'
-        e.currentTarget.style.transform = 'none'
+        e.currentTarget.style.borderColor = 'var(--border-subtle)'
       }}
     >
       {/* Status badge + ID */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+        {/* Colored dot + status label */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: cfg.dotColor,
+            flexShrink: 0,
+          }} />
+          <span style={{
+            fontSize: 10,
+            fontWeight: 500,
+            color: cfg.dotColor,
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+          }}>
+            {cfg.label}
+          </span>
+        </div>
         <span style={{
-          fontSize: '10px', fontWeight: 600,
-          padding: '2px 7px', borderRadius: '4px',
-          color: cfg.color, background: cfg.bg,
-          letterSpacing: '0.5px', textTransform: 'uppercase',
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          marginLeft: 'auto',
+          fontFamily: 'var(--font-mono)',
         }}>
-          {cfg.label}
-        </span>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
           #{task.id.toString()}
         </span>
       </div>
 
-      {/* Title */}
+      {/* Task description */}
       <div style={{
-        fontSize: '13px', fontWeight: 500,
-        color: 'var(--text-primary)',
-        overflow: 'hidden', textOverflow: 'ellipsis',
-        display: '-webkit-box', WebkitLineClamp: 2,
+        fontSize: 13,
+        fontWeight: 300,
+        color: 'var(--text-secondary)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
         lineHeight: '1.4',
       }}>
@@ -80,15 +97,19 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
 
       {/* Meta row */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: '8px',
-        fontSize: '11px', color: 'var(--text-muted)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--sp-2)',
+        fontSize: 11,
+        color: 'var(--text-muted)',
+        fontFamily: 'var(--font-mono)',
         flexWrap: 'wrap',
       }}>
         {task.toAgent && (
           <span>→ {task.toAgent}</span>
         )}
         {task.retryCount > 0 && (
-          <span style={{ color: 'var(--accent-yellow)' }}>
+          <span style={{ color: 'var(--gold-400)' }}>
             ↻ {task.retryCount}
           </span>
         )}
@@ -101,10 +122,14 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       {/* Result preview (done/failed only) */}
       {(task.status === 'done' || task.status === 'failed') && task.result && (
         <div style={{
-          fontSize: '11px',
-          color: task.status === 'done' ? 'var(--accent-green)' : 'var(--accent-red)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          paddingTop: '4px', borderTop: '1px solid var(--border)',
+          fontSize: 11,
+          fontFamily: 'var(--font-mono)',
+          color: task.status === 'done' ? 'var(--emerald-400)' : 'var(--red-500)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          paddingTop: 'var(--sp-2)',
+          borderTop: '1px solid var(--border-subtle)',
         }}>
           {task.result.slice(0, 100)}
         </div>
