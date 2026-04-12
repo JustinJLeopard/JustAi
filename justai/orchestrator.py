@@ -32,6 +32,7 @@ from justai.reviewer import review, ReviewResult, REVIEWER_MODEL
 from justai.checkpoint import evaluate
 from justai.delegator import delegate_plan, DelegationResult
 from justai.executor import execute_plan, ExecResult
+from justai.swarm_delegator import SwarmDelegator
 from justai.synthesizer import synthesize, format_summary
 from justai.memory import Memory
 from justai.tracing import trace_generation, trace_event, flush_traces
@@ -43,6 +44,7 @@ MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
 AUTO_MODE = os.environ.get("JUSTAI_AUTO_MODE", "").lower() in ("1", "true", "yes")
 LOCAL_EXEC = os.environ.get("JUSTAI_LOCAL_EXEC", "").lower() in ("1", "true", "yes")
+SWARM_MODE = os.environ.get("JUSTAI_SWARM_MODE", "").lower() in ("1", "true", "yes")
 
 
 @dataclass
@@ -107,6 +109,7 @@ def run(
     session_ref: str = SESSION_REF,
     auto: bool = AUTO_MODE,
     local: bool = LOCAL_EXEC,
+    swarm: bool = SWARM_MODE,
 ) -> OrchestrationResult:
     """
     Full orchestration pipeline for a given goal.
@@ -249,14 +252,27 @@ def run(
         )
 
     # ── Stage 5: Execute / Delegate ──────────────────────────────────────────
-    stage5_name = "executor" if local else "delegator"
+    stage5_name = "swarm" if swarm else ("executor" if local else "delegator")
     with trace_generation(stage5_name,
                           input_text=f"{len(approved_tasks)} tasks",
                           session_id=session_ref,
                           tags=[stage5_name],
                           metadata={"stage": stage5_name, "task_count": len(approved_tasks),
-                                     "mode": "local" if local else "delegated"}) as _t5:
-        if local:
+                                     "mode": "swarm" if swarm else ("local" if local else "delegated")}) as _t5:
+        if swarm:
+            print(f"\n[5/5] Dispatching {len(approved_tasks)} task(s) via swarm...")
+            sd = SwarmDelegator(max_agents=len(approved_tasks))
+            sd.spawn_agents(min(len(approved_tasks), sd.max_agents))
+            swarm_results = sd.dispatch_parallel(approved_tasks, session_ref=session_ref)
+            sd.shutdown()
+            results = []
+            for sr in swarm_results:
+                results.append(DelegationResult(
+                    task_id=sr.task_id, title=sr.title,
+                    status=sr.status, result=sr.result,
+                    duration_seconds=sr.duration_seconds,
+                ))
+        elif local:
             print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
             exec_results = execute_plan(approved_tasks)
             # Convert ExecResult to DelegationResult for compatibility
@@ -317,26 +333,30 @@ def run(
     )
 
 
-def _parse_args(argv: list[str]) -> tuple[str, bool, bool]:
-    """Parse CLI args. Returns (goal, auto_mode, local_mode)."""
+def _parse_args(argv: list[str]) -> tuple[str, bool, bool, bool]:
+    """Parse CLI args. Returns (goal, auto_mode, local_mode, swarm_mode)."""
     auto = False
     local = False
+    swarm = False
     remaining = []
     for arg in argv:
         if arg == "--auto":
             auto = True
         elif arg == "--local":
             local = True
+        elif arg == "--swarm":
+            swarm = True
         else:
             remaining.append(arg)
     goal = " ".join(remaining)
-    return goal, auto, local
+    return goal, auto, local, swarm
 
 
 if __name__ == "__main__":
-    goal, auto_flag, local_flag = _parse_args(sys.argv[1:])
+    goal, auto_flag, local_flag, swarm_flag = _parse_args(sys.argv[1:])
     if not goal:
-        print("Usage: python3 -m justai.orchestrator [--auto] [--local] \"your goal here\"")
+        print("Usage: python3 -m justai.orchestrator [--auto] [--local] [--swarm] \"your goal here\"")
         sys.exit(1)
-    result = run(goal, auto=auto_flag or AUTO_MODE, local=local_flag or LOCAL_EXEC)
+    result = run(goal, auto=auto_flag or AUTO_MODE, local=local_flag or LOCAL_EXEC,
+                 swarm=swarm_flag or SWARM_MODE)
     sys.exit(0 if result.status in ("complete", "ambiguous") else 1)

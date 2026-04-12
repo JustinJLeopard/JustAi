@@ -132,14 +132,14 @@ class TestOrchestratorLocalMode(unittest.TestCase):
 
     def test_parse_args_local_flag(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args(["--local", "--auto", "do", "it"])
+        goal, auto, local, _swarm = _parse_args(["--local", "--auto", "do", "it"])
         self.assertEqual(goal, "do it")
         self.assertTrue(auto)
         self.assertTrue(local)
 
     def test_parse_args_no_local(self):
         from justai.orchestrator import _parse_args
-        goal, auto, local = _parse_args(["do", "something"])
+        goal, auto, local, _swarm = _parse_args(["do", "something"])
         self.assertFalse(local)
 
     def test_local_exec_env_var(self):
