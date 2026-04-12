@@ -31,6 +31,7 @@ from urllib.parse import urlparse, parse_qs
 from justai.health import preflight
 from justai.memory import Memory
 from justai.tracing import get_aggregated_metrics
+from justai.trajectory import analyze_trajectory, get_patterns, get_audit_data
 
 
 API_PORT = int(os.environ.get("JUSTAI_API_PORT", "3002"))
@@ -189,6 +190,18 @@ class APIHandler(BaseHTTPRequestHandler):
                 section = "summary"
             days = int(params.get("days", ["7"])[0])
             self._json(_get_observability(section, days=days))
+        elif path == "/api/trajectory/patterns":
+            limit = int(params.get("limit", ["50"])[0])
+            self._json(get_patterns(limit=limit))
+        elif path.startswith("/api/trajectory/") and path.endswith("/analysis"):
+            # /api/trajectory/<filename>/analysis
+            filename = path.replace("/api/trajectory/", "").replace("/analysis", "")
+            force = params.get("force", [""])[0] == "1"
+            self._json(analyze_trajectory(filename, force=force))
+        elif path.startswith("/api/trajectory/") and path.endswith("/audit"):
+            # /api/trajectory/<filename>/audit
+            filename = path.replace("/api/trajectory/", "").replace("/audit", "")
+            self._json(get_audit_data(filename))
         else:
             self._json({"error": "not found"}, 404)
 
@@ -229,6 +242,9 @@ def serve(port: int = API_PORT):
     print(f"  GET  /api/observability/latency")
     print(f"  GET  /api/observability/quality")
     print(f"  GET  /api/observability/summary")
+    print(f"  GET  /api/trajectory/:name/analysis")
+    print(f"  GET  /api/trajectory/:name/audit")
+    print(f"  GET  /api/trajectory/patterns")
     server.serve_forever()
 
 

@@ -23,7 +23,11 @@ const monoStyle: CSSProperties = {
   fontSize: '13px',
 }
 
-export function RunHistory() {
+interface RunHistoryProps {
+  onNavigate?: (view: import('@/components/Sidebar').View) => void
+}
+
+export function RunHistory({ onNavigate }: RunHistoryProps = {}) {
   const [runs, setRuns] = useState<RunEntry[]>([])
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null)
   const [goal, setGoal] = useState('')

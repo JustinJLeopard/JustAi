@@ -100,10 +100,10 @@ export default function App() {
           }}
         >
           <div key={view} style={{ animation: 'fadeIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}>
-            {view === 'mission-control' && <MissionControl data={data} />}
+            {view === 'mission-control' && <MissionControl data={data} onNavigate={handleNavigate} />}
             {view === 'task-board' && <TaskBoard data={data} onTaskClick={setSelectedTask} />}
-            {view === 'runs' && <RunHistory />}
-            {view === 'trajectories' && <TrajectoryViewer />}
+            {view === 'runs' && <RunHistory onNavigate={handleNavigate} />}
+            {view === 'trajectories' && <TrajectoryViewer onNavigate={handleNavigate} />}
             {view === 'memory' && <MemoryBrowser />}
             {view === 'observability' && <Observability onNavigate={handleNavigate} />}
             {view === 'agents' && <AgentRegistry data={data} />}

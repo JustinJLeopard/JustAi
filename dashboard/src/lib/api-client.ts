@@ -153,3 +153,59 @@ export async function fetchLatencyData(days = 7): Promise<LatencyData> {
 export async function fetchQualityData(days = 7): Promise<QualityData> {
   return apiFetch(`/api/observability/quality?days=${days}`)
 }
+
+// ── Trajectory Intelligence Types ───────────────────────────────────────────
+
+export interface TrajAnalysis {
+  filename: string
+  summary: string
+  root_cause: string
+  divergence_step: number | null
+  recommendation: string
+  status: string
+  step_count: number
+  failed_steps: number[]
+  files_changed: string[]
+  total_cost: number
+  total_tokens: number
+  cached: boolean
+  error?: string
+}
+
+export interface PatternReport {
+  total_trajectories: number
+  avg_steps: number
+  avg_cost: number
+  success_rate: number
+  common_failures: { pattern: string; count: number }[]
+  suggestions: string[]
+  efficiency_trend: { date: string; runs: number; avg_steps: number; avg_cost: number; success_rate: number }[]
+}
+
+export interface AuditData {
+  filename: string
+  model: string
+  exit_status: string
+  step_count: number
+  total_cost: number
+  api_calls: number
+  events: { step: number; action_type: string; command: string; target: string; returncode: number | null }[]
+  files_changed: { file: string; first_touch_step: number; modifications: number }[]
+  version: string
+  error?: string
+}
+
+// ── Trajectory Fetch Functions ──────────────────────────────────────────────
+
+export async function fetchTrajectoryAnalysis(filename: string, force = false): Promise<TrajAnalysis> {
+  const q = force ? '?force=1' : ''
+  return apiFetch(`/api/trajectory/${encodeURIComponent(filename)}/analysis${q}`)
+}
+
+export async function fetchTrajectoryPatterns(limit = 50): Promise<PatternReport> {
+  return apiFetch(`/api/trajectory/patterns?limit=${limit}`)
+}
+
+export async function fetchTrajectoryAudit(filename: string): Promise<AuditData> {
+  return apiFetch(`/api/trajectory/${encodeURIComponent(filename)}/audit`)
+}
