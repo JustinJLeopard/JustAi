@@ -33,6 +33,9 @@ from justai.memory import Memory
 from justai.tracing import get_aggregated_metrics
 from justai.trajectory import analyze_trajectory, get_patterns, get_audit_data
 from justai.discord import is_configured as discord_configured, notify as discord_notify
+from justai.ledger import Ledger
+
+_ledger = Ledger()
 
 
 API_PORT = int(os.environ.get("JUSTAI_API_PORT", "3002"))
@@ -205,6 +208,23 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json(get_audit_data(filename))
         elif path == "/api/discord/status":
             self._json({"configured": discord_configured()})
+        elif path == "/api/ledger/agents":
+            agents = _ledger.all_agents()
+            self._json([{
+                "agent": a.agent, "total_cost": round(a.total_cost, 4),
+                "total_runs": a.total_runs, "avg_cost": round(a.avg_cost_per_run, 4),
+                "tokens_in": a.total_tokens_in, "tokens_out": a.total_tokens_out,
+            } for a in agents])
+        elif path == "/api/ledger/daily":
+            days = int(params.get("days", ["30"])[0])
+            self._json(_ledger.daily_rollup(days=days))
+        elif path.startswith("/api/ledger/budget/"):
+            agent = path.replace("/api/ledger/budget/", "")
+            limit = float(params.get("limit", ["5.0"])[0])
+            bs = _ledger.check_budget(agent, daily_limit=limit)
+            self._json({"agent": bs.agent, "daily_spend": bs.daily_spend,
+                         "daily_limit": bs.daily_limit, "over_budget": bs.over_budget,
+                         "remaining": bs.remaining})
         else:
             self._json({"error": "not found"}, 404)
 
