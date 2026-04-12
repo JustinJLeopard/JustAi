@@ -2,28 +2,34 @@
   "name": "justai-dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "JustAi \u2014 real-time orchestration dashboard",
+  "description": "JustAi — real-time orchestration dashboard",
   "scripts": {
     "dev": "vite --port 3001",
     "build": "tsc && vite build",
     "preview": "vite preview --port 3001",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "lucide-react": "^0.469.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "lucide-react": "^0.469.0",
     "spacetimedb": "^2.1.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^29.0.2",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.4"
   },
   "type": "module"
 }
