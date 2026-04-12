@@ -19,3 +19,4 @@ relay-room/.venv/
 relay-room/tests/__pycache__/
 
 /tmp/
+.worktrees/
