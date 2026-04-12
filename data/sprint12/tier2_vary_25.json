@@ -1,0 +1,12 @@
+{
+  "tier": 2,
+  "variant": 25,
+  "agents_spawned": 25,
+  "tasks": 25,
+  "duration_seconds": 0.045,
+  "spawn_duration": 0.024,
+  "dispatch_duration": 0.001,
+  "shutdown_duration": 0.02,
+  "success_rate": 1.0,
+  "timestamp": "2026-04-12T18:58:18"
+}

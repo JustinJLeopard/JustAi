@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"swarmId\": \"swarm-1776033394829-epp4kw\",\n  \"status\": \"running\",\n  \"topology\": \"hierarchical-mesh\",\n  \"maxAgents\": 3,\n  \"agentCount\": 0,\n  \"taskCount\": 0,\n  \"config\": {\n    \"topology\": \"hierarchical-mesh\",\n    \"maxAgents\": 3,\n    \"strategy\": \"specialized\",\n    \"communicationProtocol\": \"message-bus\",\n    \"autoScaling\": true,\n    \"consensusMechanism\": \"majority\"\n  },\n  \"createdAt\": \"2026-04-12T22:36:34.829Z\",\n  \"updatedAt\": \"2026-04-12T22:36:34.829Z\",\n  \"totalSwarms\": 22\n}"
+    }
+  ],
+  "isError": false
+}
