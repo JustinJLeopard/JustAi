@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { SpacetimePoller, LiveData, Task } from '@/lib/spacetime'
+import { SpacetimeClient, LiveData, Task } from '@/lib/spacetime'
 import { Sidebar } from '@/components/Sidebar'
 import type { View } from '@/components/Sidebar'
 import { useKeyboard } from '@/hooks/useKeyboard'
@@ -14,6 +14,7 @@ import { Observability } from '@/views/Observability'
 const EMPTY_DATA: LiveData = {
   tasks: [], agents: [], events: [],
   connected: false, lastUpdated: null, error: null,
+  transport: 'disconnected',
 }
 
 function PlaceholderView({ name, description }: { name: string; description: string }) {
@@ -49,9 +50,9 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const poller = new SpacetimePoller(handleData)
-    poller.start(3000)
-    return () => poller.stop()
+    const client = new SpacetimeClient(handleData)
+    client.start()
+    return () => client.stop()
   }, [handleData])
 
   const handleNavigate = useCallback((v: View) => {
@@ -88,7 +89,7 @@ export default function App() {
         background: 'var(--bg-primary)',
       }}
     >
-      <Sidebar activeView={view} onNavigate={handleNavigate} counts={counts} />
+      <Sidebar activeView={view} onNavigate={handleNavigate} counts={counts} transport={data.transport} />
 
       <div style={{ display: 'flex', overflow: 'hidden' }}>
         {/* Main content */}

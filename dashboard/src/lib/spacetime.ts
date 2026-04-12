@@ -153,10 +153,9 @@ function rowToEvent(r: Record<string, unknown>): SpacetimeEvent {
   }
 }
 
-// ── Polling Client ────────────────────────────────────────────────────────────
-// Polls SpacetimeDB HTTP API on an interval and calls back with fresh data.
-// Interval-based polling is the reliable fallback; WebSocket subscriptions
-// can be layered on top when the SpacetimeDB SDK is fully wired.
+// ── Live Data Types ──────────────────────────────────────────────────────────
+
+export type TransportMode = 'websocket' | 'polling' | 'disconnected'
 
 export interface LiveData {
   tasks: Task[]
@@ -165,27 +164,145 @@ export interface LiveData {
   connected: boolean
   lastUpdated: Date | null
   error: string | null
+  transport: TransportMode
 }
 
 export type LiveDataCallback = (data: LiveData) => void
 
-export class SpacetimePoller {
-  private intervalId: ReturnType<typeof setInterval> | null = null
-  private sessionRef: string | undefined
+// ── WebSocket Client ────────────────────────────────────────────────────────
+// Attempts WebSocket connection to SpacetimeDB for real-time push updates.
+// Falls back to HTTP polling if WebSocket connection fails.
 
-  constructor(private cb: LiveDataCallback, sessionRef?: string) {
-    this.sessionRef = sessionRef
-  }
+const WS_RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000] // exponential backoff
 
-  start(intervalMs = 3000): void {
-    this.poll()
-    this.intervalId = setInterval(() => this.poll(), intervalMs)
+export class SpacetimeClient {
+  private ws: WebSocket | null = null
+  private pollIntervalId: ReturnType<typeof setInterval> | null = null
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+  private reconnectAttempt = 0
+  private transport: TransportMode = 'disconnected'
+  private lastData: LiveData | null = null
+  private stopped = false
+
+  constructor(
+    private cb: LiveDataCallback,
+    private sessionRef?: string,
+    private pollIntervalMs = 3000,
+  ) {}
+
+  start(): void {
+    this.stopped = false
+    this.tryWebSocket()
   }
 
   stop(): void {
-    if (this.intervalId != null) {
-      clearInterval(this.intervalId)
-      this.intervalId = null
+    this.stopped = true
+    this.closeWebSocket()
+    this.stopPolling()
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
+      this.reconnectTimeout = null
+    }
+  }
+
+  getTransport(): TransportMode {
+    return this.transport
+  }
+
+  // ── WebSocket connection ──────────────────────────────────────────────
+
+  private tryWebSocket(): void {
+    if (this.stopped) return
+
+    try {
+      // SpacetimeDB WebSocket endpoint for subscriptions
+      const wsUrl = `${SPACETIME_URL}/database/subscribe/${DB_NAME}`
+      this.ws = new WebSocket(wsUrl)
+
+      this.ws.onopen = () => {
+        this.transport = 'websocket'
+        this.reconnectAttempt = 0
+        this.stopPolling() // Stop polling if it was running as fallback
+
+        // Subscribe to table changes
+        this.ws?.send(JSON.stringify({
+          subscribe: {
+            query_strings: [
+              'SELECT * FROM tasks',
+              'SELECT * FROM agents',
+              'SELECT * FROM events',
+            ],
+          },
+        }))
+
+        // Still do an initial HTTP fetch for current state
+        this.poll()
+      }
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          // SpacetimeDB sends TransactionUpdate messages on data changes
+          if (msg.TransactionUpdate || msg.SubscriptionUpdate || msg.type === 'transaction_update') {
+            // Data changed — re-fetch current state via HTTP
+            // (SpacetimeDB WS sends diffs, not full state; HTTP gives us the full picture)
+            this.poll()
+          }
+        } catch {
+          // Non-JSON message, ignore
+        }
+      }
+
+      this.ws.onclose = () => {
+        if (!this.stopped) {
+          this.scheduleReconnect()
+        }
+      }
+
+      this.ws.onerror = () => {
+        // WebSocket failed — fall back to polling
+        this.closeWebSocket()
+        this.startPolling()
+      }
+    } catch {
+      // WebSocket not available — fall back to polling
+      this.startPolling()
+    }
+  }
+
+  private closeWebSocket(): void {
+    if (this.ws) {
+      try { this.ws.close() } catch { /* ignore */ }
+      this.ws = null
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.stopped) return
+
+    // Start polling as fallback while reconnecting
+    this.startPolling()
+
+    const delay = WS_RECONNECT_DELAYS[Math.min(this.reconnectAttempt, WS_RECONNECT_DELAYS.length - 1)]
+    this.reconnectAttempt++
+    this.reconnectTimeout = setTimeout(() => {
+      this.tryWebSocket()
+    }, delay)
+  }
+
+  // ── HTTP Polling fallback ─────────────────────────────────────────────
+
+  private startPolling(): void {
+    if (this.pollIntervalId != null) return // Already polling
+    this.transport = 'polling'
+    this.poll()
+    this.pollIntervalId = setInterval(() => this.poll(), this.pollIntervalMs)
+  }
+
+  private stopPolling(): void {
+    if (this.pollIntervalId != null) {
+      clearInterval(this.pollIntervalId)
+      this.pollIntervalId = null
     }
   }
 
@@ -196,14 +313,45 @@ export class SpacetimePoller {
         fetchAgents(),
         fetchEvents(30),
       ])
-      this.cb({ tasks, agents, events, connected: true, lastUpdated: new Date(), error: null })
+      this.lastData = {
+        tasks, agents, events,
+        connected: true,
+        lastUpdated: new Date(),
+        error: null,
+        transport: this.transport,
+      }
+      this.cb(this.lastData)
     } catch (err) {
       this.cb({
-        tasks: [], agents: [], events: [],
-        connected: false, lastUpdated: null,
+        tasks: this.lastData?.tasks ?? [],
+        agents: this.lastData?.agents ?? [],
+        events: this.lastData?.events ?? [],
+        connected: false,
+        lastUpdated: this.lastData?.lastUpdated ?? null,
         error: err instanceof Error ? err.message : 'Connection failed',
+        transport: this.transport,
       })
     }
+  }
+}
+
+// ── Legacy Polling Client (kept for backwards compatibility) ─────────────────
+
+export class SpacetimePoller {
+  private client: SpacetimeClient
+
+  constructor(cb: LiveDataCallback, sessionRef?: string) {
+    this.client = new SpacetimeClient(cb, sessionRef)
+  }
+
+  start(intervalMs = 3000): void {
+    // Legacy API: just start the unified client
+    void intervalMs // interval is set in constructor
+    this.client.start()
+  }
+
+  stop(): void {
+    this.client.stop()
   }
 }
 
