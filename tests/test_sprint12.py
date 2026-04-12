@@ -96,3 +96,19 @@ class TestOrchestratorSwarmFlag:
             result = run("test goal", auto=True, local=True)
             assert result.status in ("complete", "partial", "failed")
             assert result.task_count == 1
+
+
+class TestSwarmHealth:
+    def test_check_swarm_healthy(self):
+        from justai.health import check_swarm
+        swarm_resp = json.dumps({"success": True, "swarmId": "swarm-h1", "status": "running", "agentCount": 5})
+        with patch("urllib.request.urlopen", return_value=_mock_rpc_response(swarm_resp)):
+            status = check_swarm()
+            assert status.ok is True
+            assert "running" in status.detail
+
+    def test_check_swarm_unreachable(self):
+        from justai.health import check_swarm
+        with patch("urllib.request.urlopen", side_effect=Exception("connection refused")):
+            status = check_swarm()
+            assert status.ok is False
