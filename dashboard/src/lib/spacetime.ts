@@ -153,6 +153,61 @@ function rowToEvent(r: Record<string, unknown>): SpacetimeEvent {
   }
 }
 
+// ── Swarm Status (claude-flow MCP) ────────────────────────────────────────────
+
+const MCP_URL = import.meta.env.VITE_MCP_URL ?? 'http://127.0.0.1:3100'
+
+export interface SwarmAgent {
+  agentId: string
+  role: string
+  status: string
+  model: string
+}
+
+export interface SwarmStatus {
+  swarmId: string
+  status: string
+  topology: string
+  maxAgents: number
+  agentCount: number
+  taskCount: number
+  agents: SwarmAgent[]
+}
+
+async function mcpCall(method: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  const res = await fetch(`${MCP_URL}/rpc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: { name: method, arguments: args },
+    }),
+  })
+  if (!res.ok) throw new Error(`MCP error: ${res.status}`)
+  const data = await res.json()
+  const content = data.result?.content ?? []
+  for (const item of content) {
+    if (item.type === 'text') return JSON.parse(item.text)
+  }
+  return {}
+}
+
+export async function fetchSwarmStatus(): Promise<SwarmStatus> {
+  const status = (await mcpCall('swarm_status')) as Record<string, unknown>
+  const agentList = (await mcpCall('agent_list')) as { agents?: SwarmAgent[] }
+  return {
+    swarmId: String(status.swarmId ?? ''),
+    status: String(status.status ?? 'unknown'),
+    topology: String(status.topology ?? ''),
+    maxAgents: Number(status.maxAgents ?? 0),
+    agentCount: Number(status.agentCount ?? 0),
+    taskCount: Number(status.taskCount ?? 0),
+    agents: agentList.agents ?? [],
+  }
+}
+
 // ── Live Data Types ──────────────────────────────────────────────────────────
 
 export type TransportMode = 'websocket' | 'polling' | 'disconnected'

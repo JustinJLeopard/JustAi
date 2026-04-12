@@ -80,7 +80,7 @@ export default function App() {
   useKeyboard(handleNavigate, selectedTask ? handleBack : undefined)
 
   // Compute sidebar counts from live data
-  const activeTasks = data.tasks.filter(t => t.status === 'running' || t.status === 'claimed').length
+  const activeTasks = data.tasks.filter(t => t.status === 'in_progress' || t.status === 'claimed').length
   const counts: Partial<Record<View, number>> = {
     'task-board': activeTasks > 0 ? activeTasks : undefined,
     'runs': data.events.length > 0 ? data.events.length : undefined,
