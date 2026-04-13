@@ -31,14 +31,14 @@ from justai.planner import decompose, Plan, format_plan, PLANNER_MODEL
 from justai.reviewer import review, ReviewResult, REVIEWER_MODEL
 from justai.checkpoint import evaluate
 from justai.delegator import delegate_plan, DelegationResult
-from justai.executor import execute_plan, ExecResult
-from justai.swarm_delegator import SwarmDelegator
 from justai.synthesizer import synthesize, format_summary
 from justai.memory import Memory
 from justai.tracing import trace_generation, trace_event, flush_traces
 from justai.health import preflight, print_preflight
 from justai.ledger import Ledger
 from justai.discord import OrchestratorHook
+from justai.learning import enrich_context, record_run
+from justai.mini_first import escalate_plan
 
 MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
@@ -55,6 +55,7 @@ class OrchestrationResult:
     results: list[DelegationResult]
     duration_seconds: float
     status: str   # "complete" | "partial" | "blocked" | "ambiguous"
+    escalations: int = 0
 
 
 # Shared memory client — talks to MCP HTTP at :3100 (~5ms vs ~300ms CLI)
@@ -175,6 +176,13 @@ def run(
     if prior_context:
         extra_context += f"Prior session context:\n{prior_context}\n\n"
 
+    # ── Trajectory enrichment: find similar past runs ────────────────────────
+    trajectory_context = enrich_context(goal)
+    if trajectory_context:
+        extra_context += f"Trajectory context (from similar past runs):\n{trajectory_context}\n\n"
+        print(f"  Trajectory context loaded ({len(trajectory_context)} chars)")
+        print()
+
     with trace_generation("planner", model=PLANNER_MODEL, input_text=goal,
                           session_id=session_ref, tags=["planner"],
                           metadata={"stage": "planner", "model": PLANNER_MODEL}) as _t2:
@@ -259,33 +267,9 @@ def run(
                           tags=[stage5_name],
                           metadata={"stage": stage5_name, "task_count": len(approved_tasks),
                                      "mode": "swarm" if swarm else ("local" if local else "delegated")}) as _t5:
-        if swarm:
-            print(f"\n[5/5] Dispatching {len(approved_tasks)} task(s) via swarm...")
-            sd = SwarmDelegator(max_agents=len(approved_tasks))
-            sd.spawn_agents(min(len(approved_tasks), sd.max_agents))
-            swarm_results = sd.dispatch_parallel(approved_tasks, session_ref=session_ref)
-            sd.shutdown()
-            results = []
-            for sr in swarm_results:
-                results.append(DelegationResult(
-                    task_id=sr.task_id, title=sr.title,
-                    status=sr.status, result=sr.result,
-                    duration_seconds=sr.duration_seconds,
-                ))
-        elif local:
-            print(f"\n[5/5] Executing {len(approved_tasks)} task(s) locally...")
-            exec_results = execute_plan(approved_tasks)
-            # Convert ExecResult to DelegationResult for compatibility
-            results = []
-            for er in exec_results:
-                results.append(DelegationResult(
-                    task_id=er.task_id, title=er.title,
-                    status=er.status, result=er.result,
-                    duration_seconds=er.duration_seconds,
-                ))
-        else:
-            print(f"\n[5/5] Delegating {len(approved_tasks)} task(s) to agents...")
-            results = delegate_plan(approved_tasks, session_ref=session_ref)
+        mode = "swarm" if swarm else ("local" if local else "delegated")
+        print(f"\n[5/5] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
+        results = escalate_plan(approved_tasks, session_ref=session_ref, mode=mode)
 
         done_count = sum(1 for r in results if r.status == "done")
         failed_count = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
@@ -322,7 +306,11 @@ def run(
     })
     print(format_summary(summary))
 
+    # ── Record run as trajectory for future learning ─────────────────────────
+    record_run(goal, results, duration)
+
     flush_traces()
+    escalation_count = sum(1 for r in results if "previous attempt failed" in (r.result or "").lower())
     return OrchestrationResult(
         goal=goal,
         intent=intent_result.intent.value,
@@ -330,6 +318,7 @@ def run(
         results=results,
         duration_seconds=duration,
         status=summary.status,
+        escalations=escalation_count,
     )
 
 

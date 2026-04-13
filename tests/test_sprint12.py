@@ -22,8 +22,9 @@ def _mock_rpc_response(result_text: str):
 
 class TestOrchestratorSwarmFlag:
     def test_run_with_swarm_flag(self):
-        """orchestrator.run(swarm=True) should use SwarmDelegator."""
+        """orchestrator.run(swarm=True) should use escalate_plan with mode=swarm."""
         from justai.orchestrator import run
+        from justai.delegator import DelegationResult
 
         intent = IntentResult(intent=Intent.EXECUTION, confidence=0.95, reasoning="test", clarifying_question="")
         plan = Plan(goal="test", tasks=[
@@ -31,13 +32,7 @@ class TestOrchestratorSwarmFlag:
                  risk=RiskLevel.R0, success_criteria="echo ok"),
         ])
         review = ReviewResult(approved=True, feedback=[])
-
-        swarm_resp = json.dumps({"success": True, "swarmId": "swarm-int-1", "maxAgents": 15})
-        agent_resp = json.dumps({"success": True, "agentId": "agent-int-1", "status": "registered"})
-        orch_resp = json.dumps({"success": True, "orchestrationId": "orch-int-1", "status": "completed",
-                                 "results": [{"agentId": "agent-int-1", "status": "done", "result": "ok"}]})
-        term_resp = json.dumps({"success": True, "terminated": True})
-        shutdown_resp = json.dumps({"success": True})
+        done_result = [DelegationResult(task_id="1", title="t1", status="done", result="ok", duration_seconds=1.0)]
 
         mock_trace_ctx = MagicMock()
         mock_trace_ctx.__enter__ = MagicMock(return_value=mock_trace_ctx)
@@ -55,16 +50,13 @@ class TestOrchestratorSwarmFlag:
              patch("justai.orchestrator.OrchestratorHook"), \
              patch("justai.orchestrator.trace_generation", return_value=mock_trace_ctx), \
              patch("justai.orchestrator.trace_event"), \
-             patch("urllib.request.urlopen", side_effect=[
-                 _mock_rpc_response(swarm_resp),
-                 _mock_rpc_response(agent_resp),
-                 _mock_rpc_response(orch_resp),
-                 _mock_rpc_response(term_resp),
-                 _mock_rpc_response(shutdown_resp),
-             ]):
+             patch("justai.orchestrator.escalate_plan", return_value=done_result) as mock_esc:
             result = run("test goal", auto=True, swarm=True)
             assert result.status in ("complete", "partial")
             assert result.task_count == 1
+            # Verify escalate_plan was called with mode="swarm"
+            mock_esc.assert_called_once()
+            assert mock_esc.call_args[1]["mode"] == "swarm"
 
     def test_run_without_swarm_still_works(self):
         """Existing local path still works when swarm=False."""
