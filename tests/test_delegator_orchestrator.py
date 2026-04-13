@@ -208,7 +208,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(1)):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "R0 auto-approved")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
+                        with patch("justai.orchestrator.escalate_plan", return_value=[done_result]):
                             with patch("justai.orchestrator._store_memory"):
                                 result = run("add an endpoint", session_ref="test")
         self.assertEqual(result.status, "complete")
@@ -225,7 +225,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(2)):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "R0 auto-approved")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=results):
+                        with patch("justai.orchestrator.escalate_plan", return_value=results):
                             with patch("justai.orchestrator._store_memory"):
                                 result = run("multi-task goal", session_ref="test")
         self.assertEqual(result.status, "partial")
@@ -237,7 +237,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(1)):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "R0 auto-approved")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
+                        with patch("justai.orchestrator.escalate_plan", return_value=[done_result]):
                             with patch("justai.synthesizer._memory"):
                                 result = run("add an endpoint", session_ref="test")
         # Sprint 10: synthesizer handles memory
@@ -268,7 +268,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(1)):
                 with patch("justai.orchestrator.review", side_effect=mock_review):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "auto")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
+                        with patch("justai.orchestrator.escalate_plan", return_value=[done_result]):
                             with patch("justai.orchestrator._store_memory"):
                                 result = run("some goal", session_ref="test")
         self.assertEqual(result.status, "complete")
@@ -281,7 +281,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(1)):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "auto")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
+                        with patch("justai.orchestrator.escalate_plan", return_value=[done_result]):
                             with patch("justai.orchestrator._store_memory"):
                                 result = run("add endpoint", session_ref="test")
         self.assertEqual(result.intent, "execution")
@@ -293,7 +293,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch("justai.orchestrator.decompose", return_value=self._mock_plan(1)):
                 with patch("justai.orchestrator.review", return_value=self._mock_review()):
                     with patch("justai.orchestrator.evaluate", return_value=(True, "auto")):
-                        with patch("justai.orchestrator.delegate_plan", return_value=[done_result]):
+                        with patch("justai.orchestrator.escalate_plan", return_value=[done_result]):
                             with patch("justai.orchestrator._store_memory"):
                                 result = run("add endpoint", session_ref="test")
         self.assertGreater(result.duration_seconds, 0)
