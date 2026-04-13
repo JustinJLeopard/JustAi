@@ -26,10 +26,17 @@ import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
+from typing import Callable
+from justai.planner import Task
+from justai.delegator import delegate, DelegationResult
+from justai.executor import execute_plan as _execute_plan_all
+from justai.swarm_delegator import SwarmDelegator
 
 PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
 
 LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
+MINI_MODEL = os.environ.get("JUSTAI_MINI_MODEL", "gpt-5.3-codex")
+ESCALATION_MODEL = os.environ.get("JUSTAI_ESCALATION_MODEL", "claude-opus-4-6")
 
 
 @dataclass
@@ -266,3 +273,147 @@ class MiniFirstPipeline:
             duration_seconds=time.time() - start,
             final_output=code,
         )
+
+
+# ── Escalation Strategy ──────────────────────────────────────────────────────
+# Wraps existing delegators with try-cheap-then-escalate logic.
+# The MiniFirstPipeline above is preserved as a standalone LLM pipeline utility.
+
+
+def escalate_task(
+    task: Task,
+    session_ref: str,
+    executor: Callable[..., DelegationResult],
+) -> DelegationResult:
+    """Execute a task with cheap model first, escalate on failure.
+
+    Args:
+        task: The task to execute.
+        session_ref: Session identifier for tracing.
+        executor: A callable(task, session_ref) -> DelegationResult.
+                  One of: delegator.delegate, executor single-task wrapper, swarm dispatch.
+
+    Returns:
+        DelegationResult — from first attempt if successful, from escalation otherwise.
+    """
+    original_model = os.environ.get("JUSTAI_ACTIVE_MODEL", "")
+
+    # First attempt: cheap model
+    try:
+        os.environ["JUSTAI_ACTIVE_MODEL"] = MINI_MODEL
+        result = executor(task, session_ref=session_ref)
+    finally:
+        os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+
+    if result.status == "done":
+        return result
+
+    # Escalate: expensive model with failure context
+    print(f"[escalation] task '{task.title}' failed on {MINI_MODEL}, escalating to {ESCALATION_MODEL}")
+    escalated_task = Task(
+        title=task.title,
+        description=(
+            f"{task.description}\n\n"
+            f"NOTE: A previous attempt failed with: {result.result[:300]}\n"
+            f"Take a different approach."
+        ),
+        agent=task.agent,
+        risk=task.risk,
+        success_criteria=task.success_criteria,
+        depends_on=task.depends_on,
+        session_ref=task.session_ref,
+    )
+
+    try:
+        os.environ["JUSTAI_ACTIVE_MODEL"] = ESCALATION_MODEL
+        escalation_result = executor(escalated_task, session_ref=session_ref)
+    finally:
+        os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+
+    return escalation_result
+
+
+def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
+    """Adapter: run a single task through the local executor and return DelegationResult."""
+    results = _execute_plan_all([task])
+    if not results:
+        return DelegationResult(
+            task_id="local-err", title=task.title,
+            status="error", result="Local executor returned no results",
+            duration_seconds=0.0,
+        )
+    er = results[0]
+    return DelegationResult(
+        task_id=er.task_id, title=er.title,
+        status=er.status, result=er.result,
+        duration_seconds=er.duration_seconds,
+    )
+
+
+def _execute_single_swarm(task: Task, session_ref: str = "") -> DelegationResult:
+    """Adapter: run a single task through swarm dispatch and return DelegationResult."""
+    sd = SwarmDelegator(max_agents=1)
+    sd.spawn_agents(1)
+    swarm_results = sd.dispatch_parallel([task], session_ref=session_ref)
+    sd.shutdown()
+    if not swarm_results:
+        return DelegationResult(
+            task_id="swarm-err", title=task.title,
+            status="error", result="Swarm returned no results",
+            duration_seconds=0.0,
+        )
+    sr = swarm_results[0]
+    return DelegationResult(
+        task_id=sr.task_id, title=sr.title,
+        status=sr.status, result=sr.result,
+        duration_seconds=sr.duration_seconds,
+    )
+
+
+_EXECUTORS = {
+    "delegated": delegate,
+    "local": _execute_single_local,
+    "swarm": _execute_single_swarm,
+}
+
+
+def escalate_plan(
+    tasks: list[Task],
+    session_ref: str = "",
+    mode: str = "delegated",
+) -> list[DelegationResult]:
+    """Execute a task plan with per-task escalation.
+
+    Each task tries cheap model first, escalates to expensive model on failure.
+    Tasks run in dependency order; if a dependency fails (even after escalation),
+    dependent tasks are skipped.
+
+    Args:
+        tasks: Ordered list of tasks from the planner.
+        session_ref: Session identifier.
+        mode: Execution mode — "delegated", "local", or "swarm".
+    """
+    executor = _EXECUTORS.get(mode, delegate)
+    results: list[DelegationResult | None] = [None] * len(tasks)
+
+    for i, task in enumerate(tasks):
+        # Check dependencies
+        skip = False
+        for dep_idx in task.depends_on:
+            if dep_idx < len(results) and results[dep_idx] and results[dep_idx].status != "done":
+                print(f"[escalation] skipping task [{i}] '{task.title}' — dependency [{dep_idx}] failed")
+                results[i] = DelegationResult(
+                    task_id="skipped", title=task.title,
+                    status="skipped",
+                    result=f"Skipped — dependency [{dep_idx}] did not complete after escalation",
+                    duration_seconds=0,
+                )
+                skip = True
+                break
+
+        if not skip:
+            results[i] = escalate_task(task, session_ref=session_ref, executor=executor)
+            status = results[i].status
+            print(f"[escalation] task [{i}] {status}: {results[i].result[:80]}")
+
+    return [r for r in results if r is not None]
