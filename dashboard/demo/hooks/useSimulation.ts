@@ -9,7 +9,7 @@
  * beyond React state. All data comes from sprint-timeline.ts.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react' // useRef still needed for intervalRef
 
 import type {
   DemoTask,
@@ -271,11 +271,12 @@ export interface UseSimulationReturn {
 export function useSimulation(): UseSimulationReturn {
   const [state, setState] = useState<SimulationState>(initialState)
 
-  // Track which timeline entries have been processed (by index)
-  const processedRef = useRef<Set<number>>(new Set())
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ── Tick function ────────────────────────────────────────────────────────
+  // Uses prev.elapsed to determine which events to process — no mutable refs.
+  // This is StrictMode-safe: calling the updater twice with the same prev
+  // produces the same result.
 
   const tick = useCallback(() => {
     setState(prev => {
@@ -284,19 +285,23 @@ export function useSimulation(): UseSimulationReturn {
       }
 
       // Advance elapsed time
-      const elapsed = prev.elapsed + SECONDS_PER_TICK * prev.speed
+      const prevElapsed = prev.elapsed
+      const elapsed = prevElapsed + SECONDS_PER_TICK * prev.speed
       let next: SimulationState = { ...prev, elapsed }
 
-      // Process timeline entries whose time has been reached
-      TIMELINE.forEach((entry, index) => {
-        if (processedRef.current.has(index)) return
-        if (elapsed >= entry.time) {
-          processedRef.current.add(index)
+      // Process timeline entries in the window (prevElapsed, elapsed]
+      // For the very first tick (prevElapsed === 0), also include time === 0
+      for (const entry of TIMELINE) {
+        if (entry.time > elapsed) break
+        const isNew = prevElapsed === 0
+          ? entry.time <= elapsed       // first tick: include time=0
+          : entry.time > prevElapsed && entry.time <= elapsed
+        if (isNew) {
           for (const action of entry.actions) {
             next = applyAction(next, action)
           }
         }
-      })
+      }
 
       // Animate step progress for in-progress tasks
       next = { ...next, tasks: animateStepProgress(next.tasks, next.speed) }
@@ -304,8 +309,7 @@ export function useSimulation(): UseSimulationReturn {
       // Update visible memories based on elapsed time
       next = { ...next, memories: filterMemories(elapsed) }
 
-      // Recompute derived metrics (step progress may not change costs,
-      // but keeps state consistent)
+      // Recompute derived metrics
       const metrics = computeDerivedMetrics(next.tasks)
       next = { ...next, ...metrics }
 
@@ -327,9 +331,7 @@ export function useSimulation(): UseSimulationReturn {
   const play = useCallback(() => {
     setState(prev => {
       if (prev.phase === 'idle') {
-        // First play: start the sprint
-        processedRef.current = new Set()
-        return { ...prev, paused: false, phase: 'planning' }
+        return { ...prev, paused: false, phase: 'planning' as SimPhase }
       }
       return { ...prev, paused: false }
     })
@@ -342,11 +344,10 @@ export function useSimulation(): UseSimulationReturn {
   const togglePlayPause = useCallback(() => {
     setState(prev => {
       if (prev.phase === 'idle') {
-        processedRef.current = new Set()
-        return { ...prev, paused: false, phase: 'planning' }
+        return { ...prev, paused: false, phase: 'planning' as SimPhase }
       }
       if (prev.phase === 'complete') {
-        return prev // Don't unpause when complete
+        return prev
       }
       return { ...prev, paused: !prev.paused }
     })
@@ -357,14 +358,12 @@ export function useSimulation(): UseSimulationReturn {
   }, [])
 
   const reset = useCallback(() => {
-    processedRef.current = new Set()
     setState(initialState())
   }, [])
 
   const replay = useCallback(() => {
-    processedRef.current = new Set()
     const fresh = initialState()
-    setState({ ...fresh, paused: false, phase: 'planning' })
+    setState({ ...fresh, paused: false, phase: 'planning' as SimPhase })
   }, [])
 
   return {
