@@ -101,12 +101,12 @@ function computeDerivedMetrics(tasks: DemoTask[]): {
       ? matchedLatencies.reduce((sum, l) => sum + l.latency, 0) / matchedLatencies.length
       : 0
 
-  // Success rate: tasks that completed without escalation / total attempted
+  // Success rate: completed tasks / total attempted (escalated-but-done = success)
   const attempted = tasks.filter(t => t.status === 'done' || t.status === 'failed')
-  const firstAttemptSuccesses = attempted.filter(t => t.status === 'done' && !t.escalated)
+  const succeeded = attempted.filter(t => t.status === 'done')
   const successRate =
     attempted.length > 0
-      ? (firstAttemptSuccesses.length / attempted.length) * 100
+      ? (succeeded.length / attempted.length) * 100
       : 0
 
   return { totalCost, avgLatency, successRate, completedCount }

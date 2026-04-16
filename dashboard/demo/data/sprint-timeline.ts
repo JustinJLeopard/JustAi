@@ -95,7 +95,7 @@ export const INITIAL_TASKS: DemoTask[] = [
     steps: 16,
     stepsDone: 0,
     escalated: false,
-    trajectoryLearning: false,
+    trajectoryLearning: true,
     payload: 'Export service: CSV streaming, PDF generation via Puppeteer, REST API for programmatic access',
     result: '',
   },
@@ -280,8 +280,8 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 8,
     actions: [
-      { type: 'complete_task', taskId: 'task-1', cost: 0.042, result: TASK_RESULTS['task-1'] },
-      { type: 'add_event', event: { time: 8, type: 'task', detail: 'Task 1 complete: schema created — $0.042' } },
+      { type: 'complete_task', taskId: 'task-1', cost: 0.42, result: TASK_RESULTS['task-1'] },
+      { type: 'add_event', event: { time: 8, type: 'task', detail: 'Task 1 complete: schema created — $0.42' } },
     ],
   },
 
@@ -304,15 +304,15 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 14,
     actions: [
-      { type: 'complete_task', taskId: 'task-2', cost: 0.018, result: TASK_RESULTS['task-2'] },
-      { type: 'add_event', event: { time: 14, type: 'task', detail: 'Task 2 complete: ingestion API live — $0.018' } },
+      { type: 'complete_task', taskId: 'task-2', cost: 0.18, result: TASK_RESULTS['task-2'] },
+      { type: 'add_event', event: { time: 14, type: 'task', detail: 'Task 2 complete: ingestion API live — $0.18' } },
     ],
   },
   {
     time: 16,
     actions: [
-      { type: 'complete_task', taskId: 'task-3', cost: 0.021, result: TASK_RESULTS['task-3'] },
-      { type: 'add_event', event: { time: 16, type: 'task', detail: 'Task 3 complete: segmentation engine — $0.021' } },
+      { type: 'complete_task', taskId: 'task-3', cost: 0.22, result: TASK_RESULTS['task-3'] },
+      { type: 'add_event', event: { time: 16, type: 'task', detail: 'Task 3 complete: segmentation engine — $0.22' } },
     ],
   },
 
@@ -370,8 +370,8 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 32,
     actions: [
-      { type: 'complete_task', taskId: 'task-4', cost: 0.087, result: TASK_RESULTS['task-4'] },
-      { type: 'add_event', event: { time: 32, type: 'task', detail: 'Task 4 complete (escalated): dashboard components — $0.087' } },
+      { type: 'complete_task', taskId: 'task-4', cost: 0.58, result: TASK_RESULTS['task-4'] },
+      { type: 'add_event', event: { time: 32, type: 'task', detail: 'Task 4 complete (escalated): dashboard components — $0.58' } },
     ],
   },
 
@@ -392,8 +392,8 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 38,
     actions: [
-      { type: 'complete_task', taskId: 'task-5', cost: 0.015, result: TASK_RESULTS['task-5'] },
-      { type: 'add_event', event: { time: 38, type: 'task', detail: 'Task 5 complete: export functionality — $0.015 (trajectory-optimized)' } },
+      { type: 'complete_task', taskId: 'task-5', cost: 0.19, result: TASK_RESULTS['task-5'] },
+      { type: 'add_event', event: { time: 38, type: 'task', detail: 'Task 5 complete: export functionality — $0.19 (trajectory-optimized)' } },
     ],
   },
 
@@ -416,15 +416,15 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 45,
     actions: [
-      { type: 'complete_task', taskId: 'task-6', cost: 0.013, result: TASK_RESULTS['task-6'] },
-      { type: 'add_event', event: { time: 45, type: 'task', detail: 'Task 6 complete: auth + RBAC — $0.013' } },
+      { type: 'complete_task', taskId: 'task-6', cost: 0.15, result: TASK_RESULTS['task-6'] },
+      { type: 'add_event', event: { time: 45, type: 'task', detail: 'Task 6 complete: auth + RBAC — $0.15' } },
     ],
   },
   {
     time: 48,
     actions: [
-      { type: 'complete_task', taskId: 'task-7', cost: 0.016, result: TASK_RESULTS['task-7'] },
-      { type: 'add_event', event: { time: 48, type: 'task', detail: 'Task 7 complete: WebSocket updates — $0.016' } },
+      { type: 'complete_task', taskId: 'task-7', cost: 0.14, result: TASK_RESULTS['task-7'] },
+      { type: 'add_event', event: { time: 48, type: 'task', detail: 'Task 7 complete: WebSocket updates — $0.14' } },
     ],
   },
 
@@ -445,8 +445,8 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 55,
     actions: [
-      { type: 'complete_task', taskId: 'task-8', cost: 0.022, result: TASK_RESULTS['task-8'] },
-      { type: 'add_event', event: { time: 55, type: 'task', detail: 'Task 8 complete: CI pipeline — 47 tests, 89% coverage — $0.022' } },
+      { type: 'complete_task', taskId: 'task-8', cost: 0.26, result: TASK_RESULTS['task-8'] },
+      { type: 'add_event', event: { time: 55, type: 'task', detail: 'Task 8 complete: CI pipeline — 47 tests, 84% coverage — $0.26' } },
     ],
   },
 
@@ -479,7 +479,7 @@ export const TIMELINE: TimelineEntry[] = [
     time: 60,
     actions: [
       { type: 'set_phase', phase: 'complete' },
-      { type: 'add_event', event: { time: 60, type: 'sprint', detail: 'Sprint complete: 8/8 tasks done, 1 escalation, $0.234 total cost, 87.5% first-attempt success' } },
+      { type: 'add_event', event: { time: 60, type: 'sprint', detail: 'Sprint complete: 8/8 tasks done, 1 escalation, $2.14 total cost, 100% success rate' } },
     ],
   },
 ]
@@ -487,14 +487,14 @@ export const TIMELINE: TimelineEntry[] = [
 // ── Cost Series (for charts) ─────────────────────────────────────────────────
 
 export const COST_SERIES: CostDataPoint[] = [
-  { time: 8,  cost: 0.042, label: 'T1: Schema' },
-  { time: 14, cost: 0.060, label: 'T2: Ingestion API' },
-  { time: 16, cost: 0.081, label: 'T3: Segmentation' },
-  { time: 32, cost: 0.168, label: 'T4: Dashboard (escalated)' },
-  { time: 38, cost: 0.183, label: 'T5: Export' },
-  { time: 45, cost: 0.196, label: 'T6: Auth' },
-  { time: 48, cost: 0.212, label: 'T7: WebSocket' },
-  { time: 55, cost: 0.234, label: 'T8: CI Pipeline' },
+  { time: 8,  cost: 0.42, label: 'T1: Schema' },
+  { time: 14, cost: 0.60, label: 'T2: Ingestion API' },
+  { time: 16, cost: 0.82, label: 'T3: Segmentation' },
+  { time: 32, cost: 1.40, label: 'T4: Dashboard (escalated)' },
+  { time: 38, cost: 1.59, label: 'T5: Export' },
+  { time: 45, cost: 1.74, label: 'T6: Auth' },
+  { time: 48, cost: 1.88, label: 'T7: WebSocket' },
+  { time: 55, cost: 2.14, label: 'T8: CI Pipeline' },
 ]
 
 // ── Latency Series (for charts) ──────────────────────────────────────────────
