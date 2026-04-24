@@ -5,15 +5,5 @@
   "installCommand": "npm install",
   "framework": "vite",
   "trailingSlash": false,
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/demo.html"
-    },
-    {
-      "source": "/app",
-      "destination": "/index.html"
-    }
-  ]
+  "cleanUrls": true
 }
