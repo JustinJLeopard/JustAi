@@ -70,8 +70,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, 'index.html'),
-        demo: path.resolve(__dirname, 'demo.html'),
+        // index.html is the DEMO (the default URL visitors land on at justai-demo.vercel.app/)
+        // — rollup uses these keys to name output chunks, so calling this 'demo' makes
+        // dist/assets/demo-*.js the file that actually contains demo code.
+        demo: path.resolve(__dirname, 'index.html'),
+        // app.html is the original production dashboard (LoginPage + SpacetimeDB client).
+        // Reachable at justai-demo.vercel.app/app.html for local-dev verification.
+        app: path.resolve(__dirname, 'app.html'),
       },
     },
   },

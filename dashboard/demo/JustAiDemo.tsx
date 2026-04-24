@@ -53,7 +53,7 @@ export default function JustAiDemo() {
   function renderView() {
     switch (activeView) {
       case 'mission-control':
-        return <DemoMissionControl state={state} onNavigate={setActiveView} />
+        return <DemoMissionControl state={state} onNavigate={setActiveView} onNewRun={controls.replay} />
       case 'task-board':
         return <DemoTaskBoard state={state} />
       case 'pipeline':
@@ -67,7 +67,7 @@ export default function JustAiDemo() {
       case 'agents':
         return <DemoAgents state={state} />
       default:
-        return <DemoMissionControl state={state} onNavigate={setActiveView} />
+        return <DemoMissionControl state={state} onNavigate={setActiveView} onNewRun={controls.replay} />
     }
   }
 

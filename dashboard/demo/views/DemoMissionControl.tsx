@@ -14,6 +14,9 @@ import type { SimulationState, DemoView, DemoTask, PipelineStage, StageStatus } 
 export interface DemoMissionControlProps {
   state: SimulationState
   onNavigate: (view: DemoView) => void
+  // Triggered by the "+ New Run" button — restarts the sprint from t=0.
+  // Wired to useSimulation().controls.replay() in JustAiDemo.
+  onNewRun: () => void
 }
 
 // ── Time range button (decorative) ──────────────────────────────────────────
@@ -280,18 +283,22 @@ export function DemoMissionControl({ state, onNavigate }: DemoMissionControlProp
           {(['24h', '7d', '30d'] as const).map(r => (
             <TimeRangeBtn key={r} label={r} active={timeRange === r} onClick={() => setTimeRange(r)} />
           ))}
-          <button style={{
-            padding: '8px 16px',
-            borderRadius: 'var(--r-sm)',
-            fontSize: 12, fontWeight: 400,
-            cursor: 'pointer',
-            transition: 'all var(--t-fast)',
-            border: '1px solid rgba(244,63,94,0.2)',
-            fontFamily: 'var(--font-sans)',
-            letterSpacing: '0.2px',
-            background: 'rgba(244,63,94,0.1)',
-            color: 'var(--rose-400)',
-          }}>
+          <button
+            onClick={onNewRun}
+            aria-label="Start a new run — restart the sprint simulation from the beginning"
+            style={{
+              padding: '8px 16px',
+              borderRadius: 'var(--r-sm)',
+              fontSize: 12, fontWeight: 400,
+              cursor: 'pointer',
+              transition: 'all var(--t-fast)',
+              border: '1px solid rgba(244,63,94,0.2)',
+              fontFamily: 'var(--font-sans)',
+              letterSpacing: '0.2px',
+              background: 'rgba(244,63,94,0.1)',
+              color: 'var(--rose-400)',
+            }}
+          >
             + New Run
           </button>
         </div>

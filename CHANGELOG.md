@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Demo deployment fix (2026-04-24)
+- `dashboard/index.html` now loads the simulation entry (`/demo/demo-entry.tsx`); was loading the real prod app's `/src/main.tsx`. Vercel serves index.html for `/`, and the demo was previously only reachable at `/demo.html` — meaning the canonical demo URL `justai-demo.vercel.app/` (and the rewritten `delegateandorchestrate.com/demo/justai`) was serving the LoginPage with no live backend.
+- `dashboard/demo.html` renamed to `dashboard/app.html` to reflect that it now holds the original production dashboard, not the demo. `vite.config.ts` rollup input keys renamed `main`→`demo` and `demo`→`app` so dist/assets bundle filenames match content.
+- `useSimulation.initialState()` changed from `{phase:'idle', paused:true}` to `{phase:'planning', paused:false}` — the sprint auto-plays on page load instead of showing a frozen "click ▶ to begin" screen.
+- `+ New Run` button in `DemoMissionControl` wired to `controls.replay()` (was a placeholder with no `onClick`).
+- `dashboard/vercel.json` added with explicit framework/build/cleanUrls config.
+
 ## [1.0.0] - 2026-04-15
 
 ### Core Pipeline

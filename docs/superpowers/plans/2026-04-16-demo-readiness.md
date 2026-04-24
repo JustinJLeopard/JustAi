@@ -1,5 +1,7 @@
 # JustAi Demo-Readiness Implementation Plan
 
+> **HISTORICAL — superseded post-deployment 2026-04-24.** This plan describes the original dual-page build where `index.html` = real prod app and `demo.html` = simulation. After deployment we discovered Vercel served `/` from `index.html` (the LoginPage), making the demo unreachable from `delegateandorchestrate.com/demo/justai`. Resolution: the entry scripts were swapped at the source level — `index.html` now loads the demo, `app.html`(renamed from `demo.html`) holds the original prod app. Vite rollup input keys renamed `main`→`demo` and `demo`→`app` so dist/assets bundle filenames match content. The simulation also auto-plays on mount (initialState `{phase:'planning', paused:false}`) and the `+ New Run` button in DemoMissionControl is wired to `controls.replay()`. See commits abb1c5c, dd86a37 and follow-ups, and the harness memory entry `justai/demo_deployment_fix_20260424` for full context.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a self-contained interactive demo shell that replicates the JustAi dashboard with mock data and a choreographed 60-second sprint simulation, plus revise the justai-demo README.
@@ -44,25 +46,29 @@ dashboard/demo.html              # Dev entry point (multi-page Vite)
 ## Task 1: Branch Setup & Directory Scaffold
 
 **Files:**
+
 - Create: `dashboard/demo/` directory tree
+
 - Create: `dashboard/demo.html`
+
 - Create: `dashboard/demo/demo-entry.tsx`
+
 - Modify: `dashboard/vite.config.ts` (add multi-page entry)
 
-- [ ] **Step 1: Create the demo-build branch**
+- \[ \] **Step 1: Create the demo-build branch**
 
 ```bash
 cd /home/justinleopard/projects/JustAi
 git checkout -b demo-build
 ```
 
-- [ ] **Step 2: Create directory structure**
+- \[ \] **Step 2: Create directory structure**
 
 ```bash
 mkdir -p dashboard/demo/{hooks,data,views,components,styles}
 ```
 
-- [ ] **Step 3: Create demo.html entry point**
+- \[ \] **Step 3: Create demo.html entry point**
 
 Create `dashboard/demo.html`:
 
@@ -81,7 +87,7 @@ Create `dashboard/demo.html`:
 </html>
 ```
 
-- [ ] **Step 4: Create demo-entry.tsx mount point**
+- \[ \] **Step 4: Create demo-entry.tsx mount point**
 
 Create `dashboard/demo/demo-entry.tsx`:
 
@@ -99,7 +105,7 @@ createRoot(document.getElementById('demo-root')!).render(
 )
 ```
 
-- [ ] **Step 5: Add demo.html as Vite multi-page entry**
+- \[ \] **Step 5: Add demo.html as Vite multi-page entry**
 
 In `dashboard/vite.config.ts`, add `demo.html` to the `build.rollupOptions.input` object. Find the existing `defineConfig` and add:
 
@@ -116,7 +122,7 @@ build: {
 
 Add `import { resolve } from 'path'` at top if not already present.
 
-- [ ] **Step 6: Create placeholder JustAiDemo.tsx**
+- \[ \] **Step 6: Create placeholder JustAiDemo.tsx**
 
 Create `dashboard/demo/JustAiDemo.tsx`:
 
@@ -126,7 +132,7 @@ export default function JustAiDemo() {
 }
 ```
 
-- [ ] **Step 7: Verify dev server serves demo page**
+- \[ \] **Step 7: Verify dev server serves demo page**
 
 ```bash
 cd /home/justinleopard/projects/JustAi/dashboard
@@ -135,7 +141,7 @@ npm run dev
 
 Open `http://localhost:3001/demo.html` — should show "JustAi Demo Shell — Loading..."
 
-- [ ] **Step 8: Commit**
+- \[ \] **Step 8: Commit**
 
 ```bash
 git add dashboard/demo/ dashboard/demo.html dashboard/vite.config.ts
@@ -147,10 +153,12 @@ git commit -m "chore: scaffold demo-build branch with directory structure and de
 ## Task 2: Types & Sprint Timeline Data
 
 **Files:**
+
 - Create: `dashboard/demo/data/types.ts`
+
 - Create: `dashboard/demo/data/sprint-timeline.ts`
 
-- [ ] **Step 1: Create types.ts**
+- \[ \] **Step 1: Create types.ts**
 
 Create `dashboard/demo/data/types.ts`:
 
@@ -251,7 +259,7 @@ export type DemoView =
   | 'agents'
 ```
 
-- [ ] **Step 2: Create sprint-timeline.ts**
+- \[ \] **Step 2: Create sprint-timeline.ts**
 
 Create `dashboard/demo/data/sprint-timeline.ts`:
 
@@ -407,7 +415,7 @@ export const TRAJECTORY_COMMANDS: Record<number, Array<{ step: number; tool: str
 }
 ```
 
-- [ ] **Step 3: Verify types compile**
+- \[ \] **Step 3: Verify types compile**
 
 ```bash
 cd /home/justinleopard/projects/JustAi/dashboard
@@ -416,7 +424,7 @@ npx tsc --noEmit demo/data/types.ts demo/data/sprint-timeline.ts
 
 Expected: No errors.
 
-- [ ] **Step 4: Commit**
+- \[ \] **Step 4: Commit**
 
 ```bash
 git add dashboard/demo/data/
@@ -428,10 +436,12 @@ git commit -m "feat(demo): add types and sprint timeline data"
 ## Task 3: Simulation Engine — useSimulation Hook
 
 **Files:**
+
 - Create: `dashboard/demo/hooks/useSimulation.ts`
+
 - Create: `dashboard/demo/hooks/__tests__/useSimulation.test.ts` (optional, verify logic)
 
-- [ ] **Step 1: Create useSimulation.ts**
+- \[ \] **Step 1: Create useSimulation.ts**
 
 Create `dashboard/demo/hooks/useSimulation.ts`:
 
@@ -645,7 +655,7 @@ export function useSimulation() {
 }
 ```
 
-- [ ] **Step 2: Verify hook compiles**
+- \[ \] **Step 2: Verify hook compiles**
 
 ```bash
 cd /home/justinleopard/projects/JustAi/dashboard
@@ -654,7 +664,7 @@ npx tsc --noEmit demo/hooks/useSimulation.ts
 
 Expected: No errors.
 
-- [ ] **Step 3: Commit**
+- \[ \] **Step 3: Commit**
 
 ```bash
 git add dashboard/demo/hooks/
@@ -666,9 +676,10 @@ git commit -m "feat(demo): add useSimulation state machine hook"
 ## Task 4: Demo Theme CSS
 
 **Files:**
+
 - Create: `dashboard/demo/styles/demo-theme.css`
 
-- [ ] **Step 1: Create demo-theme.css**
+- \[ \] **Step 1: Create demo-theme.css**
 
 Copy the real theme from `dashboard/src/styles/theme.css` into `dashboard/demo/styles/demo-theme.css`. This ensures the demo uses identical CSS variables. Read the real file and copy its full contents:
 
@@ -676,7 +687,7 @@ Copy the real theme from `dashboard/src/styles/theme.css` into `dashboard/demo/s
 cp dashboard/src/styles/theme.css dashboard/demo/styles/demo-theme.css
 ```
 
-- [ ] **Step 2: Add demo-specific overrides at the end of the file**
+- \[ \] **Step 2: Add demo-specific overrides at the end of the file**
 
 Append to `dashboard/demo/styles/demo-theme.css`:
 
@@ -709,7 +720,7 @@ Append to `dashboard/demo/styles/demo-theme.css`:
 }
 ```
 
-- [ ] **Step 3: Commit**
+- \[ \] **Step 3: Commit**
 
 ```bash
 git add dashboard/demo/styles/
@@ -721,11 +732,13 @@ git commit -m "feat(demo): add theme CSS with demo-specific overrides"
 ## Task 5: DemoSidebar Component
 
 **Files:**
+
 - Create: `dashboard/demo/components/DemoSidebar.tsx`
 
-- [ ] **Step 1: Create DemoSidebar.tsx**
+- \[ \] **Step 1: Create DemoSidebar.tsx**
 
 Create `dashboard/demo/components/DemoSidebar.tsx`. This is a close replica of `dashboard/src/components/Sidebar.tsx` — same logo, same nav groups, same styling. Read the real `Sidebar.tsx` for exact style values, then create the demo version with these differences:
+
 - Footer shows "Demo Mode" instead of transport status
 - Badge counts come from simulation state props
 - Theme toggle works via local state (no `useTheme` hook dependency)
@@ -882,7 +895,7 @@ export function DemoSidebar({ activeView, onNavigate, counts }: DemoSidebarProps
 }
 ```
 
-- [ ] **Step 2: Commit**
+- \[ \] **Step 2: Commit**
 
 ```bash
 git add dashboard/demo/components/DemoSidebar.tsx
@@ -894,9 +907,10 @@ git commit -m "feat(demo): add DemoSidebar component"
 ## Task 6: SprintBar Component
 
 **Files:**
+
 - Create: `dashboard/demo/components/SprintBar.tsx`
 
-- [ ] **Step 1: Create SprintBar.tsx**
+- \[ \] **Step 1: Create SprintBar.tsx**
 
 Create `dashboard/demo/components/SprintBar.tsx`:
 
@@ -986,6 +1000,7 @@ export function SprintBar({ state, onPlay, onPause, onSetSpeed, onReplay }: Spri
     </div>
   )
 }
+```
 ```
 
 - [ ] **Step 2: Commit**
