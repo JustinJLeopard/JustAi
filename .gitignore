@@ -41,3 +41,6 @@ htmlcov/
 
 # Dashboard screenshots (kept locally, not in repo)
 dashboard-*.png
+
+# Claude Code local settings (per-machine, not for repo)
+.claude/
