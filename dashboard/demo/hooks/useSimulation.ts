@@ -61,11 +61,14 @@ function initialPipeline(): PipelineState {
 // ── Initial simulation state ─────────────────────────────────────────────────
 
 function initialState(): SimulationState {
+  // Auto-play on mount: marketing visitors land directly on a running sprint,
+  // not on a frozen "click ▶ to begin" screen. Pause control still available
+  // in SprintBar. Reset/replay paths use this same initial state.
   return {
-    phase: 'idle',
+    phase: 'planning',
     elapsed: 0,
     speed: 1,
-    paused: true,
+    paused: false,
     tasks: cloneTasks(INITIAL_TASKS),
     agents: cloneAgents(INITIAL_AGENTS),
     pipeline: initialPipeline(),
