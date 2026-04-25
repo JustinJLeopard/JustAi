@@ -62,6 +62,7 @@ function trajectoriesPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), trajectoriesPlugin()],
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
