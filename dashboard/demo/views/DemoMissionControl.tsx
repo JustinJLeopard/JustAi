@@ -216,7 +216,7 @@ function ServiceRow({ name, detail, ping }: { name: string; detail: string; ping
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
-export function DemoMissionControl({ state, onNavigate }: DemoMissionControlProps) {
+export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionControlProps) {
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('24h')
 
   // ── Derived data ────────────────────────────────────────────────────────
