@@ -23,6 +23,7 @@ relay-room/tests/__pycache__/
 
 # Tool/plugin configs (per-machine, not project)
 .codex
+.claude-flow/
 .playwright-mcp/
 .serena/
 .superpowers/
