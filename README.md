@@ -2,160 +2,198 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 464 passing](https://img.shields.io/badge/tests-464%20passing-brightgreen.svg)]()
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JustinJLeopard/JustAi/releases/tag/v1.0.0)
 
-> **"The best code agent in the world was missing one thing. We built it."**
+JustAi is a thin project-orchestration control plane around safe-mini, the substrate that makes mini-swe-agent's bash-action loop trustworthy on private repos.
 
-JustAi is orchestration, memory, and control for [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) — the world's highest-performing open-source coding agent at 74% SWE-bench Verified. Built on research from Princeton & Stanford, powered by [rUv's agent infrastructure](https://github.com/ruvnet/ruflo).
+## Status
 
----
+This repo is actively under restructure.
 
-## What It Does
+- The safe-mini repo is not stood up yet.
+- The current code is the JustAi orchestrator half of the three-repo plan.
+- The public docs are being aligned after the Phase 4 amputation pass.
+- Some CLI paths still expose transitional behavior while stabilization continues.
 
-Give JustAi a goal in plain English. It decomposes it into well-scoped tasks, executes them locally or delegates to mini-swe-agent via SpacetimeDB, persists all decisions in memory, and surfaces everything in real-time.
+If you are looking for the v1.0.0 product shape, this branch is no longer that. The old delegation backends were removed and the repo is being narrowed to the control-plane role.
 
-```
-You                    JustAi                         mini-swe-agent
- |                       |                                  |
- |  "add /health         |                                  |
- |   endpoint"           |                                  |
- | -------------------->|  1. preflight (service health)    |
- |                       |  2. load session context          |
- |                       |  3. classify intent               |
- |                       |  4. decompose into tasks          |
- |                       |  5. review plan quality           |
- |                       |  6. evaluate risk gates           |
- |                       |  7a. execute locally       OR     |
- |                       |  7b. delegate to agent ---------->|
- |                       |                                   |  execute bash
- |                       |  8. synthesize results  <---------|
- | <--------------------|  9. store in memory                |
- |  "done - 1 task,      |                                  |
- |   10s, /health added" |                                  |
-```
+## Architecture In Three Sentences
 
-## Install
+JustAi scopes a user goal into small, reviewable chunks, using `justai.scope_planner` and the existing checkpoint/reviewer flow to keep the work bounded. Execution is being reframed around safe-mini: a small, auditable substrate for mini-swe-agent-style bash actions with worktree isolation, env scrubbing, command/path guards, observation policies, and incident artifacts. The control plane should classify failures instead of pretending every failed run is the same, so budget exhaustion, context starvation, reward hacking, embodiment failures, safety violations, and action-protocol violations can drive different next steps.
 
-```bash
-git clone https://github.com/JustinJLeopard/JustAi.git
-cd JustAi
-bash install.sh          # full install
-bash install.sh --check  # preflight only
-pip install -e .         # install justai command
-```
+## The Three-Repo Plan
 
-Requirements: Python 3.12+, Node 20+
+The intended post-closure shape is:
 
-## Quick Start
+| Repo | Role |
+| --- | --- |
+| `safe-mini` | Load-bearing foundation: runner loop, executor and observation policies, worktree provisioner, command/path guard, incident artifacts, failure classifier, trajectory recording, ledger, and canonical types. |
+| `JustAi` | Thin orchestrator: goal decomposition, chunk sizing, checkpoints, review, coordination, dashboards, and synthesis. |
+| `local-resident` | Local experiment driver: runs private benchmark slices over safe-mini, gathers calibration data, and validates whether JustAi adds value over raw mini. |
 
-```bash
-# 1. Start harness services
-source ~/.ruv_env && ~/ruv_start.sh
+Ship plan:
 
-# 2. Run a goal (local execution, auto mode)
-justai run --auto --local "add a /health endpoint to server.py"
-
-# 3. Open the dashboard
-cd dashboard && npm run dev    # http://localhost:3001
-```
+- Phase A: JustAi and local-resident consume safe-mini through a git URL pin while the API stabilizes.
+- Phase B: safe-mini publishes to PyPI and consumers move to normal version pins.
+- Current reality: safe-mini does not exist as a repo yet. That is post-JustAi-closure work.
 
 ## CLI
 
+Verified from the current venv:
+
 ```bash
-justai run "goal"                  # full pipeline with agent delegation
-justai run --auto "goal"           # skip R1 checkpoint 60s wait
-justai run --auto --local "goal"   # execute locally (no agent needed)
-justai run --auto --swarm "goal"   # parallel dispatch via claude-flow swarm
-justai plan "goal"                 # decompose into tasks (no execution)
-justai status                      # service health + memory stats
-justai history                     # recent runs from memory
-justai version                     # print version
+.venv/bin/justai --help
+.venv/bin/justai run --help
+.venv/bin/justai plan "add a health endpoint"
+.venv/bin/justai status
+.venv/bin/justai history
+.venv/bin/justai version
 ```
 
-All commands also work via `python3 -m justai <command>`.
+Current CLI surface:
 
-## Dashboard
-
-Seven views, all real-time:
-
-| View | What it shows |
-|------|---------------|
-| **Mission Control** | System health, agent status, active pipeline, task stats |
-| **Task Board** | 5-column Kanban (pending -> done) from SpacetimeDB |
-| **Runs** | Run history, trigger new runs, active run status |
-| **Trajectory Viewer** | Step-by-step replay of any agent execution (3 modes) |
-| **Memory Browser** | Browse, search, store claude-flow memory (HNSW vector) |
-| **Observability** | LangFuse traces, token costs, latency metrics |
-| **Agents** | Live swarm status, SpacetimeDB + swarm agents |
-
-Start the API server for full dashboard features:
 ```bash
-python3 -m justai.api   # API on :3002
-cd dashboard && npm run dev   # Dashboard on :3001
+justai run [--auto] [--local] [--session SESSION] "goal"
+justai plan [--session SESSION] "goal"
+justai status
+justai history [--limit N]
+justai version
+justai --version
+```
+
+Important behavior:
+
+- `justai plan` works and falls back to heuristic planning when the model call is unavailable.
+- `justai status` works, but still reports transitional probes for removed or unavailable services. In the verified environment, LiteLLM was reachable, while the legacy SpacetimeDB and claude-flow MCP probes were not healthy.
+- `justai history` works against the memory client and prints no history when no run keys exist.
+- `justai run --auto --local "goal"` runs the orchestrator and executes each approved task's verification command locally. It does not edit code for you.
+- `justai run --auto "goal"` enters the default delegated mode, but that backend has been removed and currently returns an explicit error: use `--local` for the remaining local verification path.
+
+All commands also work as:
+
+```bash
+python3 -m justai <command>
 ```
 
 ## Pipeline Stages
 
-| # | Stage | Module | Purpose |
-|---|-------|--------|---------|
-| 0 | Preflight | `health.py` | Check LiteLLM, SpacetimeDB, MCP health |
-| 1 | Session | `orchestrator.py` | Load prior context from memory |
-| 2 | Intent | `intent_gate.py` | Classify goal (execution/research/ambiguous) |
-| 3 | Plan | `scope_planner.py` | Decompose into mini-sized tasks with verify commands |
-| 4 | Review | `reviewer.py` | LLM validates plan quality, replan if rejected |
-| 5 | Checkpoint | `checkpoint.py` | R0-R3 risk gates (auto mode skips R1 wait) |
-| 6 | Execute | `executor.py` / `delegator.py` / `swarm_delegator.py` | Local, agent via SpacetimeDB, or parallel swarm |
-| 7 | Synthesize | `synthesizer.py` | Aggregate results, store to memory |
+The current orchestrator still runs a compact five-stage control-plane flow:
 
-## Architecture
+| Stage | Module | Current role |
+| --- | --- | --- |
+| Intent | `intent_gate.py` | Classify the goal and ask for clarification when it is ambiguous. |
+| Scope | `scope_planner.py` | Decompose the goal into bounded tasks with success criteria. |
+| Review | `reviewer.py` | Check whether the plan is coherent enough to run. |
+| Checkpoint | `checkpoint.py` | Apply R0-R3 gates; `--auto` skips the R1 wait. |
+| Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Run local verification commands or return removed-backend errors, then summarize results. |
 
-```
-Orchestrator (Python)  -->  LiteLLM (:4000)  -->  Model APIs
-       |
-       v
-SpacetimeDB (:3000)   <-->  mini-swe-agent (bash execution)
-       |
-       v
-claude-flow MCP (:3100)     Dashboard (:3001) + API (:3002)
-264 tools, HNSW memory      React + Vite, 5 views
-```
+## Dashboard
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram.
+The dashboard code is still present under `dashboard/`, and the build passed in Chunk D. Its visible product language may still reflect older flows until the UI cleanup catches up with the backend amputation.
 
-## Configuration
+Current docs stance:
+
+- Treat the dashboard as a transitional operations surface.
+- Do not assume removed backend views represent live execution paths.
+- Dashboard cleanup is outside this README/architecture alignment chunk.
+
+## What's Amputated
+
+These are historical v1.0.0 paths and should not be treated as available features:
+
+- SpacetimeDB delegation.
+- `delegator.py` as the task-posting backend.
+- `executor.py` as a local code executor.
+- swarm dispatch, including `swarm_delegator`, `swarm_config`, `swarm_scale`, `--swarm`, and `JUSTAI_SWARM`.
+- relay-room.
+- LocalManus / manuslocal integration.
+
+Some references remain in old specs, evidence docs, scripts, and install helpers. Those are separate cleanup passes. This README describes the current control-plane direction, not every stale file still in the tree.
+
+## Install
+
+For this branch, prefer the existing venv if it is already present:
 
 ```bash
-cp .env.example .env
+source .venv/bin/activate
+python -m pytest -q
+justai --help
 ```
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `LITELLM_BASE_URL` | `http://localhost:4000` | Model routing proxy |
-| `LITELLM_KEY` | *(from .env)* | LiteLLM auth token |
-| `JUSTAI_AUTO_MODE` | `0` | Skip R1 checkpoint wait |
-| `JUSTAI_LOCAL_EXEC` | `0` | Execute tasks locally |
-| `JUSTAI_SESSION_REF` | `sprint-2` | Session identifier |
-| `LANGFUSE_PUBLIC_KEY` | *(optional)* | LLM tracing |
-| `LANGFUSE_SECRET_KEY` | *(optional)* | LLM tracing |
+Fresh editable install should be:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+python -m pytest -q
+```
+
+The historical installer is still in the repo, but it has not been aligned with the post-amputation shape in this chunk:
+
+```bash
+bash install.sh --check
+```
+
+Treat installer and script cleanup as fix-in-progress until the separate code-amputation pass lands.
+
+## Quick Start
+
+Use the current control-plane surface first:
+
+```bash
+source .venv/bin/activate
+justai plan "describe the repo change you want"
+justai run --auto --local "describe the repo change you want"
+```
+
+The `run --local` path runs checkpointed local verification commands for planned tasks. It is not a full autonomous code-editing backend in this branch.
 
 ## Testing
 
+Canonical test run:
+
 ```bash
-python3 -m pytest tests/ -v
-# 464 tests across 12 sprints
+.venv/bin/python -m pytest -q
 ```
 
-## Built On
+Current expected result for this branch is 363 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
-- **[mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)** — Princeton & Stanford. 74% SWE-bench Verified. MIT License.
-- **[Ruflo / claude-flow](https://github.com/ruvnet/ruflo)** — rUv. 6,000+ commit orchestration platform. MIT License.
-- **[SpacetimeDB](https://spacetimedb.com)** — Clockwork Labs. Real-time distributed database. BSL License.
-- **[LiteLLM](https://github.com/BerriAI/litellm)** — BerriAI. Model routing. MIT License.
-- **[LangFuse](https://langfuse.com)** — LLM observability. MIT License.
+## Current Repo Map
 
-See [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) for the complete credits.
+```text
+justai/
+  cli.py             # current `justai` CLI entrypoint
+  orchestrator.py    # intent -> plan -> review -> checkpoint -> execute/synthesize
+  scope_planner.py   # goal decomposition and task models
+  agent_dispatch.py  # transitional dispatch ladder and removed-backend errors
+  checkpoint.py      # R0-R3 risk gates
+  reviewer.py        # plan quality gate
+  memory.py          # claude-flow memory client
+  trajectory.py      # run trajectory recording and lookup
+  ledger.py          # run accounting
+  health.py          # service probes
+  results.py         # delegation/result dataclasses
+  api.py             # dashboard/API support
+```
 
----
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the fuller control-plane overview.
 
-**v1.0.0** — First release. Full 9-stage pipeline, local + swarm execution (tested to 1500 agents), 7-view dashboard, CLI, trajectory learning, Discord integration, JWT auth, 464 tests.
+## Evidence Trail
+
+Memory keys that explain the current direction:
+
+- `justai-architecture-decision-mini-swe-agent-control-plane`
+- `safe-mini-substrate-architecture`
+- `justai-safe-mini-scaffold-pattern`
+- `justai-two-repo-ship-pattern` (stale key name; content is the three-repo plan)
+
+Relevant local files:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- [VERIFY-REPORT-2026-04-30.md](VERIFY-REPORT-2026-04-30.md)
+- [MINI-SWE-AGENT-RESEARCH-2026-04-30.md](MINI-SWE-AGENT-RESEARCH-2026-04-30.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
