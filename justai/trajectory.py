@@ -29,10 +29,7 @@ from typing import Any, Optional
 
 LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 ANALYSIS_MODEL = os.environ.get("JUSTAI_ANALYSIS_MODEL", "openai/claude-opus-4-6")
-TRAJ_DIR = Path(os.environ.get(
-    "JUSTAI_TRAJ_DIR",
-    os.path.expanduser("~/projects/LocalManus/logs"),
-))
+TRAJ_DIR = Path(os.environ["JUSTAI_TRAJ_DIR"]) if os.environ.get("JUSTAI_TRAJ_DIR") else None
 
 # In-memory cache for AI analysis results (keyed by trajectory filename)
 _analysis_cache: dict[str, dict] = {}
@@ -94,11 +91,25 @@ class PatternReport:
 
 # ── Trajectory Loading ──────────────────────────────────────────────────────
 
+def _traj_dir() -> Path:
+    if TRAJ_DIR is not None:
+        return TRAJ_DIR
+
+    val = os.environ.get("JUSTAI_TRAJ_DIR")
+    if not val:
+        raise RuntimeError(
+            "JUSTAI_TRAJ_DIR environment variable is required for trajectory data. "
+            "Set it to the directory containing .traj.json files."
+        )
+    return Path(val)
+
+
 def list_trajectory_files() -> list[dict]:
     """List all .traj.json files with metadata."""
     files = []
-    dirs = [TRAJ_DIR]
-    relay_sub = TRAJ_DIR / "relay_dispatch"
+    traj_dir = _traj_dir()
+    dirs = [traj_dir]
+    relay_sub = traj_dir / "relay_dispatch"
     if relay_sub.exists():
         dirs.append(relay_sub)
 
@@ -108,7 +119,7 @@ def list_trajectory_files() -> list[dict]:
         for f in d.iterdir():
             if f.suffix == ".json" and ".traj" in f.name:
                 st = f.stat()
-                rel = str(f.relative_to(TRAJ_DIR))
+                rel = str(f.relative_to(traj_dir))
                 files.append({
                     "name": rel,
                     "size": st.st_size,
@@ -120,7 +131,7 @@ def list_trajectory_files() -> list[dict]:
 
 def load_trajectory(filename: str) -> dict:
     """Load and parse a .traj.json file."""
-    fp = TRAJ_DIR / filename
+    fp = _traj_dir() / filename
     if not fp.exists() or not fp.name.endswith(".json"):
         raise FileNotFoundError(f"Trajectory not found: {filename}")
     return json.loads(fp.read_text())

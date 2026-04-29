@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -169,7 +170,8 @@ class TestAuditData(unittest.TestCase):
 
     def test_audit_data_nonexistent(self):
         from justai.trajectory import get_audit_data
-        result = get_audit_data("nonexistent-file.traj.json")
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
+            result = get_audit_data("nonexistent-file.traj.json")
         assert "error" in result
 
     @patch("justai.trajectory.TRAJ_DIR")
@@ -215,7 +217,8 @@ class TestTrajectoryAPI(unittest.TestCase):
 
         responses = []
         handler._json = lambda data, status=200: responses.append((data, status))
-        handler.do_GET()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
+            handler.do_GET()
 
         assert len(responses) == 1
         data, status = responses[0]
@@ -229,7 +232,8 @@ class TestTrajectoryAPI(unittest.TestCase):
 
         responses = []
         handler._json = lambda data, status=200: responses.append((data, status))
-        handler.do_GET()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
+            handler.do_GET()
 
         assert len(responses) == 1
         data, _ = responses[0]
@@ -244,7 +248,8 @@ class TestTrajectoryAPI(unittest.TestCase):
 
         responses = []
         handler._json = lambda data, status=200: responses.append((data, status))
-        handler.do_GET()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
+            handler.do_GET()
 
         assert len(responses) == 1
         data, _ = responses[0]
