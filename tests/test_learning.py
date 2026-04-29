@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from justai.delegator import DelegationResult
+from justai.results import DelegationResult
 
 
 def _make_result(title: str, status: str = "done", result: str = "ok") -> DelegationResult:

@@ -114,23 +114,23 @@ class TestMiniFirstPipeline:
 
 class TestEscalateTask:
     def test_succeeds_first_try_no_escalation(self):
-        """When executor returns done, no escalation happens."""
+        """When runner returns done, no escalation happens."""
         from justai.mini_first import escalate_task
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task = _make_task("add endpoint")
-        executor = MagicMock(return_value=DelegationResult(
+        runner = MagicMock(return_value=DelegationResult(
             task_id="t1", title="add endpoint", status="done",
             result="completed", duration_seconds=2.0,
         ))
-        result = escalate_task(task, session_ref="test", executor=executor)
+        result = escalate_task(task, session_ref="test", runner=runner)
         assert result.status == "done"
-        assert executor.call_count == 1  # no escalation call
+        assert runner.call_count == 1  # no escalation call
 
     def test_fails_then_escalates_successfully(self):
         """When first attempt fails, escalation succeeds."""
         from justai.mini_first import escalate_task
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task = _make_task("fix bug")
         first_result = DelegationResult(
@@ -141,34 +141,34 @@ class TestEscalateTask:
             task_id="t1-esc", title="fix bug", status="done",
             result="fixed", duration_seconds=3.0,
         )
-        executor = MagicMock(side_effect=[first_result, escalation_result])
-        result = escalate_task(task, session_ref="test", executor=executor)
+        runner = MagicMock(side_effect=[first_result, escalation_result])
+        result = escalate_task(task, session_ref="test", runner=runner)
         assert result.status == "done"
-        assert executor.call_count == 2
+        assert runner.call_count == 2
 
     def test_both_attempts_fail(self):
         """When both cheap and escalation fail, returns failed."""
         from justai.mini_first import escalate_task
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task = _make_task("impossible task")
         fail = DelegationResult(
             task_id="t1", title="impossible task", status="failed",
             result="cannot do", duration_seconds=1.0,
         )
-        executor = MagicMock(return_value=fail)
-        result = escalate_task(task, session_ref="test", executor=executor)
+        runner = MagicMock(return_value=fail)
+        result = escalate_task(task, session_ref="test", runner=runner)
         assert result.status == "failed"
-        assert executor.call_count == 2  # cheap + escalation
+        assert runner.call_count == 2  # cheap + escalation
 
     def test_escalation_sets_model_env(self):
         """escalate_task sets JUSTAI_ACTIVE_MODEL env var for each attempt."""
         from justai.mini_first import escalate_task, MINI_MODEL, ESCALATION_MODEL
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
         import os
 
         captured_models = []
-        def capture_executor(task, session_ref=""):
+        def capture_runner(task, session_ref=""):
             captured_models.append(os.environ.get("JUSTAI_ACTIVE_MODEL", ""))
             return DelegationResult(
                 task_id="t1", title=task.title, status="failed",
@@ -176,7 +176,7 @@ class TestEscalateTask:
             )
 
         task = _make_task("test model routing")
-        escalate_task(task, session_ref="test", executor=capture_executor)
+        escalate_task(task, session_ref="test", runner=capture_runner)
         assert captured_models[0] == MINI_MODEL
         assert captured_models[1] == ESCALATION_MODEL
 
@@ -185,7 +185,7 @@ class TestEscalatePlan:
     def test_dependency_skip_after_escalation_failure(self):
         """If task 0 fails after escalation, task 1 (depends on 0) is skipped."""
         from justai.mini_first import escalate_plan
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task0 = _make_task("setup db")
         task1 = _make_task("add tables")
@@ -200,10 +200,10 @@ class TestEscalatePlan:
         assert results[0].status == "failed"
         assert results[1].status == "skipped"
 
-    def test_routes_to_correct_executor(self):
-        """escalate_plan passes the right executor for each mode."""
+    def test_routes_to_correct_runner(self):
+        """escalate_plan passes the right runner for each mode."""
         from justai.mini_first import escalate_plan
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task = _make_task("single task")
         done = DelegationResult(
@@ -212,15 +212,14 @@ class TestEscalatePlan:
         )
         with patch("justai.mini_first.escalate_task", return_value=done) as mock_esc:
             escalate_plan([task], session_ref="test", mode="delegated")
-            executor_arg = mock_esc.call_args.kwargs.get("executor") or mock_esc.call_args[0][2]
-            # The executor should be delegator.delegate for "delegated" mode
-            from justai.delegator import delegate
-            assert executor_arg == delegate
+            runner_arg = mock_esc.call_args.kwargs.get("runner") or mock_esc.call_args[0][2]
+            from justai.mini_first import _execute_removed_backend
+            assert runner_arg == _execute_removed_backend
 
     def test_all_three_modes_accepted(self):
         """escalate_plan accepts 'local', 'delegated', and 'swarm' modes."""
         from justai.mini_first import escalate_plan
-        from justai.delegator import DelegationResult
+        from justai.results import DelegationResult
 
         task = _make_task("test")
         done = DelegationResult(

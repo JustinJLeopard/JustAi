@@ -147,7 +147,6 @@ class PackageIntegrityTests(unittest.TestCase):
         from justai import planner
         from justai import reviewer
         from justai import checkpoint
-        from justai import delegator
         from justai import memory
         from justai import tracing
         # If any import fails, this test fails
