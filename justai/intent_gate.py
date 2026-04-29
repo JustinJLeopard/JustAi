@@ -83,7 +83,7 @@ def _call_litellm(goal: str) -> dict:
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', 'sk-justai')}",
+            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', '')}",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:

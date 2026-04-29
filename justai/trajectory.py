@@ -317,7 +317,7 @@ def _call_analysis_llm(condensed: str) -> dict | None:
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', 'sk-justai')}",
+                "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', '')}",
             },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:

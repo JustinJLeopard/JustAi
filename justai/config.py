@@ -22,7 +22,7 @@ LITELLM_BASE_URL = os.environ.get(
     "LITELLM_BASE_URL", "http://localhost:4000"
 ).rstrip("/").removesuffix("/v1")
 
-LITELLM_KEY = os.environ.get("LITELLM_KEY", "sk-justai")
+LITELLM_KEY = os.environ.get("LITELLM_KEY", "")
 
 SPACETIMEDB_URL = os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000")
 
