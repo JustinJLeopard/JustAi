@@ -1,7 +1,17 @@
 """
-JustAi — Agent Dispatch Workflow
-=================================
-Routes task execution through a small-model-first dispatch ladder:
+JustAi - Agent Dispatch (current concrete impl)
+===============================================
+Today this module IS the dispatch implementation: it calls escalate_plan/
+escalate_task with the existing mini-swe-agent flow.
+
+POST-SAFE-MINI MIGRATION: this module's role narrows to "JustAi's
+specific configuration + adaptation layer" between JustAi's Plan/Task
+types and safe-mini's Chunk/Budget. The actual run loop will move to
+safe-mini's SafeMiniRunner. See justai/runner_protocol.py for the
+forward-looking dispatch contract.
+
+Current workflow routes task execution through a small-model-first dispatch
+ladder:
 
   1. PSEUDOCODE — Capable model (codex) generates pseudocode from spec
   2. WRITE_TESTS — Mini writes tests per function (with IDs)
@@ -27,8 +37,10 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable
-from justai.scope_planner import Task
+
 from justai.results import DelegationResult
+from justai.runner_protocol import AgentRunner  # noqa: F401  # stub; full integration post-safe-mini
+from justai.scope_planner import Task
 
 PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
 
