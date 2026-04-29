@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LiveData, msAgo } from '@/lib/spacetime'
+import { DB_NAME, LiveData, msAgo } from '@/lib/spacetime'
 import { fetchHealth, fetchRuns, fetchObservabilitySummary } from '../lib/api-client'
 import type { HealthData, RunEntry, ObservabilitySummary } from '../lib/api-client'
 import { MetricCard } from '@/components/MetricCard'
@@ -485,7 +485,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
           <ServiceRow
             name="SpacetimeDB"
             ok={connected ? true : false}
-            detail={connected ? 'relay-room-dev' : 'disconnected'}
+            detail={connected ? DB_NAME || 'connected' : 'disconnected'}
             ping={connected ? '—' : 'err'}
           />
           <ServiceRow

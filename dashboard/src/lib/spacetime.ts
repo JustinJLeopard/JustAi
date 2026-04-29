@@ -63,7 +63,7 @@ export interface SpacetimeEvent {
 // ── Connection Config ──────────────────────────────────────────────────────────
 
 const SPACETIME_URL = import.meta.env.VITE_SPACETIME_URL ?? 'ws://localhost:3000'
-const DB_NAME = import.meta.env.VITE_SPACETIME_DB ?? 'relay-room-dev'
+export const DB_NAME = import.meta.env.VITE_SPACETIME_DB ?? ''
 
 // ── REST Fallback Client ───────────────────────────────────────────────────────
 // SpacetimeDB also exposes an HTTP API. We use this as a reliable fallback
