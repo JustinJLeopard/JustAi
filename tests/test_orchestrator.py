@@ -10,12 +10,83 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 # Ensure justai package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+
+
+def _http_response(status: int, body: dict | str, content_type: str = "application/json"):
+    resp = MagicMock()
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+    resp.status = status
+    resp.headers = {"Content-Type": content_type}
+    payload = json.dumps(body).encode() if isinstance(body, dict) else body.encode()
+    resp.read.return_value = payload
+    return resp
+
+
+def _http_error(status: int, body: dict | str, content_type: str = "application/json"):
+    payload = json.dumps(body).encode() if isinstance(body, dict) else body.encode()
+    return HTTPError(
+        url="http://example.test",
+        code=status,
+        msg="mock",
+        hdrs={"Content-Type": content_type},
+        fp=BytesIO(payload),
+    )
+
+
+# ── Service Health ───────────────────────────────────────────────────────────
+
+class ServiceHealthTests(unittest.TestCase):
+
+    def test_litellm_accepts_models_data_signature(self):
+        from justai.health import check_litellm
+        with patch("urllib.request.urlopen", return_value=_http_response(200, {"data": []})):
+            status = check_litellm()
+        self.assertTrue(status.ok)
+        self.assertIn("models API", status.detail)
+
+    def test_litellm_accepts_auth_required_signature(self):
+        from justai.health import check_litellm
+        err = _http_error(401, {"error": {"message": "Missing API key"}})
+        with patch("urllib.request.urlopen", side_effect=err):
+            status = check_litellm()
+        self.assertTrue(status.ok)
+        self.assertIn("http 401", status.detail)
+
+    def test_spacetimedb_rejects_open_webui_html_false_positive(self):
+        from justai.health import check_spacetimedb
+        html = "<html><title>Open WebUI</title></html>"
+        with patch("urllib.request.urlopen", return_value=_http_response(200, html, "text/html")):
+            status = check_spacetimedb()
+        self.assertFalse(status.ok)
+        self.assertEqual(status.detail, "responded but not SpacetimeDB")
+
+    def test_spacetimedb_accepts_database_api_signature(self):
+        from justai.health import check_spacetimedb
+        body = {
+            "database_identity": "abc",
+            "owner_identity": "def",
+            "host_type": "wasm",
+            "initial_program": "hash",
+        }
+        with patch("urllib.request.urlopen", return_value=_http_response(200, body)):
+            status = check_spacetimedb()
+        self.assertTrue(status.ok)
+        self.assertIn("database API", status.detail)
+
+    def test_memory_requires_health_ok_signature(self):
+        from justai.health import check_memory
+        with patch("urllib.request.urlopen", return_value=_http_response(200, {"status": "ok"})):
+            status = check_memory()
+        self.assertTrue(status.ok)
 
 
 # ── Intent Gate ───────────────────────────────────────────────────────────────
