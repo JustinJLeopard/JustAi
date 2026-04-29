@@ -183,43 +183,43 @@ class PlannerTests(unittest.TestCase):
         }
 
     def test_decompose_returns_plan_with_tasks(self):
-        from justai.planner import decompose
-        with patch("justai.planner._call_litellm", return_value=self._mock_plan_response()):
+        from justai.scope_planner import decompose
+        with patch("justai.scope_planner._call_litellm", return_value=self._mock_plan_response()):
             plan = decompose("add /health/agents endpoint", session_ref="test")
         self.assertEqual(len(plan.tasks), 2)
         self.assertEqual(plan.session_ref, "test")
 
     def test_decompose_preserves_dependency_order(self):
-        from justai.planner import decompose
-        with patch("justai.planner._call_litellm", return_value=self._mock_plan_response()):
+        from justai.scope_planner import decompose
+        with patch("justai.scope_planner._call_litellm", return_value=self._mock_plan_response()):
             plan = decompose("add /health/agents endpoint")
         self.assertEqual(plan.tasks[1].depends_on, [0])
 
     def test_decompose_first_task_is_read_not_write(self):
-        from justai.planner import decompose, RiskLevel
-        with patch("justai.planner._call_litellm", return_value=self._mock_plan_response()):
+        from justai.scope_planner import decompose, RiskLevel
+        with patch("justai.scope_planner._call_litellm", return_value=self._mock_plan_response()):
             plan = decompose("add /health/agents endpoint")
         self.assertEqual(plan.tasks[0].risk, RiskLevel.R0)
 
     def test_decompose_falls_back_to_single_task_on_litellm_failure(self):
-        from justai.planner import decompose
-        with patch("justai.planner._call_litellm", side_effect=Exception("timeout")):
+        from justai.scope_planner import decompose
+        with patch("justai.scope_planner._call_litellm", side_effect=Exception("timeout")):
             plan = decompose("add /health/agents endpoint")
         # Heuristic fallback: explore + execute + verify (Sprint 7)
         self.assertGreaterEqual(len(plan.tasks), 2)
         self.assertEqual(plan.goal, "add /health/agents endpoint")
 
     def test_format_plan_includes_all_tasks(self):
-        from justai.planner import decompose, format_plan
-        with patch("justai.planner._call_litellm", return_value=self._mock_plan_response()):
+        from justai.scope_planner import decompose, format_plan
+        with patch("justai.scope_planner._call_litellm", return_value=self._mock_plan_response()):
             plan = decompose("add /health/agents endpoint")
         output = format_plan(plan)
         self.assertIn("Explore health_server.py", output)
         self.assertIn("Add /health/agents endpoint", output)
 
     def test_task_risk_levels_parsed_correctly(self):
-        from justai.planner import decompose, RiskLevel
-        with patch("justai.planner._call_litellm", return_value=self._mock_plan_response()):
+        from justai.scope_planner import decompose, RiskLevel
+        with patch("justai.scope_planner._call_litellm", return_value=self._mock_plan_response()):
             plan = decompose("add /health/agents endpoint")
         self.assertEqual(plan.tasks[0].risk, RiskLevel.R0)
         self.assertEqual(plan.tasks[1].risk, RiskLevel.R1)
@@ -230,7 +230,7 @@ class PlannerTests(unittest.TestCase):
 class ReviewerTests(unittest.TestCase):
 
     def _make_plan(self, tasks_override=None):
-        from justai.planner import Plan, Task, RiskLevel, AgentType
+        from justai.scope_planner import Plan, Task, RiskLevel, AgentType
         tasks = tasks_override or [
             Task(
                 title="Explore health_server.py",
@@ -259,7 +259,7 @@ class ReviewerTests(unittest.TestCase):
         self.assertEqual(result.feedback, [])
 
     def test_heuristic_rejects_placeholder_success_criteria(self):
-        from justai.planner import Task, RiskLevel, AgentType
+        from justai.scope_planner import Task, RiskLevel, AgentType
         from justai.reviewer import _heuristic_review
         bad_task = Task(
             title="Do something",
@@ -269,14 +269,14 @@ class ReviewerTests(unittest.TestCase):
             success_criteria="echo 'verify manually'",
             depends_on=[],
         )
-        from justai.planner import Plan
+        from justai.scope_planner import Plan
         plan = Plan(goal="do something", tasks=[bad_task])
         result = _heuristic_review(plan)
         self.assertFalse(result.approved)
         self.assertTrue(any("success criteria" in issue for issue in result.feedback))
 
     def test_heuristic_rejects_bad_dependency_ordering(self):
-        from justai.planner import Task, RiskLevel, AgentType, Plan
+        from justai.scope_planner import Task, RiskLevel, AgentType, Plan
         from justai.reviewer import _heuristic_review
         task0 = Task("First", "Do first.", AgentType.MINI, RiskLevel.R1,
                      "echo done", depends_on=[1])  # depends on task that comes AFTER
@@ -287,7 +287,7 @@ class ReviewerTests(unittest.TestCase):
         self.assertFalse(result.approved)
 
     def test_review_empty_plan_is_rejected(self):
-        from justai.planner import Plan
+        from justai.scope_planner import Plan
         from justai.reviewer import review
         plan = Plan(goal="nothing", tasks=[])
         result = review(plan)
@@ -313,7 +313,7 @@ class ReviewerTests(unittest.TestCase):
 class CheckpointTests(unittest.TestCase):
 
     def _make_task(self, risk_str: str, title: str = "Test task"):
-        from justai.planner import Task, RiskLevel, AgentType
+        from justai.scope_planner import Task, RiskLevel, AgentType
         return Task(
             title=title,
             description="Test description.",

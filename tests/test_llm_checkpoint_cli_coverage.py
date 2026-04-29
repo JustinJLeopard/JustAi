@@ -27,7 +27,7 @@ def test_intent_call_litellm_strips_markdown_json_fence():
 
 
 def test_planner_call_litellm_includes_context():
-    from justai.planner import _call_litellm
+    from justai.scope_planner import _call_litellm
 
     response = {
         "choices": [
@@ -51,7 +51,7 @@ def test_planner_call_litellm_includes_context():
             }
         ]
     }
-    with patch("justai.planner.urllib.request.urlopen", return_value=_make_http_mock(response)) as mock_open:
+    with patch("justai.scope_planner.urllib.request.urlopen", return_value=_make_http_mock(response)) as mock_open:
         _call_litellm("add endpoint", context="Prior attempt failed")
 
     payload = json.loads(mock_open.call_args[0][0].data)
@@ -59,7 +59,7 @@ def test_planner_call_litellm_includes_context():
 
 
 def test_reviewer_merges_feedback_and_suggestions():
-    from justai.planner import AgentType, Plan, RiskLevel, Task
+    from justai.scope_planner import AgentType, Plan, RiskLevel, Task
     from justai.reviewer import review
 
     plan = Plan(

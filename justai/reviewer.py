@@ -26,7 +26,7 @@ import os
 import urllib.request
 from dataclasses import dataclass
 
-from justai.planner import Plan, Task
+from justai.scope_planner import Plan, Task
 
 
 @dataclass
@@ -163,7 +163,7 @@ def review(plan: Plan) -> ReviewResult:
 
 
 if __name__ == "__main__":
-    from justai.planner import decompose, format_plan
+    from justai.scope_planner import decompose, format_plan
     import sys
 
     goal = " ".join(sys.argv[1:]) or (

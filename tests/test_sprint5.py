@@ -144,11 +144,12 @@ class PackageIntegrityTests(unittest.TestCase):
 
     def test_all_modules_importable(self):
         from justai import intent_gate
-        from justai import planner
+        from justai import scope_planner
         from justai import reviewer
         from justai import checkpoint
         from justai import memory
         from justai import tracing
+        assert scope_planner
         # If any import fails, this test fails
 
     def test_orchestrator_importable(self):

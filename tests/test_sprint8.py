@@ -125,10 +125,10 @@ class TestCLICommands(unittest.TestCase):
     def test_cmd_plan_calls_decompose(self):
         from justai.cli import cmd_plan
         import argparse
-        from justai.planner import Plan
+        from justai.scope_planner import Plan
         mock_plan = Plan(goal="test", tasks=[], session_ref="")
         args = argparse.Namespace(goal=["test"], session="s8")
-        with patch("justai.planner.decompose", return_value=mock_plan):
+        with patch("justai.scope_planner.decompose", return_value=mock_plan):
             result = cmd_plan(args)
         self.assertEqual(result, 0)
 

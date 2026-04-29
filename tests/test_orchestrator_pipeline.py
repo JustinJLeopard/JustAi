@@ -27,7 +27,7 @@ def _intent(intent_type: str = "execution", confidence: float = 0.9):
 
 
 def _plan(n_tasks: int = 1):
-    from justai.planner import AgentType, Plan, RiskLevel, Task
+    from justai.scope_planner import AgentType, Plan, RiskLevel, Task
 
     return Plan(
         goal="test goal",

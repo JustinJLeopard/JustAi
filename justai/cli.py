@@ -40,7 +40,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_plan(args: argparse.Namespace) -> int:
     """Decompose a goal into tasks without executing."""
-    from justai.planner import decompose, format_plan
+    from justai.scope_planner import decompose, format_plan
 
     goal = " ".join(args.goal)
     if not goal:

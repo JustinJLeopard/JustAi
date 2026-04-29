@@ -30,7 +30,7 @@ import time
 import json
 from pathlib import Path
 
-from justai.planner import RiskLevel, Task
+from justai.scope_planner import RiskLevel, Task
 
 DISCORD_BOT_TOKEN = os.environ.get("RELAY_COORDINATOR_TOKEN", "")
 DISCORD_CHANNEL_ID = os.environ.get("DISCORD_RELAY_CHANNEL_ID", "1491134768077865090")

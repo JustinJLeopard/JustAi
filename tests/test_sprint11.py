@@ -73,7 +73,7 @@ class TestPackageStructure(unittest.TestCase):
         "justai/cli.py",
         "justai/config.py",
         "justai/orchestrator.py",
-        "justai/planner.py",
+        "justai/scope_planner.py",
         "justai/reviewer.py",
         "justai/intent_gate.py",
         "justai/checkpoint.py",
@@ -115,7 +115,7 @@ class TestImportAll(unittest.TestCase):
         "justai.cli",
         "justai.config",
         "justai.orchestrator",
-        "justai.planner",
+        "justai.scope_planner",
         "justai.reviewer",
         "justai.intent_gate",
         "justai.checkpoint",
@@ -168,7 +168,7 @@ class TestE2ESmokeLocal(unittest.TestCase):
 
     def test_full_pipeline_smoke(self):
         from justai.orchestrator import run
-        from justai.planner import Plan, Task, RiskLevel, AgentType
+        from justai.scope_planner import Plan, Task, RiskLevel, AgentType
         from justai.intent_gate import IntentResult, Intent
         from justai.reviewer import ReviewResult
 

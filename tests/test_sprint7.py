@@ -35,7 +35,7 @@ class TestAutoMode(unittest.TestCase):
     def test_r1_auto_mode_immediate_approval(self):
         """R1 tasks approve immediately in auto mode — no 60s wait."""
         from justai.checkpoint import evaluate
-        from justai.planner import Task, RiskLevel, AgentType
+        from justai.scope_planner import Task, RiskLevel, AgentType
 
         task = Task(
             title="test task",
@@ -56,7 +56,7 @@ class TestAutoMode(unittest.TestCase):
     def test_r0_always_immediate(self):
         """R0 always auto-approves regardless of mode."""
         from justai.checkpoint import evaluate
-        from justai.planner import Task, RiskLevel, AgentType
+        from justai.scope_planner import Task, RiskLevel, AgentType
 
         task = Task(
             title="read only",
@@ -72,7 +72,7 @@ class TestAutoMode(unittest.TestCase):
     def test_r3_always_blocked(self):
         """R3 always blocks regardless of mode."""
         from justai.checkpoint import evaluate
-        from justai.planner import Task, RiskLevel, AgentType
+        from justai.scope_planner import Task, RiskLevel, AgentType
 
         task = Task(
             title="dangerous op",
@@ -180,26 +180,26 @@ class TestPlannerRetry(unittest.TestCase):
     """Test planner retry logic and heuristic fallback."""
 
     def test_heuristic_plan_has_explore_task(self):
-        from justai.planner import _heuristic_plan
+        from justai.scope_planner import _heuristic_plan
         plan = _heuristic_plan("add a /ready endpoint to server.py")
         self.assertGreaterEqual(len(plan.tasks), 2)
         self.assertIn("explore", plan.tasks[0].title.lower())
 
     def test_heuristic_plan_verify_task(self):
-        from justai.planner import _heuristic_plan
+        from justai.scope_planner import _heuristic_plan
         plan = _heuristic_plan("fix the login bug")
         # Should have explore, execute, verify
         self.assertEqual(len(plan.tasks), 3)
         self.assertIn("verify", plan.tasks[2].title.lower())
 
     def test_heuristic_plan_no_extra_verify_for_test_goal(self):
-        from justai.planner import _heuristic_plan
+        from justai.scope_planner import _heuristic_plan
         plan = _heuristic_plan("run the test suite and check results")
         # Test goals don't get extra verify task
         self.assertEqual(len(plan.tasks), 2)
 
     def test_heuristic_plan_dependencies(self):
-        from justai.planner import _heuristic_plan
+        from justai.scope_planner import _heuristic_plan
         plan = _heuristic_plan("add endpoint to app.py")
         # Execute depends on explore
         self.assertEqual(plan.tasks[1].depends_on, [0])
@@ -208,36 +208,36 @@ class TestPlannerRetry(unittest.TestCase):
             self.assertEqual(plan.tasks[2].depends_on, [1])
 
     def test_infer_verify_command_endpoint(self):
-        from justai.planner import _infer_verify_command
+        from justai.scope_planner import _infer_verify_command
         cmd = _infer_verify_command("add /api/health endpoint")
         self.assertIn("curl", cmd)
 
     def test_infer_verify_command_test(self):
-        from justai.planner import _infer_verify_command
+        from justai.scope_planner import _infer_verify_command
         cmd = _infer_verify_command("run the test suite")
         self.assertIn("pytest", cmd)
 
     def test_infer_verify_command_python_file(self):
-        from justai.planner import _infer_verify_command
+        from justai.scope_planner import _infer_verify_command
         cmd = _infer_verify_command("update server.py with new handler")
         self.assertIn("python3", cmd)  # check command
 
     def test_infer_verify_command_generic(self):
-        from justai.planner import _infer_verify_command
+        from justai.scope_planner import _infer_verify_command
         cmd = _infer_verify_command("do something abstract")
         self.assertIn("verify manually", cmd)
 
     def test_decompose_fallback_on_network_error(self):
         """When LLM is unreachable, decompose returns heuristic plan."""
-        from justai import planner
-        from justai.planner import decompose
-        with patch.object(planner, "_call_litellm", side_effect=ConnectionError("refused")):
+        from justai import scope_planner
+        from justai.scope_planner import decompose
+        with patch.object(scope_planner, "_call_litellm", side_effect=ConnectionError("refused")):
             plan = decompose("add a feature", session_ref="test")
         self.assertGreaterEqual(len(plan.tasks), 2)
         self.assertEqual(plan.goal, "add a feature")
 
     def test_llm_retry_attempts_constant(self):
-        from justai.planner import LLM_RETRY_ATTEMPTS
+        from justai.scope_planner import LLM_RETRY_ATTEMPTS
         self.assertEqual(LLM_RETRY_ATTEMPTS, 2)
 
 
