@@ -1,7 +1,7 @@
 """
-JustAi — Mini-First Workflow
-==============================
-Maximizes mini-swe-agent utilization by front-loading cheap agents:
+JustAi — Agent Dispatch Workflow
+=================================
+Routes task execution through a small-model-first dispatch ladder:
 
   1. PSEUDOCODE — Capable model (codex) generates pseudocode from spec
   2. WRITE_TESTS — Mini writes tests per function (with IDs)
@@ -9,13 +9,13 @@ Maximizes mini-swe-agent utilization by front-loading cheap agents:
   4. ITERATE — Mini runs tests → fixes failures → runs tests (up to N iterations)
   5. ESCALATE — If mini is stuck after N iterations, a capable model takes over
 
-This tests whether front-loading cheap agents increases speed, quality,
+This tests whether front-loading lower-cost agents increases speed, quality,
 and success rate compared to the standard single-agent pipeline.
 
 Usage:
-    from justai.mini_first import MiniFirstPipeline, MiniFirstConfig
-    cfg = MiniFirstConfig(max_mini_iterations=3)
-    pipeline = MiniFirstPipeline(cfg)
+    from justai.agent_dispatch import AgentDispatchPipeline, AgentDispatchConfig
+    cfg = AgentDispatchConfig(max_mini_iterations=3)
+    pipeline = AgentDispatchPipeline(cfg)
     result = pipeline.run("implement feature X", spec="detailed spec...")
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable
-from justai.planner import Task
+from justai.scope_planner import Task
 from justai.results import DelegationResult
 
 PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
@@ -38,7 +38,7 @@ ESCALATION_MODEL = os.environ.get("JUSTAI_ESCALATION_MODEL", "claude-opus-4-6")
 
 
 @dataclass
-class MiniFirstConfig:
+class AgentDispatchConfig:
     max_mini_iterations: int = 3
     mini_model: str = "gpt-5.3-codex"
     escalation_model: str = "claude-opus-4-6"
@@ -112,11 +112,11 @@ def _run_tests(test_cmd: str, work_dir: str = "") -> tuple[bool, str]:
         return False, str(e)[:200]
 
 
-class MiniFirstPipeline:
-    """Run the mini-first escalation workflow."""
+class AgentDispatchPipeline:
+    """Run the small-model-first agent dispatch workflow."""
 
-    def __init__(self, config: MiniFirstConfig | None = None):
-        self.config = config or MiniFirstConfig()
+    def __init__(self, config: AgentDispatchConfig | None = None):
+        self.config = config or AgentDispatchConfig()
         self._model_calls = 0
         self._mini_calls = 0
         self._escalation_calls = 0
@@ -275,7 +275,7 @@ class MiniFirstPipeline:
 
 # ── Escalation Strategy ──────────────────────────────────────────────────────
 # Wraps task runners with try-cheap-then-escalate logic.
-# The MiniFirstPipeline above is preserved as a standalone LLM pipeline utility.
+# The AgentDispatchPipeline above is preserved as a standalone LLM pipeline utility.
 
 
 def escalate_task(

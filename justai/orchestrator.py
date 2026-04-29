@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 
 from justai.intent_gate import classify, Intent, IntentResult, INTENT_MODEL
-from justai.planner import decompose, Plan, format_plan, PLANNER_MODEL
+from justai.scope_planner import decompose, Plan, format_plan, PLANNER_MODEL
 from justai.reviewer import review, ReviewResult, REVIEWER_MODEL
 from justai.checkpoint import evaluate
 from justai.synthesizer import synthesize, format_summary
@@ -37,7 +37,7 @@ from justai.health import preflight, print_preflight
 from justai.ledger import Ledger
 from justai.discord import OrchestratorHook
 from justai.learning import enrich_context, record_run
-from justai.mini_first import escalate_plan
+from justai.agent_dispatch import escalate_plan
 
 MAX_REPLAN_ATTEMPTS = 2
 SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
