@@ -16,7 +16,7 @@ Evidence-based design:
   - Reviewer validates plan quality before any execution (evidence: planning
     quality was #1 driver of 80->90->100% sprint success improvement)
   - Checkpoint enforces R0-R3 gates (default: autonomous)
-  - Delegator posts to SpacetimeDB and monitors via relay CLI
+  - Mini-first execution handles local/delegated task outcomes
   - Synthesizer aggregates results and stores in claude-flow memory
 """
 from __future__ import annotations
@@ -30,7 +30,6 @@ from justai.intent_gate import classify, Intent, IntentResult, INTENT_MODEL
 from justai.planner import decompose, Plan, format_plan, PLANNER_MODEL
 from justai.reviewer import review, ReviewResult, REVIEWER_MODEL
 from justai.checkpoint import evaluate
-from justai.delegator import delegate_plan, DelegationResult
 from justai.synthesizer import synthesize, format_summary
 from justai.memory import Memory
 from justai.tracing import trace_generation, trace_event, flush_traces
@@ -52,7 +51,7 @@ class OrchestrationResult:
     goal: str
     intent: str
     task_count: int
-    results: list[DelegationResult]
+    results: list
     duration_seconds: float
     status: str   # "complete" | "partial" | "blocked" | "ambiguous"
     escalations: int = 0
@@ -259,8 +258,8 @@ def run(
             status="blocked",
         )
 
-    # ── Stage 5: Execute / Delegate ──────────────────────────────────────────
-    stage5_name = "swarm" if swarm else ("executor" if local else "delegator")
+    # ── Stage 5: Execute ─────────────────────────────────────────────────────
+    stage5_name = "swarm" if swarm else ("local" if local else "external")
     with trace_generation(stage5_name,
                           input_text=f"{len(approved_tasks)} tasks",
                           session_id=session_ref,

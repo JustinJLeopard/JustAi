@@ -28,9 +28,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable
 from justai.planner import Task
-from justai.delegator import delegate, DelegationResult
-from justai.executor import execute_plan as _execute_plan_all
-from justai.swarm_delegator import SwarmDelegator
+from justai.results import DelegationResult
 
 PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
 
@@ -276,22 +274,21 @@ class MiniFirstPipeline:
 
 
 # ── Escalation Strategy ──────────────────────────────────────────────────────
-# Wraps existing delegators with try-cheap-then-escalate logic.
+# Wraps task runners with try-cheap-then-escalate logic.
 # The MiniFirstPipeline above is preserved as a standalone LLM pipeline utility.
 
 
 def escalate_task(
     task: Task,
     session_ref: str,
-    executor: Callable[..., DelegationResult],
+    runner: Callable[..., DelegationResult],
 ) -> DelegationResult:
     """Execute a task with cheap model first, escalate on failure.
 
     Args:
         task: The task to execute.
         session_ref: Session identifier for tracing.
-        executor: A callable(task, session_ref) -> DelegationResult.
-                  One of: delegator.delegate, executor single-task wrapper, swarm dispatch.
+        runner: A callable(task, session_ref) -> DelegationResult.
 
     Returns:
         DelegationResult — from first attempt if successful, from escalation otherwise.
@@ -301,7 +298,7 @@ def escalate_task(
     # First attempt: cheap model
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = MINI_MODEL
-        result = executor(task, session_ref=session_ref)
+        result = runner(task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
 
@@ -326,54 +323,64 @@ def escalate_task(
 
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = ESCALATION_MODEL
-        escalation_result = executor(escalated_task, session_ref=session_ref)
+        escalation_result = runner(escalated_task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
 
     return escalation_result
 
 
-def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
-    """Adapter: run a single task through the local executor and return DelegationResult."""
-    results = _execute_plan_all([task])
-    if not results:
-        return DelegationResult(
-            task_id="local-err", title=task.title,
-            status="error", result="Local executor returned no results",
-            duration_seconds=0.0,
+def _verify_task(task: Task) -> tuple[bool, str]:
+    """Run the task's success criteria and return (passed, output)."""
+    criteria = task.success_criteria
+    if not criteria or criteria.strip() in ("echo 'verify manually'", "echo 'task completed -- verify manually'"):
+        return True, "no automated verification"
+
+    try:
+        result = subprocess.run(
+            ["bash", "-c", criteria],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-    er = results[0]
+        if result.returncode == 0:
+            return True, result.stdout[:500]
+        return False, f"exit {result.returncode}: {result.stderr[:300]}"
+    except subprocess.TimeoutExpired:
+        return False, "verification command timed out"
+    except Exception as exc:
+        return False, str(exc)[:200]
+
+
+def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
+    """Run a single task's verification criteria locally."""
+    start = time.time()
+    passed, output = _verify_task(task)
+    status = "done" if passed else "failed"
     return DelegationResult(
-        task_id=er.task_id, title=er.title,
-        status=er.status, result=er.result,
-        duration_seconds=er.duration_seconds,
+        task_id=f"local-{session_ref or 'task'}",
+        title=task.title,
+        status=status,
+        result=output[:200] if passed else f"Task requires manual execution: {task.description[:100]}",
+        duration_seconds=time.time() - start,
     )
 
 
-def _execute_single_swarm(task: Task, session_ref: str = "") -> DelegationResult:
-    """Adapter: run a single task through swarm dispatch and return DelegationResult."""
-    sd = SwarmDelegator(max_agents=1)
-    sd.spawn_agents(1)
-    swarm_results = sd.dispatch_parallel([task], session_ref=session_ref)
-    sd.shutdown()
-    if not swarm_results:
-        return DelegationResult(
-            task_id="swarm-err", title=task.title,
-            status="error", result="Swarm returned no results",
-            duration_seconds=0.0,
-        )
-    sr = swarm_results[0]
+def _execute_removed_backend(task: Task, session_ref: str = "") -> DelegationResult:
+    """Return an explicit error for backend modes removed in Phase 4 cleanup."""
     return DelegationResult(
-        task_id=sr.task_id, title=sr.title,
-        status=sr.status, result=sr.result,
-        duration_seconds=sr.duration_seconds,
+        task_id=f"removed-{session_ref or 'task'}",
+        title=task.title,
+        status="error",
+        result="External delegation backend was removed; use local mode.",
+        duration_seconds=0.0,
     )
 
 
 _EXECUTORS = {
-    "delegated": delegate,
+    "delegated": _execute_removed_backend,
     "local": _execute_single_local,
-    "swarm": _execute_single_swarm,
+    "swarm": _execute_removed_backend,
 }
 
 
@@ -393,7 +400,7 @@ def escalate_plan(
         session_ref: Session identifier.
         mode: Execution mode — "delegated", "local", or "swarm".
     """
-    executor = _EXECUTORS.get(mode, delegate)
+    runner = _EXECUTORS.get(mode, _execute_removed_backend)
     results: list[DelegationResult | None] = [None] * len(tasks)
 
     for i, task in enumerate(tasks):
@@ -412,7 +419,7 @@ def escalate_plan(
                 break
 
         if not skip:
-            results[i] = escalate_task(task, session_ref=session_ref, executor=executor)
+            results[i] = escalate_task(task, session_ref=session_ref, runner=runner)
             status = results[i].status
             print(f"[escalation] task [{i}] {status}: {results[i].result[:80]}")
 

@@ -12,7 +12,7 @@ Evidence basis (from sprint history):
 
 What the reviewer checks:
   1. Task sizing — each task completable in ~35 mini steps?
-  2. Ambiguity — zero open decisions left to executor?
+  2. Ambiguity — zero open decisions left to the runner?
   3. Sequence — dependencies ordered correctly?
   4. Criteria — success criteria is a real bash command?
   5. Scope creep — any single task trying to do too much?

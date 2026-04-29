@@ -76,7 +76,7 @@ CRITICAL SIZING RULES (from production evidence — these determine success rate
    Good: "add /health/agents endpoint to health_server.py"
    Bad:  "add endpoint, write tests, and update README" (three separate tasks)
 2. Each task must be completable by mini in a single run (~35 bash steps)
-3. Tasks must be UNAMBIGUOUS — zero decisions left to the executor
+3. Tasks must be UNAMBIGUOUS — zero decisions left to the runner
 4. Success criteria must be a concrete bash command (exit 0 = success)
 5. If a task would need more than ~10 bash commands to verify, split it
 6. Always start with a read/explore task before any write tasks on unfamiliar code

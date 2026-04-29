@@ -182,7 +182,7 @@ def flush_traces() -> None:
 # ── Query Layer (read-side) ──────────────────────────────────────────────────
 
 # Pipeline stage names used in trace_generation() calls
-PIPELINE_STAGES = ["intent-gate", "planner", "reviewer", "executor", "delegator", "synthesizer"]
+PIPELINE_STAGES = ["intent-gate", "planner", "reviewer", "local", "external", "synthesizer"]
 
 
 def get_traces(

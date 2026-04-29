@@ -44,8 +44,8 @@ STAGE_EMOJI = {
     "intent-gate": "\U0001f50d",   # 🔍
     "planner": "\U0001f4cb",       # 📋
     "reviewer": "\u2705",          # ✅
-    "executor": "\u2699\ufe0f",    # ⚙️
-    "delegator": "\U0001f4e4",     # 📤
+    "local": "\u2699\ufe0f",       # ⚙️
+    "external": "\U0001f4e4",      # 📤
     "synthesizer": "\U0001f4ca",   # 📊
     "checkpoint": "\U0001f6d1",    # 🛑
 }
