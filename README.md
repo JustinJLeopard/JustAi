@@ -102,7 +102,7 @@ cd dashboard && npm run dev   # Dashboard on :3001
 | 0 | Preflight | `health.py` | Check LiteLLM, SpacetimeDB, MCP health |
 | 1 | Session | `orchestrator.py` | Load prior context from memory |
 | 2 | Intent | `intent_gate.py` | Classify goal (execution/research/ambiguous) |
-| 3 | Plan | `planner.py` | Decompose into mini-sized tasks with verify commands |
+| 3 | Plan | `scope_planner.py` | Decompose into mini-sized tasks with verify commands |
 | 4 | Review | `reviewer.py` | LLM validates plan quality, replan if rejected |
 | 5 | Checkpoint | `checkpoint.py` | R0-R3 risk gates (auto mode skips R1 wait) |
 | 6 | Execute | `executor.py` / `delegator.py` / `swarm_delegator.py` | Local, agent via SpacetimeDB, or parallel swarm |

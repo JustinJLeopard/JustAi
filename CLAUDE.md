@@ -22,7 +22,7 @@ a web dashboard.
 |   |-- __init__.py
 |   |-- orchestrator.py              # Main pipeline: goal -> plan -> delegate -> review
 |   |-- intent_gate.py               # Classifies user intent
-|   |-- planner.py                   # Decomposes goals into task plans
+|   |-- scope_planner.py             # Decomposes goals into task plans
 |   |-- delegator.py                 # Routes tasks to mini-swe-agent
 |   |-- reviewer.py                  # Reviews completed task output
 |   |-- checkpoint.py                # Saves/restores orchestrator state

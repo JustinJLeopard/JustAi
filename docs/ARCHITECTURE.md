@@ -1,5 +1,7 @@
 # JustAi Architecture
 
+<!-- TODO Chunk E: relay-room references -->
+
 ## System Overview
 
 ```
@@ -13,7 +15,7 @@
 │                   Orchestrator Pipeline                      │
 │                                                             │
 │  [1] Intent Gate ──► classify goal type + confidence        │
-│  [2] Planner     ──► decompose into mini-sized tasks        │
+│  [2] Scope Plan  ──► decompose into mini-sized tasks        │
 │  [3] Reviewer    ──► validate plan quality                  │
 │  [4] Checkpoint  ──► R0-R3 risk gates (approve/block)       │
 │  [5] Delegator   ──► post to SpacetimeDB, monitor agents    │
@@ -47,7 +49,7 @@ JustAi/
 │   ├── __init__.py            # Auto-loads .env
 │   ├── orchestrator.py        # Main pipeline (6 stages)
 │   ├── intent_gate.py         # Goal classification
-│   ├── planner.py             # Task decomposition
+│   ├── scope_planner.py       # Task decomposition
 │   ├── reviewer.py            # Plan quality gate
 │   ├── checkpoint.py          # R0-R3 risk gates
 │   ├── delegator.py           # SpacetimeDB task posting

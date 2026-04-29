@@ -42,7 +42,7 @@ As of Sprint 2.5:
 | `justai/delegator.py` | 93% |
 | `justai/intent_gate.py` | 87% |
 | `justai/orchestrator.py` | 90% |
-| `justai/planner.py` | 94% |
+| `justai/scope_planner.py` | 94% |
 | `justai/reviewer.py` | 83% |
 | `tools/justai_cli.py` | 92% |
 | `tools/justai_runtime.py` | 100% |
