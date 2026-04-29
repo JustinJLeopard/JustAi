@@ -44,8 +44,6 @@ R1_TIMEOUT_SECONDS = int(os.environ.get("JUSTAI_R1_TIMEOUT", "60"))
 
 # ── Delegator ─────────────────────────────────────────────────────────────────
 RELAY_BIN = os.environ.get("RELAY_BIN", str(Path.home() / ".local" / "bin" / "relay"))
-RELAY_DB_NAME = os.environ.get("RELAY_DB_NAME", "relay-room-dev")
-DELEGATE_AGENT = os.environ.get("JUSTAI_DELEGATE_AGENT", "manuslocal")
 CLAIM_TIMEOUT = int(os.environ.get("JUSTAI_CLAIM_TIMEOUT", "120"))
 EXEC_TIMEOUT = int(os.environ.get("JUSTAI_EXEC_TIMEOUT", "1800"))
 
