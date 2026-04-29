@@ -29,6 +29,7 @@ Transport note (2026-04-11):
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import urllib.request
@@ -44,6 +45,7 @@ MCP_RPC = f"{MCP_URL}/rpc"
 DEFAULT_NAMESPACE = "justai"
 MEMORY_CWD = os.path.expanduser("~/projects/ruv-research")
 _REQUEST_TIMEOUT = 10  # seconds
+_logger = logging.getLogger(__name__)
 
 
 # ── Data Types ────────────────────────────────────────────────────────────────
@@ -180,7 +182,11 @@ def _cli_retrieve(key: str, namespace: str) -> Optional[str]:
         for line in result.stdout.splitlines():
             if "| Value:" in line or "│ Value:" in line:
                 return line.split(":", 1)[-1].strip().strip("|").strip()
-        return result.stdout.strip() if result.stdout.strip() else None
+        output = result.stdout.strip()
+        if output.startswith("[WARN]"):
+            _logger.warning(output)
+            return None
+        return output if output else None
     except Exception:
         return None
 
