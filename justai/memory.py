@@ -43,7 +43,6 @@ from typing import Any, Optional
 MCP_URL = os.environ.get("JUSTAI_MCP_URL", "http://127.0.0.1:3100")
 MCP_RPC = f"{MCP_URL}/rpc"
 DEFAULT_NAMESPACE = "justai"
-MEMORY_CWD = os.path.expanduser("~/projects/ruv-research")
 _REQUEST_TIMEOUT = 10  # seconds
 _logger = logging.getLogger(__name__)
 
@@ -157,13 +156,24 @@ class _RPCClient:
 
 # ── CLI Fallback ──────────────────────────────────────────────────────────────
 
+def _memory_cwd() -> str:
+    val = os.environ.get("JUSTAI_MEMORY_CWD")
+    if not val:
+        raise RuntimeError(
+            "JUSTAI_MEMORY_CWD environment variable is required for memory CLI fallback. "
+            "Set it to the working directory you want claude-flow memory invocations to run from."
+        )
+    return val
+
+
 def _cli_store(key: str, value: str, namespace: str) -> bool:
     """Fallback: store via claude-flow CLI subprocess."""
+    cwd = _memory_cwd()
     try:
         args = ["claude-flow", "memory", "store", "-k", key, "-v", value]
         if namespace:
             args.extend(["-n", namespace])
-        subprocess.run(args, capture_output=True, cwd=MEMORY_CWD, timeout=15)
+        subprocess.run(args, capture_output=True, cwd=cwd, timeout=15)
         return True
     except Exception:
         return False
@@ -171,12 +181,13 @@ def _cli_store(key: str, value: str, namespace: str) -> bool:
 
 def _cli_retrieve(key: str, namespace: str) -> Optional[str]:
     """Fallback: retrieve via claude-flow CLI subprocess."""
+    cwd = _memory_cwd()
     try:
         args = ["claude-flow", "memory", "retrieve", "-k", key]
         if namespace:
             args.extend(["-n", namespace])
         result = subprocess.run(
-            args, capture_output=True, text=True, cwd=MEMORY_CWD, timeout=15
+            args, capture_output=True, text=True, cwd=cwd, timeout=15
         )
         # Parse the CLI table output for the value
         for line in result.stdout.splitlines():
