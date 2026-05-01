@@ -42,10 +42,10 @@ function mockTimestamp(task: DemoTask, baseElapsed: number): Date {
 
 function mockAnalysis(task: DemoTask): string {
   const analyses: Record<string, string> = {
-    'task-1': 'Schema design task completed efficiently by claude-opus-planner. The agent created 4 PostgreSQL tables with 12 indexes following a schema-first approach, reducing downstream integration failures. No escalation needed.',
+    'task-1': 'Schema design task completed efficiently by orchestrator-planner. The agent created 4 PostgreSQL tables with 12 indexes following a schema-first approach, reducing downstream integration failures. No escalation needed.',
     'task-2': 'Ingestion API implemented by mini-swe-agent-1 with both REST and WebSocket endpoints. Batch support and rate limiting at 10k events/min were implemented correctly. Validated against 50k test events with zero data loss.',
     'task-3': 'Segmentation engine completed with both rule-based filters and k-means clustering. Six pre-built segments defined. Builder API response time under 200ms meets the performance requirement.',
-    'task-4': 'This task required escalation from gpt-5.4 to claude-opus-4-6 after the initial agent exceeded its context window on Recharts v3 heatmap configuration. The escalated agent identified a CSS Grid approach instead of ResponsiveContainer, successfully completing all 5 chart types.',
+    'task-4': 'This task required escalation from worker-standard to orchestrator-large after the initial agent exceeded its context window on Recharts v3 heatmap configuration. The escalated agent identified a CSS Grid approach instead of ResponsiveContainer, successfully completing all 5 chart types.',
     'task-5': 'Export functionality leveraged trajectory learning from prior sprint runs. The agent was enriched with CSV streaming and Puppeteer PDF snapshot patterns, completing the task in fewer steps and lower cost than baseline.',
     'task-6': 'Authentication layer implemented with JWT refresh token rotation and 4-role RBAC. Middleware applied to all API routes with per-role rate limiting. Standard implementation with no issues.',
     'task-7': 'WebSocket server implemented with auto-reconnect, heartbeat, and room-based subscriptions. Redis pub/sub backend handles 500 concurrent connections. Clean implementation.',
@@ -297,7 +297,7 @@ function PostMortemPanel({ task, elapsed }: { task: DemoTask | null; elapsed: nu
         borderRadius: 'var(--r-md)', padding: '14px 20px',
         display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <MetaTag label="Model" value={task.model || 'gpt-5.4'} />
+        <MetaTag label="Model" value={task.model || 'worker-standard'} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{
             fontSize: 9, color: 'var(--text-tertiary)',
@@ -558,7 +558,7 @@ function AuditPanel({ task }: { task: DemoTask | null }) {
   const executionTime = (task.steps * 0.8 + 2.5).toFixed(1)
 
   const auditRows: { label: string; value: string; color: string }[] = [
-    { label: 'Model Used', value: task.model || 'gpt-5.4', color: 'var(--text-primary)' },
+    { label: 'Model Used', value: task.model || 'worker-standard', color: 'var(--text-primary)' },
     { label: 'Token Count', value: tokenCount.toLocaleString(), color: 'var(--text-primary)' },
     { label: 'Total Cost', value: `$${task.cost.toFixed(4)}`, color: 'var(--gold-300)' },
     { label: 'Execution Time', value: `${executionTime}s`, color: 'var(--text-primary)' },
@@ -575,7 +575,7 @@ function AuditPanel({ task }: { task: DemoTask | null }) {
         borderRadius: 'var(--r-md)', padding: '14px 20px',
         display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <MetaTag label="Model" value={task.model || 'gpt-5.4'} />
+        <MetaTag label="Model" value={task.model || 'worker-standard'} />
         <MetaTag label="Steps" value={String(task.steps)} />
         <MetaTag label="API Calls" value={String(task.steps)} />
         <MetaTag label="Cost" value={`$${task.cost.toFixed(4)}`} color="var(--gold-300)" />
@@ -646,7 +646,7 @@ function AuditPanel({ task }: { task: DemoTask | null }) {
           <div style={{
             fontSize: 12, fontWeight: 300, color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: 4,
           }}>
-            This task was escalated from {task.escalatedFrom || 'gpt-5.4'} to {task.model} after
+            This task was escalated from {task.escalatedFrom || 'worker-standard'} to {task.model} after
             the initial agent failed. The escalation is recorded in the trajectory for future
             learning pattern matching.
           </div>

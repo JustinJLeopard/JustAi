@@ -75,9 +75,6 @@ export default defineConfig({
         // — rollup uses these keys to name output chunks, so calling this 'demo' makes
         // dist/assets/demo-*.js the file that actually contains demo code.
         demo: path.resolve(__dirname, 'index.html'),
-        // app.html is the original production dashboard (LoginPage + SpacetimeDB client).
-        // Reachable at justai-demo.vercel.app/app.html for local-dev verification.
-        app: path.resolve(__dirname, 'app.html'),
       },
     },
   },
@@ -90,7 +87,7 @@ export default defineConfig({
     port: 3001,
     host: true,
     proxy: {
-      // Proxy memory RPC to claude-flow MCP HTTP server
+      // Proxy memory RPC to the local memory MCP HTTP server
       '/api/memory': {
         target: 'http://127.0.0.1:3100',
         changeOrigin: true,

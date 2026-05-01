@@ -277,7 +277,7 @@ export function DemoRunHistory({ state }: DemoRunHistoryProps) {
                 fontSize: 11,
               }}
             >
-              gpt-5.4 + claude-opus-4-6
+              worker-standard + orchestrator-large
             </span>
           </span>
 

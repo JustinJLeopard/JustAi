@@ -25,12 +25,17 @@ import { DemoTrajectories } from './views/DemoTrajectories'
 import { DemoMemory } from './views/DemoMemory'
 import { DemoObservability } from './views/DemoObservability'
 import { DemoAgents } from './views/DemoAgents'
+import { WritingPage } from './views/WritingPage'
 
 import './styles/demo-theme.css'
 
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function JustAiDemo() {
+  if (window.location.pathname.replace(/\/$/, '') === '/writing') {
+    return <WritingPage />
+  }
+
   const { state, controls } = useSimulation()
   const [activeView, setActiveView] = useState<DemoView>('mission-control')
 
@@ -87,6 +92,28 @@ export default function JustAiDemo() {
     >
       {/* Top row: SprintBar spans full width */}
       <div style={{ gridColumn: '1 / -1' }}>
+        <a
+          href="/writing"
+          style={{
+            position: 'fixed',
+            top: 12,
+            right: 18,
+            zIndex: 20,
+            fontSize: 12,
+            fontWeight: 500,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--text-secondary)',
+            textDecoration: 'none',
+            padding: '7px 10px',
+            border: '1px solid var(--border-default)',
+            borderRadius: 6,
+            background: 'rgba(12, 12, 14, 0.86)',
+            backdropFilter: 'blur(18px) saturate(1.2)',
+          }}
+        >
+          Writing
+        </a>
         <SprintBar
           state={state}
           onPlay={controls.play}

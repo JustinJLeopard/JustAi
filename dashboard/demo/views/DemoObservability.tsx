@@ -23,20 +23,20 @@ export interface DemoObservabilityProps {
 // ── Model-to-color mapping ──────────────────────────────────────────────────
 
 const MODEL_COLORS: Record<string, string> = {
-  'claude-opus-4-6': '#f43f5e',  // rose
-  'gpt-5.4': '#38bdf8',          // sky
+  'orchestrator-large': '#f43f5e',  // rose
+  'worker-standard': '#38bdf8',          // sky
 }
 
 // Task -> model mapping derived from the sprint timeline
 const TASK_MODEL: Record<string, string> = {
-  'T1': 'claude-opus-4-6',
-  'T2': 'gpt-5.4',
-  'T3': 'gpt-5.4',
-  'T4': 'claude-opus-4-6',  // escalated
-  'T5': 'gpt-5.4',
-  'T6': 'gpt-5.4',
-  'T7': 'gpt-5.4',
-  'T8': 'gpt-5.4',
+  'T1': 'orchestrator-large',
+  'T2': 'worker-standard',
+  'T3': 'worker-standard',
+  'T4': 'orchestrator-large',  // escalated
+  'T5': 'worker-standard',
+  'T6': 'worker-standard',
+  'T7': 'worker-standard',
+  'T8': 'worker-standard',
 }
 
 // ── Section label ───────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ export function DemoObservability({ state }: DemoObservabilityProps) {
       const prevCost = i > 0 ? visibleCost[i - 1].cost : 0
       const taskCost = +(point.cost - prevCost).toFixed(3)
       const taskKey = point.label.split(':')[0].trim()  // "T1", "T2", etc.
-      const model = TASK_MODEL[taskKey] || 'gpt-5.4'
+      const model = TASK_MODEL[taskKey] || 'worker-standard'
       return {
         label: point.label,
         cost: taskCost,
@@ -308,18 +308,18 @@ export function DemoObservability({ state }: DemoObservabilityProps) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: 2,
-                  background: MODEL_COLORS['claude-opus-4-6'],
+                  background: MODEL_COLORS['orchestrator-large'],
                   display: 'inline-block',
                 }} />
-                claude-opus
+                orchestrator
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: 2,
-                  background: MODEL_COLORS['gpt-5.4'],
+                  background: MODEL_COLORS['worker-standard'],
                   display: 'inline-block',
                 }} />
-                gpt-5.4
+                worker-standard
               </span>
             </div>
           )}

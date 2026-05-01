@@ -439,7 +439,7 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-5)' }}>
               {[
                 { k: 'Agent', v: activeTask.agent || '--', cls: 'rose' as const },
-                { k: 'Model', v: activeTask.model || 'gpt-5.4', cls: 'mono' as const },
+                { k: 'Model', v: activeTask.model || 'worker-standard', cls: 'mono' as const },
                 { k: 'Step', v: `${Math.floor(activeTask.stepsDone)}/${activeTask.steps}`, cls: 'mono' as const },
                 { k: 'Cost', v: activeTask.cost > 0 ? `$${activeTask.cost.toFixed(3)}` : '$--', cls: 'gold' as const },
               ].map(({ k, v, cls }) => (
@@ -513,7 +513,7 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
           </div>
           <ServiceRow name="Control-plane API" detail="localhost:3000" ping="ok" />
           <ServiceRow name="LiteLLM" detail="localhost:4000" ping="ok" />
-          <ServiceRow name="claude-flow MCP" detail="localhost:3100" ping="ok" />
+          <ServiceRow name="orchestrator-flow MCP" detail="localhost:3100" ping="ok" />
           <ServiceRow name="LangFuse" detail="localhost:3010" ping="ok" />
         </div>
 
@@ -566,7 +566,7 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
               Sprint 4 Demo Run
             </span>
             <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
-              gpt-5.4
+              worker-standard
             </span>
             <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 10.5, textAlign: 'right' }}>
               {state.tasks.length}

@@ -149,7 +149,7 @@ export const INITIAL_AGENTS: DemoAgent[] = [
   {
     id: 'agent-mini-1',
     name: 'mini-swe-agent-1',
-    model: 'gpt-5.4',
+    model: 'worker-standard',
     status: 'idle',
     tasksCompleted: 0,
     currentTaskId: null,
@@ -157,15 +157,15 @@ export const INITIAL_AGENTS: DemoAgent[] = [
   {
     id: 'agent-mini-2',
     name: 'mini-swe-agent-2',
-    model: 'gpt-5.4',
+    model: 'worker-standard',
     status: 'idle',
     tasksCompleted: 0,
     currentTaskId: null,
   },
   {
-    id: 'agent-opus',
-    name: 'claude-opus-planner',
-    model: 'claude-opus-4-6',
+    id: 'agent-orchestrator',
+    name: 'orchestrator-planner',
+    model: 'orchestrator-large',
     status: 'idle',
     tasksCompleted: 0,
     currentTaskId: null,
@@ -206,14 +206,14 @@ export const INITIAL_MEMORIES: DemoMemoryEntry[] = [
   {
     id: 'mem-5',
     key: 'model:routing-preference',
-    value: 'Use mini-swe-agent (gpt-5.4) for implementation; escalate complex visualization to claude-opus',
+    value: 'Use mini-swe-agent (worker-standard) for implementation; escalate complex visualization to orchestrator',
     category: 'strategy',
     appearsAt: 0,
   },
   {
     id: 'mem-6',
     key: 'trajectory:escalation-learned',
-    value: 'Visualization tasks with >20 steps benefit from claude-opus; gpt-5.4 fails on complex Recharts configs',
+    value: 'Visualization tasks with >20 steps benefit from orchestrator; worker-standard fails on complex Recharts configs',
     category: 'learning',
     appearsAt: 25,
   },
@@ -263,12 +263,12 @@ export const TIMELINE: TimelineEntry[] = [
     ],
   },
 
-  // 3-8s — Task 1 (schema) by claude-opus
+  // 3-8s — Task 1 (schema) by orchestrator
   {
     time: 3,
     actions: [
-      { type: 'claim_task', taskId: 'task-1', agentId: 'agent-opus' },
-      { type: 'add_event', event: { time: 3, type: 'task', detail: 'Task 1 claimed by claude-opus-planner — schema design' } },
+      { type: 'claim_task', taskId: 'task-1', agentId: 'agent-orchestrator' },
+      { type: 'add_event', event: { time: 3, type: 'task', detail: 'Task 1 claimed by orchestrator-planner — schema design' } },
     ],
   },
   {
@@ -342,15 +342,15 @@ export const TIMELINE: TimelineEntry[] = [
   {
     time: 23,
     actions: [
-      { type: 'escalate_task', taskId: 'task-4', fromAgent: 'agent-mini-1', toAgent: 'agent-opus', newModel: 'claude-opus-4-6' },
-      { type: 'add_event', event: { time: 23, type: 'escalation', detail: 'Task 4 ESCALATED: mini-swe-agent-1 (gpt-5.4) -> claude-opus (claude-opus-4-6)' } },
+      { type: 'escalate_task', taskId: 'task-4', fromAgent: 'agent-mini-1', toAgent: 'agent-orchestrator', newModel: 'orchestrator-large' },
+      { type: 'add_event', event: { time: 23, type: 'escalation', detail: 'Task 4 ESCALATED: mini-swe-agent-1 (worker-standard) -> orchestrator (orchestrator-large)' } },
     ],
   },
   {
     time: 24,
     actions: [
-      { type: 'claim_task', taskId: 'task-4', agentId: 'agent-opus' },
-      { type: 'add_event', event: { time: 24, type: 'escalation', detail: 'Task 4 re-claimed by claude-opus-planner — escalation in progress' } },
+      { type: 'claim_task', taskId: 'task-4', agentId: 'agent-orchestrator' },
+      { type: 'add_event', event: { time: 24, type: 'escalation', detail: 'Task 4 re-claimed by orchestrator-planner — escalation in progress' } },
     ],
   },
   {
@@ -360,7 +360,7 @@ export const TIMELINE: TimelineEntry[] = [
     ],
   },
 
-  // 25-32s — Task 4 redone by claude-opus
+  // 25-32s — Task 4 redone by orchestrator
   {
     time: 25,
     actions: [
@@ -535,18 +535,18 @@ export const TRAJECTORY_COMMANDS: TrajectoryCommand[] = [
     output: 'ERROR: Context window exceeded — Recharts v3 ResponsiveContainer + custom heatmap requires 48k tokens',
     timestamp: 21,
   },
-  // Task 4 — successful attempt on claude-opus
+  // Task 4 — successful attempt on orchestrator
   {
     taskId: 'task-4',
     step: 4,
-    command: '[escalated to claude-opus] analyze recharts v3 API surface',
+    command: '[escalated to orchestrator] analyze recharts v3 API surface',
     output: 'Identified: ComposedChart + custom Cell renderer for heatmap. Grid layout via CSS Grid, not Recharts ResponsiveContainer.',
     timestamp: 25,
   },
   {
     taskId: 'task-4',
     step: 5,
-    command: 'write src/components/charts/Heatmap.tsx (claude-opus)',
+    command: 'write src/components/charts/Heatmap.tsx (orchestrator)',
     output: 'Heatmap component: 142 lines, custom color scale, tooltip, responsive via CSS Grid. All TypeScript strict.',
     timestamp: 28,
   },
