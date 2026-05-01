@@ -49,7 +49,7 @@ Classify the user's goal into exactly one of these intent types:
                "write tests for the relay board command", "fix the import error")
   multi-step — a goal that requires multiple distinct subtasks in sequence
                (e.g. "build a FastAPI webhook that posts to Discord",
-               "set up SpacetimeDB, write the schema, and add a CLI")
+               "define safe-mini executor policies and add a CLI")
   research   — information gathering with no immediate code output
                (e.g. "what are the tradeoffs of X vs Y", "find examples of Z")
   ambiguous  — the goal is too vague to classify without one clarifying question

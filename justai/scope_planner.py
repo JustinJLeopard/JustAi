@@ -2,8 +2,8 @@
 """
 JustAi — Planner
 ================
-Decomposes a goal into an ordered list of mini-sized tasks ready for
-delegation to mini-swe-agent via SpacetimeDB.
+Decomposes a goal into an ordered list of mini-sized tasks ready for the
+safe-mini execution boundary.
 
 Evidence-based design (from 10 sprint traj analysis):
   - mini-swe-agent v2.2.8 completes tasks in ~35 messages

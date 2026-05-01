@@ -5,7 +5,7 @@ JustAi — Dashboard API Server
 Lightweight HTTP API for the dashboard. No framework dependencies.
 
 Endpoints:
-  GET  /api/health   — service health (LiteLLM, SpacetimeDB, MCP)
+  GET  /api/health   — service health (LiteLLM, safe-mini boundary, MCP)
   GET  /api/runs     — recent run history from memory
   GET  /api/config   — current config
   POST /api/run      — trigger orchestrator run (async)
@@ -97,7 +97,7 @@ def _get_config() -> dict:
         "auto_mode": os.environ.get("JUSTAI_AUTO_MODE", "") in ("1", "true"),
         "litellm_url": os.environ.get("LITELLM_BASE_URL", "http://localhost:4000"),
         "planner_model": os.environ.get("JUSTAI_PLANNER_MODEL", "openai/claude-opus-4-6"),
-        "spacetimedb_url": os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000"),
+        "safe_mini_mode": os.environ.get("JUSTAI_SAFE_MINI_MODE", "stub"),
     }
 
 

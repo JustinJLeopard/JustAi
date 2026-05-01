@@ -70,7 +70,7 @@ class TestAPIEndpoints(unittest.TestCase):
             "auto_mode",
             "litellm_url",
             "planner_model",
-            "spacetimedb_url",
+            "safe_mini_mode",
         ):
             self.assertIn(key, result)
 

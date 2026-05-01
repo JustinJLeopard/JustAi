@@ -47,33 +47,6 @@ def _is_litellm_response(status: int, headers: dict[str, str], body: bytes) -> b
     return False
 
 
-def _is_spacetimedb_response(status: int, headers: dict[str, str], body: bytes) -> bool:
-    body_text = body.decode(errors="ignore").lower()
-    if "spacetimedb" in body_text:
-        return True
-
-    data = _json_body(body)
-    if not isinstance(data, dict):
-        return False
-
-    database_keys = {"database_identity", "owner_identity", "host_type", "initial_program"}
-    if database_keys.issubset(data.keys()):
-        return True
-
-    # SpacetimeDB reports API errors as JSON variants. A 404/400 JSON response
-    # from a /v1/database probe still proves this is the SpacetimeDB API, while
-    # an arbitrary HTML 200/404 from another service does not.
-    known_error_variants = {
-        "DatabaseNotFound",
-        "PermissionDenied",
-        "NoSuchDatabase",
-        "NotFound",
-        "InvalidDatabaseIdentity",
-        "error",
-    }
-    return status in (400, 401, 403, 404, 405) and any(k in data for k in known_error_variants)
-
-
 def check_litellm() -> ServiceStatus:
     """Check LiteLLM proxy is reachable and speaks the OpenAI models API."""
     url = (
@@ -101,27 +74,15 @@ def check_litellm() -> ServiceStatus:
         return ServiceStatus("LiteLLM", url, False, str(e)[:120])
 
 
-def check_spacetimedb() -> ServiceStatus:
-    """Check SpacetimeDB is reachable on :3000 and exposes its HTTP API."""
-    url = os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000")
-    probe_url = f"{url.rstrip('/')}/v1/database/__justai_health_probe__"
+def check_safe_mini_boundary() -> ServiceStatus:
+    """Check the planned safe-mini boundary is represented by the local stub."""
     try:
-        req = urllib.request.Request(probe_url, method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            status, headers, body = _read_response(resp)
-            if _is_spacetimedb_response(status, headers, body):
-                return ServiceStatus("SpacetimeDB", url, True, "database API reachable")
-            return ServiceStatus("SpacetimeDB", url, False, "responded but not SpacetimeDB")
-    except urllib.error.HTTPError as e:
-        body = e.read()
-        headers = {k.lower(): v for k, v in dict(e.headers).items()}
-        if _is_spacetimedb_response(e.code, headers, body):
-            return ServiceStatus(
-                "SpacetimeDB", url, True, f"database API reachable (http {e.code})"
-            )
-        return ServiceStatus("SpacetimeDB", url, False, "responded but not SpacetimeDB")
+        from justai.runner_protocol import AgentRunner
+
+        _ = AgentRunner
+        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "stub available")
     except Exception as e:
-        return ServiceStatus("SpacetimeDB", url, False, str(e)[:120])
+        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, str(e)[:120])
 
 
 def check_memory() -> ServiceStatus:
@@ -175,7 +136,7 @@ def check_swarm() -> ServiceStatus:
 
 def preflight() -> list[ServiceStatus]:
     """Run all service checks. Returns list of statuses."""
-    return [check_litellm(), check_spacetimedb(), check_memory()]
+    return [check_litellm(), check_safe_mini_boundary(), check_memory()]
 
 
 def print_preflight(statuses: list[ServiceStatus]) -> bool:

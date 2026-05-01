@@ -102,12 +102,12 @@ Behavior to know:
 
 Do not try to use or revive these while doing normal repo work:
 
-- SpacetimeDB delegation.
-- swarm mode, including `--swarm`, `JUSTAI_SWARM`, `swarm_delegator`, `swarm_config`, and `swarm_scale`.
-- `delegator.py`.
+- control-plane data delegation.
+- swarm mode, including `--swarm`, `JUSTAI_SWARM`, `swarm_dispatch`, `swarm_config`, and `swarm_scale`.
+- `dispatch.py`.
 - `executor.py`.
-- manuslocal / LocalManus integration.
-- relay-room and relay CLI flows.
+- legacy local runtime integration.
+- control-plane and relay CLI flows.
 
 If you find these in legacy docs, scripts, install helpers, or evidence files, treat them as historical unless the current task explicitly asks for that cleanup.
 

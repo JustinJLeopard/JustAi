@@ -1,11 +1,11 @@
 /**
- * JustAi — SpacetimeDB Client
+ * JustAi - Control-plane data client
  *
- * Connects to the local SpacetimeDB instance and provides reactive
- * subscriptions to Task, Agent, Message, and Event tables.
+ * Connects to the local dashboard data surface and provides reactive
+ * task, agent, message, and event snapshots.
  *
- * Schema mirrors relay-room/spacetimedb/src/lib.rs exactly.
- * Uses SpacetimeDB SDK v1.x subscription API.
+ * This is a transitional dashboard adapter. The long-term runtime data
+ * contract belongs in safe-mini.
  */
 
 // ── Schema Types (mirroring Rust structs) ─────────────────────────────────────
@@ -51,7 +51,7 @@ export interface Message {
   read: boolean
 }
 
-export interface SpacetimeEvent {
+export interface ControlPlaneEvent {
   id: bigint
   eventType: string
   agent: string
@@ -62,14 +62,14 @@ export interface SpacetimeEvent {
 
 // ── Connection Config ──────────────────────────────────────────────────────────
 
-const SPACETIME_URL = import.meta.env.VITE_SPACETIME_URL ?? 'ws://localhost:3000'
-export const DB_NAME = import.meta.env.VITE_SPACETIME_DB ?? ''
+const DATA_URL = import.meta.env.VITE_JUSTAI_DATA_URL ?? 'ws://localhost:3002'
+export const DB_NAME = import.meta.env.VITE_JUSTAI_DATASET ?? ''
 
 // ── REST Fallback Client ───────────────────────────────────────────────────────
-// SpacetimeDB also exposes an HTTP API. We use this as a reliable fallback
+// control-plane data also exposes an HTTP API. We use this as a reliable fallback
 // when the WebSocket SDK isn't available or the connection is initializing.
 
-const HTTP_BASE = SPACETIME_URL.replace('ws://', 'http://').replace('wss://', 'https://')
+const HTTP_BASE = DATA_URL.replace('ws://', 'http://').replace('wss://', 'https://')
 
 async function stdbFetch<T>(sql: string): Promise<T[]> {
   const res = await fetch(`${HTTP_BASE}/database/sql/${DB_NAME}`, {
@@ -77,9 +77,9 @@ async function stdbFetch<T>(sql: string): Promise<T[]> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: sql }),
   })
-  if (!res.ok) throw new Error(`SpacetimeDB HTTP error: ${res.status}`)
+  if (!res.ok) throw new Error(`control-plane data HTTP error: ${res.status}`)
   const data = await res.json()
-  // SpacetimeDB returns { rows: [...], schema: [...] }
+  // control-plane data returns { rows: [...], schema: [...] }
   return data.rows ?? []
 }
 
@@ -98,7 +98,7 @@ export async function fetchAgents(): Promise<Agent[]> {
   return rows.map(rowToAgent)
 }
 
-export async function fetchEvents(limit = 50): Promise<SpacetimeEvent[]> {
+export async function fetchEvents(limit = 50): Promise<ControlPlaneEvent[]> {
   const rows = await stdbFetch<Record<string, unknown>>(
     `SELECT * FROM events ORDER BY timestamp DESC LIMIT ${limit}`
   )
@@ -142,7 +142,7 @@ function rowToAgent(r: Record<string, unknown>): Agent {
   }
 }
 
-function rowToEvent(r: Record<string, unknown>): SpacetimeEvent {
+function rowToEvent(r: Record<string, unknown>): ControlPlaneEvent {
   return {
     id: BigInt(r.id as number ?? 0),
     eventType: String(r.event_type ?? ''),
@@ -215,7 +215,7 @@ export type TransportMode = 'websocket' | 'polling' | 'disconnected'
 export interface LiveData {
   tasks: Task[]
   agents: Agent[]
-  events: SpacetimeEvent[]
+  events: ControlPlaneEvent[]
   connected: boolean
   lastUpdated: Date | null
   error: string | null
@@ -225,12 +225,12 @@ export interface LiveData {
 export type LiveDataCallback = (data: LiveData) => void
 
 // ── WebSocket Client ────────────────────────────────────────────────────────
-// Attempts WebSocket connection to SpacetimeDB for real-time push updates.
+// Attempts WebSocket connection to control-plane data for real-time push updates.
 // Falls back to HTTP polling if WebSocket connection fails.
 
 const WS_RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000] // exponential backoff
 
-export class SpacetimeClient {
+export class ControlPlaneClient {
   private ws: WebSocket | null = null
   private pollIntervalId: ReturnType<typeof setInterval> | null = null
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -270,8 +270,8 @@ export class SpacetimeClient {
     if (this.stopped) return
 
     try {
-      // SpacetimeDB WebSocket endpoint for subscriptions
-      const wsUrl = `${SPACETIME_URL}/database/subscribe/${DB_NAME}`
+      // control-plane data WebSocket endpoint for subscriptions
+      const wsUrl = `${DATA_URL}/database/subscribe/${DB_NAME}`
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
@@ -297,10 +297,10 @@ export class SpacetimeClient {
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
-          // SpacetimeDB sends TransactionUpdate messages on data changes
+          // control-plane data sends TransactionUpdate messages on data changes
           if (msg.TransactionUpdate || msg.SubscriptionUpdate || msg.type === 'transaction_update') {
             // Data changed — re-fetch current state via HTTP
-            // (SpacetimeDB WS sends diffs, not full state; HTTP gives us the full picture)
+            // (control-plane data WS sends diffs, not full state; HTTP gives us the full picture)
             this.poll()
           }
         } catch {
@@ -392,11 +392,11 @@ export class SpacetimeClient {
 
 // ── Legacy Polling Client (kept for backwards compatibility) ─────────────────
 
-export class SpacetimePoller {
-  private client: SpacetimeClient
+export class ControlPlanePoller {
+  private client: ControlPlaneClient
 
   constructor(cb: LiveDataCallback, sessionRef?: string) {
-    this.client = new SpacetimeClient(cb, sessionRef)
+    this.client = new ControlPlaneClient(cb, sessionRef)
   }
 
   start(intervalMs = 3000): void {

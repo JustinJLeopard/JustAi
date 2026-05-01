@@ -173,18 +173,15 @@ justai run --auto --local "goal"
 
 Default delegated mode is intentionally not a live backend right now. It returns an explicit removed-backend error and tells the caller to use local mode.
 
-## What Was Removed
+## Current Boundary
 
-The following items are historical and should only appear in documentation as removed components:
+The live architectural boundary is the control-plane / substrate split:
 
-- SpacetimeDB task delegation.
-- manuslocal / LocalManus runtime integration.
-- relay-room and relay CLI flows.
-- `delegator.py`.
-- `executor.py`.
-- `swarm_delegator`, `swarm_config`, `swarm_scale`, `--swarm`, and `JUSTAI_SWARM`.
+- JustAi owns project orchestration, chunk sizing, checkpoints, dashboards, and synthesis.
+- safe-mini owns the bash-action runner, executor policy, observation policy, worktree isolation, guards, incident artifacts, trajectory recording, ledger, and failure classifier.
+- local-resident owns the private benchmark and calibration loop that proves whether the orchestration layer adds value.
 
-Some stale references remain in legacy specs, evidence docs, scripts, and install tooling. Those files are intentionally outside this chunk.
+Historical sprint-era designs now live under `docs/archive/` when they are still useful as evidence. They are not current product contracts.
 
 ## Migration Plan
 

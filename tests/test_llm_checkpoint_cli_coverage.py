@@ -102,8 +102,8 @@ def test_runtime_env_sets_expected_root_aliases():
     env = runtime_env()
 
     assert env["JUSTAI_ROOT"] == str(repo_root())
-    assert env["LOCALMANUS_ROOT"] == env["JUSTAI_LOCALMANUS_ROOT"]
-    assert env["RELAY_ROOT"] == env["JUSTAI_RELAY_ROOT"]
+    assert env["JUSTAI_SAFE_MINI_MODE"] == "stub"
+    assert "JUSTAI_RUN_LOG_FILE" in env
 
 
 def test_check_swarm_unreachable_reports_not_ok():

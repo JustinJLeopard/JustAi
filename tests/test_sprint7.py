@@ -101,12 +101,12 @@ class TestServicePreflight(unittest.TestCase):
         self.assertEqual(result.name, "LiteLLM")
         self.assertIsInstance(result.ok, bool)
 
-    def test_check_spacetimedb_structure(self):
-        from justai.health import ServiceStatus, check_spacetimedb
+    def test_check_safe_mini_boundary_structure(self):
+        from justai.health import ServiceStatus, check_safe_mini_boundary
 
-        result = check_spacetimedb()
+        result = check_safe_mini_boundary()
         self.assertIsInstance(result, ServiceStatus)
-        self.assertEqual(result.name, "SpacetimeDB")
+        self.assertEqual(result.name, "safe-mini boundary")
 
     def test_check_memory_structure(self):
         from justai.health import ServiceStatus, check_memory
@@ -127,7 +127,7 @@ class TestServicePreflight(unittest.TestCase):
 
         statuses = [
             ServiceStatus("LiteLLM", "http://localhost:4000", True, "ok"),
-            ServiceStatus("SpacetimeDB", "http://localhost:3000", True, "ok"),
+            ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "ok"),
             ServiceStatus("MCP", "http://localhost:3100", True, "ok"),
         ]
         result = print_preflight(statuses)
@@ -138,19 +138,19 @@ class TestServicePreflight(unittest.TestCase):
 
         statuses = [
             ServiceStatus("LiteLLM", "http://localhost:4000", False, "refused"),
-            ServiceStatus("SpacetimeDB", "http://localhost:3000", True, "ok"),
+            ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "ok"),
             ServiceStatus("MCP", "http://localhost:3100", True, "ok"),
         ]
         result = print_preflight(statuses)
         self.assertFalse(result)
 
     def test_preflight_non_critical_service_down(self):
-        """SpacetimeDB or MCP down should NOT fail preflight."""
+        """Non-critical safe-mini boundary or MCP down should NOT fail preflight."""
         from justai.health import ServiceStatus, print_preflight
 
         statuses = [
             ServiceStatus("LiteLLM", "http://localhost:4000", True, "ok"),
-            ServiceStatus("SpacetimeDB", "http://localhost:3000", False, "down"),
+            ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, "down"),
             ServiceStatus("claude-flow MCP", "http://localhost:3100", False, "down"),
         ]
         result = print_preflight(statuses)

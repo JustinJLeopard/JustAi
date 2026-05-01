@@ -73,9 +73,9 @@ class EnvExampleTests(unittest.TestCase):
         content = (JUSTAI_ROOT / ".env.example").read_text()
         self.assertIn("JUSTAI_SESSION_REF", content)
 
-    def test_env_example_has_relay(self):
+    def test_env_example_has_safe_mini_boundary(self):
         content = (JUSTAI_ROOT / ".env.example").read_text()
-        self.assertIn("RELAY_DB_NAME", content)
+        self.assertIn("JUSTAI_SAFE_MINI_MODE", content)
 
 
 class DocumentationTests(unittest.TestCase):
@@ -98,7 +98,7 @@ class DocumentationTests(unittest.TestCase):
     def test_architecture_has_diagram(self):
         content = (JUSTAI_ROOT / "docs" / "ARCHITECTURE.md").read_text()
         self.assertIn("Orchestrator", content)
-        self.assertIn("SpacetimeDB", content)
+        self.assertIn("safe-mini", content)
 
     def test_attribution_doc_exists(self):
         self.assertTrue((JUSTAI_ROOT / "docs" / "ATTRIBUTION.md").exists())

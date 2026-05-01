@@ -562,7 +562,7 @@ def _generate_quality_insight(
 
     # Failure pattern insight
     if failure_cats:
-        top_cat = max(failure_cats, key=failure_cats.get)  # type: ignore
+        top_cat = max(failure_cats, key=lambda category: failure_cats[category])
         top_count = failure_cats[top_cat]
         if top_count >= 3:
             parts.append(f"Most common failure: '{top_cat}' ({top_count} occurrences).")

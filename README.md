@@ -63,7 +63,7 @@ justai --version
 Important behavior:
 
 - `justai plan` works and falls back to heuristic planning when the model call is unavailable.
-- `justai status` works, but still reports transitional probes for removed or unavailable services. In the verified environment, LiteLLM was reachable, while the legacy SpacetimeDB and claude-flow MCP probes were not healthy.
+- `justai status` reports the current control-plane dependencies: LiteLLM, the safe-mini boundary stub, and memory/MCP availability.
 - `justai history` works against the memory client and prints no history when no run keys exist.
 - `justai run --auto --local "goal"` runs the orchestrator and executes each approved task's verification command locally. It does not edit code for you.
 - `justai run --auto "goal"` enters the default delegated mode, but that backend has been removed and currently returns an explicit error: use `--local` for the remaining local verification path.
@@ -96,18 +96,11 @@ Current docs stance:
 - Do not assume removed backend views represent live execution paths.
 - Dashboard cleanup is outside this README/architecture alignment chunk.
 
-## What's Amputated
+## Current Identity
 
-These are historical v1.0.0 paths and should not be treated as available features:
+JustAi is now a thin project-orchestration layer over safe-mini (load-bearing local-execution substrate). See ARCHITECTURE.md for the 3-repo decomposition.
 
-- SpacetimeDB delegation.
-- `delegator.py` as the task-posting backend.
-- `executor.py` as a local code executor.
-- swarm dispatch, including `swarm_delegator`, `swarm_config`, `swarm_scale`, `--swarm`, and `JUSTAI_SWARM`.
-- relay-room.
-- LocalManus / manuslocal integration.
-
-Some references remain in old specs, evidence docs, scripts, and install helpers. Those are separate cleanup passes. This README describes the current control-plane direction, not every stale file still in the tree.
+The current repo should be read as the control plane: it scopes work, reviews chunks, applies checkpoints, records trajectories, and presents operational state. Runtime mechanics belong in safe-mini; experiment calibration belongs in local-resident.
 
 ## Install
 

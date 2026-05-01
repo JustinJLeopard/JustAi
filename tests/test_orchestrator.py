@@ -64,28 +64,12 @@ class ServiceHealthTests(unittest.TestCase):
         self.assertTrue(status.ok)
         self.assertIn("http 401", status.detail)
 
-    def test_spacetimedb_rejects_open_webui_html_false_positive(self):
-        from justai.health import check_spacetimedb
+    def test_safe_mini_boundary_stub_available(self):
+        from justai.health import check_safe_mini_boundary
 
-        html = "<html><title>Open WebUI</title></html>"
-        with patch("urllib.request.urlopen", return_value=_http_response(200, html, "text/html")):
-            status = check_spacetimedb()
-        self.assertFalse(status.ok)
-        self.assertEqual(status.detail, "responded but not SpacetimeDB")
-
-    def test_spacetimedb_accepts_database_api_signature(self):
-        from justai.health import check_spacetimedb
-
-        body = {
-            "database_identity": "abc",
-            "owner_identity": "def",
-            "host_type": "wasm",
-            "initial_program": "hash",
-        }
-        with patch("urllib.request.urlopen", return_value=_http_response(200, body)):
-            status = check_spacetimedb()
+        status = check_safe_mini_boundary()
         self.assertTrue(status.ok)
-        self.assertIn("database API", status.detail)
+        self.assertEqual(status.name, "safe-mini boundary")
 
     def test_memory_requires_health_ok_signature(self):
         from justai.health import check_memory
@@ -109,7 +93,7 @@ class IntentGateTests(unittest.TestCase):
     def test_heuristic_classifies_research_keywords(self):
         from justai.intent_gate import Intent, _heuristic_classify
 
-        result = _heuristic_classify("what are the tradeoffs of SpacetimeDB vs PostgreSQL")
+        result = _heuristic_classify("what are the tradeoffs of safe-mini executor policies")
         self.assertEqual(result.intent, Intent.RESEARCH)
 
     def test_heuristic_classifies_empty_goal_as_ambiguous(self):

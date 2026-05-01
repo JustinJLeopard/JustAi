@@ -2,8 +2,8 @@
 """
 JustAi — Reviewer
 =================
-Pre-execution quality gate. Validates a Plan before any tasks are posted
-to SpacetimeDB. Catches bad decomposition before mini wastes tokens on it.
+Pre-execution quality gate. Validates a Plan before any chunk is sent toward
+the execution substrate. Catches bad decomposition before mini wastes tokens.
 
 Evidence basis (from sprint history):
   coworkclaude's value was at PLANNING TIME, not runtime. Its role as

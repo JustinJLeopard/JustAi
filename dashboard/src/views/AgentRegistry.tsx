@@ -78,7 +78,7 @@ export default function AgentRegistry({ data }: { data: any }) {
           </div>
         )}
 
-        {/* SpacetimeDB agents */}
+        {/* control-plane data agents */}
         {agents.map((agent: any) => (
           <div key={agent.name} className="panel panel-pad">
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', marginBottom: 'var(--sp-3)' }}>
@@ -88,7 +88,7 @@ export default function AgentRegistry({ data }: { data: any }) {
                 boxShadow: agent.status === 'idle' || agent.status === 'active' ? '0 0 6px var(--emerald-glow)' : 'none',
               }} />
               <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--text-primary)' }}>{agent.name}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-dim)', marginLeft: 'auto' }}>spacetimedb</span>
+              <span style={{ fontSize: 10, color: 'var(--text-dim)', marginLeft: 'auto' }}>control-plane</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 300 }}>
               {agent.capabilities || 'general'}
