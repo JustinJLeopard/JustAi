@@ -32,6 +32,7 @@ function getEventColor(type: string) {
 
 function EventRow({ event }: { event: DemoEvent }) {
   const colors = getEventColor(event.type)
+  const eventLabel = event.type === 'pipeline' ? 'stage' : event.type
   return (
     <div
       style={{
@@ -73,7 +74,7 @@ function EventRow({ event }: { event: DemoEvent }) {
           flexShrink: 0,
         }}
       >
-        {event.type}
+        {eventLabel}
       </span>
 
       {/* Detail */}

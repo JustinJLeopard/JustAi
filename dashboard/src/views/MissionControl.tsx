@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { DB_NAME, LiveData, msAgo } from '@/lib/spacetime'
+import { DB_NAME, LiveData, msAgo } from '@/lib/realtime'
 import { fetchHealth, fetchRuns, fetchObservabilitySummary } from '../lib/api-client'
 import type { HealthData, RunEntry, ObservabilitySummary } from '../lib/api-client'
 import { MetricCard } from '@/components/MetricCard'
-import { Pipeline } from '@/components/Pipeline'
-import type { PipelineStage } from '@/components/Pipeline'
+import { ControlPlaneStages } from '@/components/ControlPlaneStages'
+import type { ControlPlaneStage } from '@/components/ControlPlaneStages'
 import { PopoverTitle, PopoverRow, PopoverDivider } from '@/components/Popover'
 
 interface MissionControlProps {
@@ -186,8 +186,8 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
   const mcpSvc      = health?.services.find(s => s.name === 'claude-flow MCP')
   const langfuseSvc = health?.services.find(s => s.name === 'LangFuse')
 
-  // ── Pipeline stages ───────────────────────────────────────────────────────
-  const pipelineStages: PipelineStage[] = (() => {
+  // ── Control-plane stages ──────────────────────────────────────────────────
+  const controlPlaneStages: ControlPlaneStage[] = (() => {
     if (activeTasks.length === 0) {
       return [
         { name: 'Intent',     status: 'waiting', detail: 'idle' },
@@ -359,7 +359,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
           label="Avg Latency"
           value={obsSummary && obsSummary.avg_latency_ms > 0 ? `${(obsSummary.avg_latency_ms / 1000).toFixed(1)}s` : '—'}
           color="var(--text-primary)"
-          trend={obsSummary && obsSummary.avg_latency_ms > 0 ? 'across pipeline' : 'no data yet'}
+          trend={obsSummary && obsSummary.avg_latency_ms > 0 ? 'across control plane' : 'no data yet'}
           trendDirection={obsSummary && obsSummary.avg_latency_ms > 0 ? 'flat' : 'flat'}
           sparklinePoints={obsSummary?.latency_trend?.length ? obsSummary.latency_trend : undefined}
           sparklineColor="var(--rose-400)"
@@ -383,11 +383,11 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
         />
       </div>
 
-      {/* ── Active Pipeline Panel ────────────────────────────────────────── */}
+      {/* ── Active Control Plane Panel ───────────────────────────────────── */}
       <div className="panel panel-pad">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-4)' }}>
           <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-            Active Pipeline
+            Active Control Plane
           </span>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 'var(--sp-1)',
@@ -408,7 +408,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
           </div>
         </div>
 
-        <Pipeline stages={pipelineStages} />
+        <ControlPlaneStages stages={controlPlaneStages} />
 
         {/* Task detail bar */}
         <div style={{
@@ -552,7 +552,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
         </div>
       </div>
 
-      {/* ── Pipeline Scope Visualization ─────────────────────────────────── */}
+      {/* ── ControlPlaneStages Scope Visualization ─────────────────────────────────── */}
       <div style={{ marginTop: 'var(--sp-3)' }}>
         {/* Scope tabs */}
         <div style={{

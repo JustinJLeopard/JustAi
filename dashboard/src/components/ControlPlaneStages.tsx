@@ -1,18 +1,18 @@
 import { type ReactNode } from 'react'
 import { Popover } from './Popover'
 
-export interface PipelineStage {
+export interface ControlPlaneStage {
   name: string
   status: 'done' | 'active' | 'waiting'
   detail: string
 }
 
-export interface PipelineProps {
-  stages: PipelineStage[]
+export interface ControlPlaneStagesProps {
+  stages: ControlPlaneStage[]
   popoverData?: Record<string, ReactNode>
 }
 
-function StageCell({ stage }: { stage: PipelineStage }) {
+function StageCell({ stage }: { stage: ControlPlaneStage }) {
   const bgMap = {
     done:    'rgba(16,185,129,0.04)',
     active:  'rgba(244,63,94,0.06)',
@@ -59,7 +59,7 @@ function StageCell({ stage }: { stage: PipelineStage }) {
   )
 }
 
-export function Pipeline({ stages, popoverData = {} }: PipelineProps) {
+export function ControlPlaneStages({ stages, popoverData = {} }: ControlPlaneStagesProps) {
   return (
     <div style={{
       display: 'grid',

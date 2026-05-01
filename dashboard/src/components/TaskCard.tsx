@@ -1,4 +1,4 @@
-import { Task, taskDuration, msAgo } from '@/lib/spacetime'
+import { Task, taskDuration, msAgo } from '@/lib/realtime'
 
 interface TaskCardProps {
   task: Task

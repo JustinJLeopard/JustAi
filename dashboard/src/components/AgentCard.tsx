@@ -1,4 +1,4 @@
-import { Agent, msAgo, isStale } from '@/lib/spacetime'
+import { Agent, msAgo, isStale } from '@/lib/realtime'
 
 interface AgentCardProps {
   agent: Agent

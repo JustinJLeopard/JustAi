@@ -279,7 +279,7 @@ export function Observability({ onNavigate }: ObservabilityProps) {
                   )}
                 </>
               ) : (
-                <EmptyPanel message="Run a pipeline to generate cost data" />
+                <EmptyPanel message="Run a control-plane sprint to generate cost data" />
               )}
             </div>
 
@@ -346,7 +346,7 @@ export function Observability({ onNavigate }: ObservabilityProps) {
                   )}
                 </>
               ) : (
-                <EmptyPanel message="Run a pipeline to generate latency data" />
+                <EmptyPanel message="Run a control-plane sprint to generate latency data" />
               )}
             </div>
 
@@ -423,7 +423,7 @@ export function Observability({ onNavigate }: ObservabilityProps) {
                   )}
                 </>
               ) : (
-                <EmptyPanel message="Run a pipeline to generate quality data" />
+                <EmptyPanel message="Run a control-plane sprint to generate quality data" />
               )}
             </div>
           </div>

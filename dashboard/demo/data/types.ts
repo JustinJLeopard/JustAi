@@ -34,13 +34,13 @@ export interface DemoAgent {
   currentTaskId: string | null
 }
 
-// ── Pipeline Types ───────────────────────────────────────────────────────────
+// ── Control-plane Types ──────────────────────────────────────────────────────
 
-export type PipelineStage = 'intent' | 'plan' | 'execute' | 'review' | 'synthesize'
+export type ControlPlaneStage = 'intent' | 'plan' | 'execute' | 'review' | 'synthesize'
 
 export type StageStatus = 'idle' | 'active' | 'done'
 
-export interface PipelineState {
+export interface ControlPlaneState {
   intent: StageStatus
   plan: StageStatus
   execute: StageStatus
@@ -77,7 +77,7 @@ export interface SimulationState {
   paused: boolean
   tasks: DemoTask[]
   agents: DemoAgent[]
-  pipeline: PipelineState
+  pipeline: ControlPlaneState
   memories: DemoMemoryEntry[]
   events: DemoEvent[]
   totalCost: number
@@ -91,7 +91,7 @@ export interface SimulationState {
 export type TimelineAction =
   | { type: 'start_sprint' }
   | { type: 'set_phase'; phase: SimPhase }
-  | { type: 'set_pipeline'; stage: PipelineStage; status: StageStatus }
+  | { type: 'set_pipeline'; stage: ControlPlaneStage; status: StageStatus }
   | { type: 'claim_task'; taskId: string; agentId: string }
   | { type: 'start_task'; taskId: string }
   | { type: 'complete_task'; taskId: string; cost: number; result: string }
