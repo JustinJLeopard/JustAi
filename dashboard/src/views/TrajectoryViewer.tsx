@@ -579,7 +579,7 @@ function LearningMode({ patterns, loading }: { patterns: PatternReport | null; l
     return <LoadingState message="Analyzing patterns across trajectories..." />
   }
   if (!patterns || patterns.total_trajectories === 0) {
-    return <EmptyState message="No trajectory data available. Run a pipeline to generate data." />
+    return <EmptyState message="No trajectory data available. Run a control-plane sprint to generate data." />
   }
 
   return (

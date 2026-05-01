@@ -1,4 +1,4 @@
-import { Task, LiveData } from '@/lib/spacetime'
+import { Task, LiveData } from '@/lib/realtime'
 import { TaskCard } from '@/components/TaskCard'
 
 interface TaskBoardProps {

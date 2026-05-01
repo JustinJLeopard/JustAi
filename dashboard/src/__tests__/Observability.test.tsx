@@ -96,7 +96,7 @@ describe('Observability', () => {
 
     render(<Observability />)
     await waitFor(() => {
-      expect(screen.getByText('Run a pipeline to generate cost data')).toBeInTheDocument()
+      expect(screen.getByText('Run a control-plane sprint to generate cost data')).toBeInTheDocument()
     })
   })
 
