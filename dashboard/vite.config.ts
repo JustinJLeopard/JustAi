@@ -3,11 +3,11 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
 
-// Serve trajectory .traj.json files from LocalManus logs
+// Serve trajectory .traj.json files when JUSTAI_TRAJ_DIR is configured.
 function trajectoriesPlugin(): Plugin {
-  const TRAJ_DIRS = [
-    process.env.JUSTAI_TRAJ_DIR || '/home/justinleopard/projects/LocalManus/logs',
-  ]
+  const TRAJ_DIRS: string[] = process.env.JUSTAI_TRAJ_DIR
+    ? [process.env.JUSTAI_TRAJ_DIR]
+    : []
 
   return {
     name: 'justai-trajectories',

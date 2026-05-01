@@ -2,8 +2,8 @@
 """
 JustAi — Reviewer
 =================
-Pre-execution quality gate. Validates a Plan before any tasks are posted
-to SpacetimeDB. Catches bad decomposition before mini wastes tokens on it.
+Pre-execution quality gate. Validates a Plan before any chunk is sent toward
+the execution substrate. Catches bad decomposition before mini wastes tokens.
 
 Evidence basis (from sprint history):
   coworkclaude's value was at PLANNING TIME, not runtime. Its role as
@@ -12,13 +12,14 @@ Evidence basis (from sprint history):
 
 What the reviewer checks:
   1. Task sizing — each task completable in ~35 mini steps?
-  2. Ambiguity — zero open decisions left to executor?
+  2. Ambiguity — zero open decisions left to the runner?
   3. Sequence — dependencies ordered correctly?
   4. Criteria — success criteria is a real bash command?
   5. Scope creep — any single task trying to do too much?
 
 Output: APPROVED (proceed) or REJECTED (with specific feedback for replanning)
 """
+
 from __future__ import annotations
 
 import json
@@ -26,13 +27,13 @@ import os
 import urllib.request
 from dataclasses import dataclass
 
-from justai.planner import Plan, Task
+from justai.scope_planner import Plan, Task
 
 
 @dataclass
 class ReviewResult:
     approved: bool
-    feedback: list[str]      # specific issues found, empty if approved
+    feedback: list[str]  # specific issues found, empty if approved
     revised_tasks: list[Task] | None = None  # optional revised plan
 
 
@@ -68,46 +69,55 @@ If approved, feedback and suggestions should be empty arrays.
 Be direct. One sentence per issue. Reference the task title.
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+LITELLM_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 REVIEWER_MODEL = os.environ.get("JUSTAI_REVIEWER_MODEL", "openai/claude-opus-4-6")
 
 
 def _format_plan_for_review(plan: Plan) -> str:
     tasks_json = []
     for i, t in enumerate(plan.tasks):
-        tasks_json.append({
-            "index": i,
-            "title": t.title,
-            "description": t.description,
-            "agent": t.agent.value,
-            "risk": t.risk.value,
-            "success_criteria": t.success_criteria,
-            "depends_on": t.depends_on,
-        })
-    return json.dumps({
-        "goal": plan.goal,
-        "task_count": len(plan.tasks),
-        "tasks": tasks_json,
-    }, indent=2)
+        tasks_json.append(
+            {
+                "index": i,
+                "title": t.title,
+                "description": t.description,
+                "agent": t.agent.value,
+                "risk": t.risk.value,
+                "success_criteria": t.success_criteria,
+                "depends_on": t.depends_on,
+            }
+        )
+    return json.dumps(
+        {
+            "goal": plan.goal,
+            "task_count": len(plan.tasks),
+            "tasks": tasks_json,
+        },
+        indent=2,
+    )
 
 
 def _call_litellm(plan_json: str) -> dict:
-    payload = json.dumps({
-        "model": REVIEWER_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Review this plan:\n\n{plan_json}"},
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.0,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": REVIEWER_MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": f"Review this plan:\n\n{plan_json}"},
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.0,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{LITELLM_URL}/v1/chat/completions",
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', 'sk-justai')}",
+            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', '')}",
         },
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -163,8 +173,9 @@ def review(plan: Plan) -> ReviewResult:
 
 
 if __name__ == "__main__":
-    from justai.planner import decompose, format_plan
     import sys
+
+    from justai.scope_planner import decompose, format_plan
 
     goal = " ".join(sys.argv[1:]) or (
         "Add a /health/agents endpoint to scripts/health_server.py "

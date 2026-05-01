@@ -35,7 +35,7 @@ export interface ConfigData {
   auto_mode: boolean
   litellm_url: string
   planner_model: string
-  spacetimedb_url: string
+  safe_mini_mode: string
 }
 
 export interface RunStatus {

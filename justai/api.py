@@ -5,7 +5,7 @@ JustAi — Dashboard API Server
 Lightweight HTTP API for the dashboard. No framework dependencies.
 
 Endpoints:
-  GET  /api/health   — service health (LiteLLM, SpacetimeDB, MCP)
+  GET  /api/health   — service health (LiteLLM, safe-mini boundary, MCP)
   GET  /api/runs     — recent run history from memory
   GET  /api/config   — current config
   POST /api/run      — trigger orchestrator run (async)
@@ -18,6 +18,7 @@ Usage:
   python3 -m justai.api              # starts on :3002
   python3 -m justai.api --port 8080  # custom port
 """
+
 from __future__ import annotations
 
 import json
@@ -25,16 +26,17 @@ import os
 import sys
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
 
+from justai.auth import AuthManager
+from justai.discord import is_configured as discord_configured
+from justai.discord import notify as discord_notify
 from justai.health import preflight
+from justai.ledger import Ledger
 from justai.memory import Memory
 from justai.tracing import get_aggregated_metrics
-from justai.trajectory import analyze_trajectory, get_patterns, get_audit_data
-from justai.discord import is_configured as discord_configured, notify as discord_notify
-from justai.ledger import Ledger
-from justai.auth import AuthManager
+from justai.trajectory import analyze_trajectory, get_audit_data, get_patterns
 
 _ledger = Ledger()
 _auth = AuthManager()
@@ -52,8 +54,7 @@ def _get_health() -> dict:
     statuses = preflight()
     return {
         "services": [
-            {"name": s.name, "url": s.url, "ok": s.ok, "detail": s.detail}
-            for s in statuses
+            {"name": s.name, "url": s.url, "ok": s.ok, "detail": s.detail} for s in statuses
         ],
         "all_ok": all(s.ok for s in statuses),
         "timestamp": time.time(),
@@ -96,7 +97,7 @@ def _get_config() -> dict:
         "auto_mode": os.environ.get("JUSTAI_AUTO_MODE", "") in ("1", "true"),
         "litellm_url": os.environ.get("LITELLM_BASE_URL", "http://localhost:4000"),
         "planner_model": os.environ.get("JUSTAI_PLANNER_MODEL", "openai/claude-opus-4-6"),
-        "spacetimedb_url": os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000"),
+        "safe_mini_mode": os.environ.get("JUSTAI_SAFE_MINI_MODE", "stub"),
     }
 
 
@@ -118,6 +119,7 @@ def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
         global _active_run
         try:
             from justai.orchestrator import run
+
             result = run(goal, session_ref=session or run_id, auto=auto)
             with _run_lock:
                 _active_run = {
@@ -212,11 +214,19 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json({"configured": discord_configured()})
         elif path == "/api/ledger/agents":
             agents = _ledger.all_agents()
-            self._json([{
-                "agent": a.agent, "total_cost": round(a.total_cost, 4),
-                "total_runs": a.total_runs, "avg_cost": round(a.avg_cost_per_run, 4),
-                "tokens_in": a.total_tokens_in, "tokens_out": a.total_tokens_out,
-            } for a in agents])
+            self._json(
+                [
+                    {
+                        "agent": a.agent,
+                        "total_cost": round(a.total_cost, 4),
+                        "total_runs": a.total_runs,
+                        "avg_cost": round(a.avg_cost_per_run, 4),
+                        "tokens_in": a.total_tokens_in,
+                        "tokens_out": a.total_tokens_out,
+                    }
+                    for a in agents
+                ]
+            )
         elif path == "/api/ledger/daily":
             days = int(params.get("days", ["30"])[0])
             self._json(_ledger.daily_rollup(days=days))
@@ -224,9 +234,15 @@ class APIHandler(BaseHTTPRequestHandler):
             agent = path.replace("/api/ledger/budget/", "")
             limit = float(params.get("limit", ["5.0"])[0])
             bs = _ledger.check_budget(agent, daily_limit=limit)
-            self._json({"agent": bs.agent, "daily_spend": bs.daily_spend,
-                         "daily_limit": bs.daily_limit, "over_budget": bs.over_budget,
-                         "remaining": bs.remaining})
+            self._json(
+                {
+                    "agent": bs.agent,
+                    "daily_spend": bs.daily_spend,
+                    "daily_limit": bs.daily_limit,
+                    "over_budget": bs.over_budget,
+                    "remaining": bs.remaining,
+                }
+            )
         else:
             self._json({"error": "not found"}, 404)
 
@@ -258,14 +274,20 @@ class APIHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length)) if length else {}
             result = _auth.login(body.get("username", ""), body.get("password", ""))
             if result.success:
-                self._json({"token": result.token, "user": {"username": result.user.username, "role": result.user.role}})
+                self._json(
+                    {
+                        "token": result.token,
+                        "user": {"username": result.user.username, "role": result.user.role},
+                    }
+                )
             else:
                 self._json({"error": result.error}, 401)
         elif path == "/api/auth/register":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             result = _auth.register(
-                body.get("username", ""), body.get("password", ""),
+                body.get("username", ""),
+                body.get("password", ""),
                 role=body.get("role", "operator"),
             )
             if result.success:
@@ -297,17 +319,17 @@ def serve(port: int = API_PORT):
     """Start the API server."""
     server = HTTPServer(("0.0.0.0", port), APIHandler)
     print(f"JustAi API server on http://0.0.0.0:{port}")
-    print(f"  GET  /api/health")
-    print(f"  GET  /api/runs")
-    print(f"  GET  /api/config")
-    print(f"  POST /api/run")
-    print(f"  GET  /api/observability/cost")
-    print(f"  GET  /api/observability/latency")
-    print(f"  GET  /api/observability/quality")
-    print(f"  GET  /api/observability/summary")
-    print(f"  GET  /api/trajectory/:name/analysis")
-    print(f"  GET  /api/trajectory/:name/audit")
-    print(f"  GET  /api/trajectory/patterns")
+    print("  GET  /api/health")
+    print("  GET  /api/runs")
+    print("  GET  /api/config")
+    print("  POST /api/run")
+    print("  GET  /api/observability/cost")
+    print("  GET  /api/observability/latency")
+    print("  GET  /api/observability/quality")
+    print("  GET  /api/observability/summary")
+    print("  GET  /api/trajectory/:name/analysis")
+    print("  GET  /api/trajectory/:name/audit")
+    print("  GET  /api/trajectory/patterns")
     server.serve_forever()
 
 

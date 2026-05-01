@@ -1,3 +1,0 @@
-- `scripts/setup_discord_server.py` (311 lines)
-- `scripts/bot_listener.py` (1086 lines)
-- `scripts/honcho_writeback.py` (337 lines)
