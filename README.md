@@ -149,7 +149,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 363 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 370 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 ## Current Repo Map
 
