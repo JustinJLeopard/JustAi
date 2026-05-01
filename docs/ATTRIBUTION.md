@@ -1,6 +1,6 @@
 # JustAi Attribution & Licenses
 
-JustAi is built on open-source infrastructure from the Python, observability, and coding-agent ecosystems.
+JustAi is built on open-source infrastructure from the Python, frontend, observability, and software-automation ecosystems.
 
 ## Core Dependencies
 
@@ -9,27 +9,17 @@ JustAi is built on open-source infrastructure from the Python, observability, an
 - **By:** SWE-agent team, Princeton University & Stanford University
 - **Repository:** https://github.com/SWE-agent/mini-swe-agent
 - **License:** MIT
-- **Role in JustAi:** Reference bash-action agent loop. JustAi plans around this execution style; safe-mini is the intended local substrate boundary.
+- **Role in JustAi:** Reference bash-action agent loop. JustAi plans around this execution style; `safe-mini` is the intended local substrate boundary.
 
-### LiteLLM
+### Model Routing Proxy
 
-- **By:** BerriAI
-- **Repository:** https://github.com/BerriAI/litellm
 - **License:** MIT
-- **Role in JustAi:** Model routing proxy for intent, planning, and review calls.
+- **Role in JustAi:** Local model-routing proxy for intent, planning, and review calls.
 
-### LangFuse
+### Observability Client
 
-- **By:** LangFuse GmbH
-- **Website:** https://langfuse.com
-- **Repository:** https://github.com/langfuse/langfuse
-- **License:** MIT (client SDK)
-- **Role in JustAi:** Optional LLM observability for cost, latency, and quality tracing.
-
-### Ruflo / claude-flow / SAFLA
-
-- **By:** Reuven Cohen (rUv)
-- **Role in JustAi:** Local memory and surrounding agent-development infrastructure used by the project environment.
+- **License:** MIT
+- **Role in JustAi:** Optional tracing for cost, latency, and quality telemetry.
 
 ## Frontend Dependencies
 
@@ -45,11 +35,10 @@ JustAi is built on open-source infrastructure from the Python, observability, an
 
 | Package | License | Role |
 | --- | --- | --- |
-| langfuse | MIT | LLM tracing (optional) |
 | pytest | MIT | Test framework |
 | ruff | MIT | Linting and formatting |
 | mypy | MIT | Type checking |
 
 ## Research Foundation
 
-The current JustAi architecture is informed by safe-mini/control-plane research and the memory keys listed in the README. Historical sprint evidence is archived under [archive/](archive/).
+The current JustAi architecture is informed by local-execution substrate research and the control-plane split described in the README.
