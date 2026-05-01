@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.4.0] - 2026-04-30
+
+### Changed
+- Repo identity reframed around the three-repo split (safe-mini substrate + JustAi orchestrator + local-resident experiment driver).
+- Pipeline narrative reduced from "6-stage" framing to a transparent control-plane: scope_planner -> intent_gate -> reviewer -> checkpoint -> agent_dispatch.
+
+### Added
+- Stub AgentRunner Protocol + canonical substrate types (will migrate to safe-mini repo when stood up).
+- ruff + mypy in dev tooling, clean across `justai/` and `tests/`.
+- `tests/test_docs_contract.py` lock-in to prevent legacy-term regressions.
+- PHASE_5_RATIFICATION.md (secrets scrub, dep audit, license, install verify, dashboard verify, 3-repo consistency).
+
+### Removed
+- SpacetimeDB live dependency (Python + dashboard `spacetimedb` npm package).
+- ManusLocal / manuslocal runtime integration.
+- relay-room and `delegator.py` dispatch backend.
+- swarm dispatch surface.
+
+### Fixed
+- Various test references to amputated services (test_orchestrator, test_sprint5, test_sprint7, test_slice2, test_justai_cli).
+
+### Documentation
+- README and `docs/ARCHITECTURE.md` rewritten around control-plane thesis and the three-repo plan.
+- Historical evidence archived under `docs/archive/`.
+
+### Internal
+- Memory keys: `justai-architecture-decision-mini-swe-agent-control-plane`, `safe-mini-substrate-architecture`, `justai-two-repo-ship-pattern` (note: key name is provisional; content reflects the 3-repo decision).
+
 ## [1.0.0] - 2026-04-15
 
 ### Core Pipeline
