@@ -5,11 +5,12 @@ Dispatch contract between JustAi's orchestrator and the substrate that actually
 runs bash-action coding agents.
 
 STATUS: STUB. The canonical home for this Protocol and the types below is the
-safe-mini repo (https://github.com/JustinJLeopard/safe-mini - to be stood up
-post-JustAi-closure). This file is a placeholder so JustAi's orchestrator can
+safe-mini repo (https://github.com/JustinJLeopard/safe-mini - now live). This file is a placeholder so JustAi's orchestrator can
 declare its dispatch boundary today; consumers will migrate to
-`from safe_mini.runner_protocol import AgentRunner, Chunk, ...` once safe-mini
-is published.
+`from safe_mini import AgentRunner, Chunk, Budget, RunResult, FailureClass,
+    ExecutorPolicy, ObservationPolicy`
+once safe-mini is on PyPI (currently git-URL-pinnable from
+https://github.com/JustinJLeopard/safe-mini).
 
 Architectural source of truth:
 - justai-architecture-decision-mini-swe-agent-control-plane (memory key)
