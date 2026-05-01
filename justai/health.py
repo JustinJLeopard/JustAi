@@ -5,10 +5,12 @@ JustAi — Service Health Preflight
 Quick checks for required services before running the pipeline.
 Returns structured results so the orchestrator can degrade gracefully.
 """
+
 from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
@@ -21,35 +23,66 @@ class ServiceStatus:
     detail: str = ""
 
 
-def check_litellm() -> ServiceStatus:
-    """Check LiteLLM proxy is reachable."""
-    url = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
-    health_url = f"{url}/health"
+def _read_response(resp) -> tuple[int, dict[str, str], bytes]:
+    headers = {k.lower(): v for k, v in dict(getattr(resp, "headers", {})).items()}
+    return getattr(resp, "status", 0), headers, resp.read()
+
+
+def _json_body(body: bytes) -> dict | list | None:
     try:
-        req = urllib.request.Request(health_url, method="GET")
+        return json.loads(body.decode() or "{}")
+    except Exception:
+        return None
+
+
+def _is_litellm_response(status: int, headers: dict[str, str], body: bytes) -> bool:
+    data = _json_body(body)
+    if status == 200 and isinstance(data, dict) and isinstance(data.get("data"), list):
+        return True
+
+    body_text = body.decode(errors="ignore").lower()
+    content_type = headers.get("content-type", "").lower()
+    if status in (401, 403) and "json" in content_type:
+        return any(token in body_text for token in ("litellm", "api key", "auth"))
+    return False
+
+
+def check_litellm() -> ServiceStatus:
+    """Check LiteLLM proxy is reachable and speaks the OpenAI models API."""
+    url = (
+        os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+    )
+    models_url = f"{url}/v1/models"
+    try:
+        req = urllib.request.Request(
+            models_url,
+            headers={"Authorization": f"Bearer {os.environ.get('LITELLM_KEY', '')}"},
+            method="GET",
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return ServiceStatus("LiteLLM", url, resp.status == 200, "healthy")
+            status, headers, body = _read_response(resp)
+            if _is_litellm_response(status, headers, body):
+                return ServiceStatus("LiteLLM", url, True, "models API reachable")
+            return ServiceStatus("LiteLLM", url, False, "responded but not LiteLLM")
     except urllib.error.HTTPError as e:
-        # 401/403 means LiteLLM is up but health endpoint needs auth — still reachable
-        if e.code in (401, 403):
-            return ServiceStatus("LiteLLM", url, True, f"reachable (http {e.code})")
+        body = e.read()
+        headers = {k.lower(): v for k, v in dict(e.headers).items()}
+        if _is_litellm_response(e.code, headers, body):
+            return ServiceStatus("LiteLLM", url, True, f"models API reachable (http {e.code})")
         return ServiceStatus("LiteLLM", url, False, f"http {e.code}")
     except Exception as e:
         return ServiceStatus("LiteLLM", url, False, str(e)[:120])
 
 
-def check_spacetimedb() -> ServiceStatus:
-    """Check SpacetimeDB is reachable on :3000."""
-    url = os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000")
+def check_safe_mini_boundary() -> ServiceStatus:
+    """Check the planned safe-mini boundary is represented by the local stub."""
     try:
-        req = urllib.request.Request(f"{url}/database/ping", method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            return ServiceStatus("SpacetimeDB", url, True, "reachable")
-    except urllib.error.HTTPError as e:
-        # SpacetimeDB returns various codes but if we get a response, it's up
-        return ServiceStatus("SpacetimeDB", url, True, f"http {e.code}")
+        from justai.runner_protocol import AgentRunner
+
+        _ = AgentRunner
+        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "stub available")
     except Exception as e:
-        return ServiceStatus("SpacetimeDB", url, False, str(e)[:120])
+        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, str(e)[:120])
 
 
 def check_memory() -> ServiceStatus:
@@ -58,7 +91,15 @@ def check_memory() -> ServiceStatus:
     try:
         req = urllib.request.Request(f"{url}/health", method="GET")
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return ServiceStatus("claude-flow MCP", url, True, "healthy")
+            status, _headers, body = _read_response(resp)
+            data = _json_body(body)
+            ok = status == 200 and isinstance(data, dict) and data.get("status") == "ok"
+            return ServiceStatus(
+                "claude-flow MCP",
+                url,
+                ok,
+                "healthy" if ok else "responded but health signature invalid",
+            )
     except Exception as e:
         return ServiceStatus("claude-flow MCP", url, False, str(e)[:120])
 
@@ -68,12 +109,17 @@ def check_swarm() -> ServiceStatus:
     url = os.environ.get("JUSTAI_MCP_URL", "http://127.0.0.1:3100")
     rpc_url = f"{url}/rpc"
     try:
-        payload = json.dumps({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "tools/call",
-            "params": {"name": "swarm_status", "arguments": {}},
-        }).encode()
-        req = urllib.request.Request(rpc_url, data=payload, headers={"Content-Type": "application/json"})
+        payload = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "swarm_status", "arguments": {}},
+            }
+        ).encode()
+        req = urllib.request.Request(
+            rpc_url, data=payload, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
             content = data.get("result", {}).get("content", [])
@@ -90,7 +136,7 @@ def check_swarm() -> ServiceStatus:
 
 def preflight() -> list[ServiceStatus]:
     """Run all service checks. Returns list of statuses."""
-    return [check_litellm(), check_spacetimedb(), check_memory()]
+    return [check_litellm(), check_safe_mini_boundary(), check_memory()]
 
 
 def print_preflight(statuses: list[ServiceStatus]) -> bool:

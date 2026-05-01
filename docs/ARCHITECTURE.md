@@ -1,148 +1,213 @@
 # JustAi Architecture
 
-## System Overview
+JustAi is a thin project-orchestration control plane around safe-mini, the substrate that makes mini-swe-agent's bash-action loop trustworthy on private repos.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Human (operator)                        │
-│                  justai run "goal"                           │
-└─────────┬───────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Orchestrator Pipeline                      │
-│                                                             │
-│  [1] Intent Gate ──► classify goal type + confidence        │
-│  [2] Planner     ──► decompose into mini-sized tasks        │
-│  [3] Reviewer    ──► validate plan quality                  │
-│  [4] Checkpoint  ──► R0-R3 risk gates (approve/block)       │
-│  [5] Delegator   ──► post to SpacetimeDB, monitor agents    │
-│  [6] Synthesizer ──► aggregate results, store in memory     │
-│                                                             │
-│  Each LLM stage calls LiteLLM (:4000) for model routing.   │
-│  Each stage is traced via LangFuse (when configured).       │
-└─────────┬───────────────────────────────────────────────────┘
-          │
-          ▼
-┌───────────────────────┐     ┌────────────────────────────────┐
-│   SpacetimeDB (:3000) │◄───►│  mini-swe-agent (manuslocal)   │
-│   Task backbone       │     │  Executes bash tasks           │
-│   relay CLI interface  │     │  Writes .traj.json logs        │
-└───────────────────────┘     └────────────────────────────────┘
-          │
-          ▼
-┌───────────────────────┐     ┌────────────────────────────────┐
-│  claude-flow MCP      │     │  Dashboard (:3001)             │
-│  HTTP :3100           │◄───►│  React + Vite                  │
-│  264 tools            │     │  Mission Control | Task Board   │
-│  Memory: sql.js+HNSW  │     │  Trajectory Viewer | Memory    │
-└───────────────────────┘     └────────────────────────────────┘
+This document describes the post-amputation architecture. It does not describe the original v1.0.0 delegation stack.
+
+## Current Shape
+
+```text
+Orchestrator
+============
+
+Human / agent operator
+        |
+        v
+JustAi control plane
+  - classify intent
+  - decompose goal into chunks
+  - review plan quality
+  - apply R0-R3 checkpoints
+  - dispatch remaining executable work
+  - synthesize results and memory
+        |
+        v
+safe-mini substrate (planned separate repo)
+  - mini-style bash-action loop
+  - worktree isolation
+  - env scrubbing
+  - command/path guard
+  - observation policy
+  - incident artifacts
+  - trajectory + ledger
+  - failure classifier
+        |
+        v
+private benchmark / repo worktrees
 ```
 
-## Directory Structure
+The control plane should stay small enough to reason about. The substrate should stay small enough to audit in one sitting. The experiment driver should live outside both, because calibration work is not orchestration and not runtime substrate.
 
-```
-JustAi/
-├── justai/                    # Python orchestrator package
-│   ├── __init__.py            # Auto-loads .env
-│   ├── orchestrator.py        # Main pipeline (6 stages)
-│   ├── intent_gate.py         # Goal classification
-│   ├── planner.py             # Task decomposition
-│   ├── reviewer.py            # Plan quality gate
-│   ├── checkpoint.py          # R0-R3 risk gates
-│   ├── delegator.py           # SpacetimeDB task posting
-│   ├── memory.py              # MCP HTTP memory client
-│   └── tracing.py             # LangFuse observability
-│
-├── dashboard/                 # Web UI (React + TypeScript + Vite)
-│   ├── src/
-│   │   ├── App.tsx            # Root: 4-view nav
-│   │   ├── views/
-│   │   │   ├── MissionControl.tsx
-│   │   │   ├── TaskBoard.tsx
-│   │   │   ├── TrajectoryViewer.tsx
-│   │   │   └── MemoryBrowser.tsx
-│   │   └── lib/
-│   │       ├── spacetime.ts   # SpacetimeDB polling client
-│   │       ├── trajectories.ts # .traj.json file loader
-│   │       └── memory-client.ts # MCP HTTP browser client
-│   └── vite.config.ts         # Port 3001, proxy /api/memory → :3100
-│
-├── relay-room/                # SpacetimeDB backend (Rust)
-│   └── spacetimedb/src/lib.rs # Task, Agent, Message, Event tables
-│
-├── LocalManus/                # mini-swe-agent runtime + logs
-│   └── logs/                  # .traj.json trajectory files
-│
-├── tools/
-│   ├── justai_cli.py          # CLI: justai run, status, health
-│   └── justai_runtime.py      # Runtime utilities
-│
-├── scripts/
-│   ├── start_justai.sh        # Start all JustAi services
-│   └── check_justai.sh        # Health check (--status-only, --health-only)
-│
-├── tests/                     # pytest test suite
-│   ├── test_orchestrator.py   # 24 tests: intent, planner, reviewer, checkpoint
-│   ├── test_sprint4.py        # 25 tests: memory, tracing, integration
-│   └── test_sprint5.py        # Installer + preflight tests
-│
-├── docs/
-│   ├── JUSTAI_V1_SPEC.md      # Full product specification
-│   ├── ARCHITECTURE.md        # This file
-│   ├── ATTRIBUTION.md         # Credits and licenses
-│   ├── EVIDENCE.md            # Performance data from 10 sprints
-│   └── TESTING.md             # Test running guide
-│
-├── harness-notes/             # Operational notes per sprint
-├── install.sh                 # Single-command installer
-├── .env.example               # Environment template
-└── README.md                  # Landing page
+## Three Pillars
+
+### 1. Scope
+
+Scope lives in JustAi.
+
+`justai.scope_planner` turns a goal into bounded tasks with success criteria, dependencies, risk labels, and target agent hints. `justai.reviewer` checks whether the plan is coherent. `justai.checkpoint` applies R0-R3 gates before anything is allowed to run.
+
+The long-term job of this layer is to predict both budgets:
+
+- move budget: how many bash actions a chunk should get
+- observation budget: how much command output the agent should see per action
+
+### 2. Substrate
+
+Substrate lives in safe-mini once that repo is stood up.
+
+The substrate is the load-bearing runtime around a mini-swe-agent-style loop:
+
+- prompt -> one bash action -> observation -> repeat
+- executor policies: open, safe, allowlist
+- observation policies: full, tail, headtail, structured, structured plus raw tail
+- worktree provisioner: copied repo, scoped HOME, sanitized PATH
+- command/path guard: denylisted commands and sensitive paths
+- incident artifact: full transcript saved for audit
+
+JustAi should consume this as an imported dependency, not own it forever.
+
+### 3. Guardrails And Classifier
+
+Guardrails and failure classification also belong in safe-mini.
+
+JustAi needs structured failure information from the runner so it can decide whether to re-scope, retry, escalate, or stop. That means the runtime should report failure class, trajectory, budget usage, and relevant incident artifacts in its `RunResult`.
+
+## Three Repos
+
+| Repo | Responsibility |
+| --- | --- |
+| `safe-mini` | Runtime foundation and public substrate API. |
+| `JustAi` | Project orchestration, chunk sizing, checkpoints, dashboard, synthesis. |
+| `local-resident` | Local experiment driver for private benchmark slices and calibration data. |
+
+Planned dependency graph:
+
+```text
+JustAi -----------+
+                  +--> safe-mini
+local-resident ---+
 ```
 
-## Data Flow
+Planned ship sequence:
 
-### Task Lifecycle
+- Phase A: consumers pin `safe-mini @ git+https://github.com/JustinJLeopard/safe-mini.git@...`.
+- Phase B: safe-mini publishes to PyPI and consumers use a version pin.
+- Current state: the safe-mini repo does not exist yet. Stand-up is post-JustAi-closure work.
 
-1. `justai run "goal"` enters the orchestrator
-2. Intent gate classifies: EXECUTION / RESEARCH / MULTI_STEP / AMBIGUOUS
-3. Planner calls LiteLLM to decompose into tasks (one file, one concern each)
-4. Reviewer validates the plan (LLM + heuristic checks)
-5. Checkpoint evaluates risk: R0 (auto) → R3 (blocked, manual only)
-6. Delegator posts approved tasks to SpacetimeDB via `relay post`
-7. mini-swe-agent claims the task, executes bash commands, writes `.traj.json`
-8. Delegator polls for completion, collects results
-9. Synthesizer stores summary in claude-flow memory
+## Current Repo Layout
 
-### Memory Architecture
+The relevant Python package shape after the Phase 4 renames:
 
-```
-Python (justai/memory.py)  ──► HTTP POST /rpc ──► claude-flow MCP (:3100)
-Dashboard (memory-client.ts) ──► /api/memory ──► Vite proxy ──► :3100
-                                                       │
-                                                       ▼
-                                              sql.js + HNSW vectors
-                                              ~/projects/ruv-research/.swarm/memory.db
-```
-
-- **Store:** key + value + 384-dim embedding (auto-generated)
-- **Retrieve:** exact key lookup
-- **Search:** HNSW approximate nearest neighbor on embeddings
-- **Transport:** JSON-RPC 2.0 over HTTP. Requires `initialize` handshake.
-
-### Model Routing
-
-```
-justai (Python) ──► LiteLLM (:4000) ──► Gameron API ──► Claude/GPT/etc
+```text
+justai/
+  __init__.py
+  __main__.py
+  cli.py
+  orchestrator.py
+  scope_planner.py
+  agent_dispatch.py
+  checkpoint.py
+  reviewer.py
+  intent_gate.py
+  synthesizer.py
+  results.py
+  memory.py
+  trajectory.py
+  ledger.py
+  learning.py
+  health.py
+  tracing.py
+  api.py
+  auth.py
+  discord.py
 ```
 
-LiteLLM handles model selection, fallback chains, and rate limiting.
-Each pipeline stage can use a different model via env vars.
+Important boundaries:
 
-## Key Design Decisions
+- `scope_planner.py` owns task decomposition and task data shapes for the current repo.
+- `agent_dispatch.py` is transitional. Local mode runs verification commands; removed backends return explicit errors.
+- `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates.
+- `results.py`, `trajectory.py`, and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
+- `memory.py` is integration glue with the surrounding development memory system.
 
-1. **HTTP MCP over stdio** — One shared process for all agents. No DB lock collisions.
-2. **relay CLI as delegation interface** — SpacetimeDB tasks via battle-tested relay scripts.
-3. **Mocked tests** — All tests run offline. LLM and MCP calls are mocked.
-4. **LangFuse opt-in** — Tracing is no-op without keys. Zero overhead when disabled.
-5. **Vite proxy for dashboard** — Avoids CORS. Frontend doesn't know about MCP internals.
+## Failure Taxonomy
+
+safe-mini should report failure classes rather than a single generic failure state:
+
+- `exhausted-ideas`
+- `budget-exhausted`
+- `context-starvation`
+- `reward-hacking`
+- `embodiment-failure`
+- `safety-violation`
+- `action-protocol-violation`
+
+These classes come from the safe-mini substrate architecture memory. JustAi should use them to choose the next orchestration move. For example, budget exhaustion implies a different fix than a safety violation.
+
+## Two Budgets
+
+The architecture uses two budgets, not one:
+
+| Budget | Meaning |
+| --- | --- |
+| Move budget | Maximum bash actions for a chunk. |
+| Observation budget | Maximum command output kept visible per action. |
+
+The lab evidence matters here: tiny observations can fail an otherwise solvable task even if the move budget is generous. Scope prediction must size both.
+
+## Runtime Data Flow
+
+Current transitional flow:
+
+```text
+justai run --auto --local "goal"
+  -> intent_gate.classify
+  -> scope_planner.decompose
+  -> reviewer.review_plan
+  -> checkpoint.evaluate
+  -> agent_dispatch.escalate_plan(mode="local")
+  -> verification command per task
+  -> synthesizer.synthesize
+  -> trajectory / ledger / memory best-effort writes
+```
+
+Default delegated mode is intentionally not a live backend right now. It returns an explicit removed-backend error and tells the caller to use local mode.
+
+## Current Boundary
+
+The live architectural boundary is the control-plane / substrate split:
+
+- JustAi owns project orchestration, chunk sizing, checkpoints, dashboards, and synthesis.
+- safe-mini owns the bash-action runner, executor policy, observation policy, worktree isolation, guards, incident artifacts, trajectory recording, ledger, and failure classifier.
+- local-resident owns the private benchmark and calibration loop that proves whether the orchestration layer adds value.
+
+Historical sprint-era designs now live under `docs/archive/` when they are still useful as evidence. They are not current product contracts.
+
+## Migration Plan
+
+When safe-mini is stood up, move or re-author these pieces there:
+
+- runner loop and action protocol
+- executor policy types
+- observation policy types
+- worktree provisioner
+- command/path guard
+- incident artifact writer
+- failure classifier
+- trajectory recorder
+- run ledger
+- canonical `Chunk`, `Budget`, `RunResult`, `FailureClass`, `ObservationPolicy`, and `ExecutorPolicy` types
+- `AgentRunner` Protocol/ABC
+
+TBD post-JustAi-closure:
+
+- whether JustAi keeps a temporary local Protocol stub in Chunk F
+- exact split between JustAi's current `trajectory.py`/`ledger.py` and safe-mini's canonical versions
+- whether safe-mini ships benchmark fixtures or leaves all benchmark data to local-resident
+
+## Design Rules
+
+- Keep JustAi honest about what exists today.
+- Do not reintroduce removed backends as documentation promises.
+- Keep safe-mini generic; it should not know JustAi-specific dashboards, Discord, auth, or learning aggregation.
+- Keep local-resident focused on experiment generation and calibration, not orchestration.

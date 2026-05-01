@@ -14,8 +14,8 @@
 ### Core Pipeline
 - 9-stage orchestration: preflight, session load, intent classification, task decomposition, plan review with replan, checkpoint gates (R0-R3), execution, delegation, synthesis
 - Local executor for offline/no-agent mode
-- SpacetimeDB delegator with heartbeat monitoring, retry, and failure escalation
-- Swarm delegator for parallel dispatch via claude-flow MCP (tested 15-1500 agents)
+- control-plane data dispatch with heartbeat monitoring, retry, and failure escalation
+- Swarm dispatch for parallel dispatch via claude-flow MCP (tested 15-1500 agents)
 - Memory bridge to claude-flow (HNSW vector search, ~5ms store, ~7ms search)
 - LangFuse tracing integration
 - Agent payment ledger (SQLite cost tracking per agent)
@@ -41,7 +41,7 @@
 
 ### Testing
 - 464 tests across 12 sprints
-- All external calls mocked (LiteLLM, SpacetimeDB, Discord, MCP)
+- All external calls mocked (LiteLLM, control-plane data, Discord, MCP)
 - Parametric scale tests at 15/50/150/1500 agent tiers
 
 ### Sprint History
@@ -49,9 +49,9 @@
 | Sprint | What Was Built |
 |--------|----------------|
 | 1 | Clean foundation scaffold |
-| 2 | Orchestrator core: intent gate, planner, reviewer, delegator, checkpoint |
+| 2 | Orchestrator core: intent gate, planner, reviewer, dispatch, checkpoint |
 | 2.5 | Test coverage audit: 34 to 118 tests |
-| 3 | Dashboard: React + SpacetimeDB + Mission Control + Task Board |
+| 3 | Dashboard: React + control-plane data + Mission Control + Task Board |
 | 4 | Trajectory Viewer, Memory Browser |
 | 5 | Memory bridge (claude-flow MCP HTTP client) |
 | 6 | LangFuse tracing, health preflight |

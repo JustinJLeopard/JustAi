@@ -2,10 +2,11 @@
 """
 JustAi Orchestrator package
 
-Auto-loads environment variables from LocalManus .env on import so
-all components have LITELLM_KEY, GAMERON_API_KEY etc. available
-regardless of whether source ~/.ruv_env was run first.
+Auto-loads environment variables from the repo .env on import so components
+have LITELLM_KEY, GAMERON_API_KEY, and related settings available even when
+the caller did not source a shell profile first.
 """
+
 from __future__ import annotations
 
 __version__ = "1.0.0"
@@ -20,9 +21,8 @@ def _load_env() -> None:
         return  # already loaded
 
     candidates = [
-        Path(__file__).resolve().parents[2] / "LocalManus" / ".env",
-        Path.home() / "projects" / "JustAi" / "LocalManus" / ".env",
-        Path.home() / "projects" / "LocalManus" / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+        Path.home() / "projects" / "JustAi" / ".env",
     ]
     for env_path in candidates:
         if env_path.exists():

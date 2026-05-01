@@ -5,9 +5,9 @@ Tests for JustAi Sprint 5: installer, preflight, env, docs.
 Validates install.sh logic, .env.example completeness, and
 documentation file existence.
 """
+
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -73,9 +73,9 @@ class EnvExampleTests(unittest.TestCase):
         content = (JUSTAI_ROOT / ".env.example").read_text()
         self.assertIn("JUSTAI_SESSION_REF", content)
 
-    def test_env_example_has_relay(self):
+    def test_env_example_has_safe_mini_boundary(self):
         content = (JUSTAI_ROOT / ".env.example").read_text()
-        self.assertIn("RELAY_DB_NAME", content)
+        self.assertIn("JUSTAI_SAFE_MINI_MODE", content)
 
 
 class DocumentationTests(unittest.TestCase):
@@ -98,7 +98,7 @@ class DocumentationTests(unittest.TestCase):
     def test_architecture_has_diagram(self):
         content = (JUSTAI_ROOT / "docs" / "ARCHITECTURE.md").read_text()
         self.assertIn("Orchestrator", content)
-        self.assertIn("SpacetimeDB", content)
+        self.assertIn("safe-mini", content)
 
     def test_attribution_doc_exists(self):
         self.assertTrue((JUSTAI_ROOT / "docs" / "ATTRIBUTION.md").exists())
@@ -140,22 +140,20 @@ class PackageIntegrityTests(unittest.TestCase):
 
     def test_justai_package_importable(self):
         import justai
-        self.assertTrue(hasattr(justai, '_load_env'))
+
+        self.assertTrue(hasattr(justai, "_load_env"))
 
     def test_all_modules_importable(self):
-        from justai import intent_gate
-        from justai import planner
-        from justai import reviewer
-        from justai import checkpoint
-        from justai import delegator
-        from justai import memory
-        from justai import tracing
+        from justai import scope_planner
+
+        assert scope_planner
         # If any import fails, this test fails
 
     def test_orchestrator_importable(self):
         from justai import orchestrator
-        self.assertTrue(hasattr(orchestrator, 'run'))
-        self.assertTrue(hasattr(orchestrator, 'OrchestrationResult'))
+
+        self.assertTrue(hasattr(orchestrator, "run"))
+        self.assertTrue(hasattr(orchestrator, "OrchestrationResult"))
 
 
 if __name__ == "__main__":
