@@ -19,6 +19,7 @@ Usage:
     user = auth.verify(token)
     assert user.username == "admin"
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +31,6 @@ import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -45,11 +45,12 @@ DEFAULT_DB_PATH = os.environ.get(
 
 # ── Data Types ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class User:
     id: int
     username: str
-    role: str       # "admin" | "operator"
+    role: str  # "admin" | "operator"
     created_at: float
 
 
@@ -57,7 +58,7 @@ class User:
 class AuthResult:
     success: bool
     token: str = ""
-    user: Optional[User] = None
+    user: User | None = None
     error: str = ""
 
 
@@ -87,6 +88,7 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 # ── JWT (minimal, stdlib-only) ──────────────────────────────────────────────
+
 
 def _b64(data: bytes) -> str:
     return urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -134,6 +136,7 @@ def verify_jwt(token: str, secret: str = JWT_SECRET) -> dict | None:
 
 
 # ── Auth Manager ─────────────────────────────────────────────────────────────
+
 
 class AuthManager:
     """User management and authentication."""
@@ -190,9 +193,7 @@ class AuthManager:
     def login(self, username: str, password: str) -> AuthResult:
         """Authenticate a user and return a JWT token."""
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE username = ?", (username,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
         if not row:
             return AuthResult(success=False, error="Invalid credentials")
@@ -206,11 +207,13 @@ class AuthManager:
             role=row["role"],
             created_at=row["created_at"],
         )
-        token = create_jwt({
-            "sub": user.username,
-            "role": user.role,
-            "uid": user.id,
-        })
+        token = create_jwt(
+            {
+                "sub": user.username,
+                "role": user.role,
+                "uid": user.id,
+            }
+        )
         return AuthResult(success=True, token=token, user=user)
 
     def verify(self, token: str) -> User | None:
@@ -220,9 +223,7 @@ class AuthManager:
             return None
 
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE id = ?", (payload.get("uid"),)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (payload.get("uid"),)).fetchone()
 
         if not row:
             return None

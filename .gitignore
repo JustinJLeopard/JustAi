@@ -9,14 +9,12 @@ __pycache__/
 .env
 .env.local
 
-LocalManus/.env
-relay-room/.env
+control-plane/.env
 
-LocalManus/logs/
-relay-room/logs/
-relay-room/archives/*.tar.gz
-relay-room/.venv/
-relay-room/tests/__pycache__/
+control-plane/logs/
+control-plane/archives/*.tar.gz
+control-plane/.venv/
+control-plane/tests/__pycache__/
 
 /tmp/
 .worktrees/

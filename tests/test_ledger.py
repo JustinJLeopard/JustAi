@@ -1,4 +1,5 @@
 """Slice D: Agent Payment Ledger — tests for SQLite ledger, budget, and API."""
+
 from __future__ import annotations
 
 import os
@@ -12,11 +13,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 
 class TestLedgerCRUD(unittest.TestCase):
-
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         from justai.ledger import Ledger
+
         self.ledger = Ledger(db_path=self.tmp.name)
 
     def tearDown(self):
@@ -24,8 +25,13 @@ class TestLedgerCRUD(unittest.TestCase):
 
     def test_record_and_retrieve(self):
         entry_id = self.ledger.record(
-            run_id="run-1", agent="mini-swe", model="gpt-5.4",
-            cost=0.042, tokens_in=1200, tokens_out=800, duration_s=12.5,
+            run_id="run-1",
+            agent="mini-swe",
+            model="gpt-5.4",
+            cost=0.042,
+            tokens_in=1200,
+            tokens_out=800,
+            duration_s=12.5,
         )
         assert entry_id > 0
         entries = self.ledger.recent_entries(limit=10)
@@ -94,33 +100,51 @@ class TestLedgerCRUD(unittest.TestCase):
 
 
 class TestLedgerDataTypes(unittest.TestCase):
-
     def test_ledger_entry_dataclass(self):
         from justai.ledger import LedgerEntry
-        e = LedgerEntry(id=1, run_id="r", agent="a", model="m",
-                        cost=0.1, tokens_in=100, tokens_out=50,
-                        duration_s=5.0, timestamp=time.time(), stage="planner")
+
+        e = LedgerEntry(
+            id=1,
+            run_id="r",
+            agent="a",
+            model="m",
+            cost=0.1,
+            tokens_in=100,
+            tokens_out=50,
+            duration_s=5.0,
+            timestamp=time.time(),
+            stage="planner",
+        )
         assert e.cost == 0.1
 
     def test_agent_summary_dataclass(self):
         from justai.ledger import AgentSummary
-        s = AgentSummary(agent="a", total_cost=1.0, total_runs=5,
-                         total_tokens_in=5000, total_tokens_out=2000,
-                         avg_cost_per_run=0.2, avg_duration=10.0,
-                         last_run_at=time.time())
+
+        s = AgentSummary(
+            agent="a",
+            total_cost=1.0,
+            total_runs=5,
+            total_tokens_in=5000,
+            total_tokens_out=2000,
+            avg_cost_per_run=0.2,
+            avg_duration=10.0,
+            last_run_at=time.time(),
+        )
         assert s.avg_cost_per_run == 0.2
 
     def test_budget_status_dataclass(self):
         from justai.ledger import BudgetStatus
-        b = BudgetStatus(agent="a", daily_spend=3.0, daily_limit=5.0,
-                         over_budget=False, remaining=2.0)
+
+        b = BudgetStatus(
+            agent="a", daily_spend=3.0, daily_limit=5.0, over_budget=False, remaining=2.0
+        )
         assert b.remaining == 2.0
 
 
 class TestLedgerAPI(unittest.TestCase):
-
     def test_ledger_agents_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/ledger/agents"
         handler.headers = {}
@@ -135,6 +159,7 @@ class TestLedgerAPI(unittest.TestCase):
 
     def test_ledger_daily_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/ledger/daily"
         handler.headers = {}
@@ -147,6 +172,7 @@ class TestLedgerAPI(unittest.TestCase):
 
     def test_ledger_budget_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/ledger/budget/mini-swe?limit=5.0"
         handler.headers = {}

@@ -21,16 +21,17 @@ Usage:
     notify_stage("planner", "4 tasks generated", run_id="42")
     notify_complete(summary_dict)
 """
+
 from __future__ import annotations
 
 import json
 import os
 import threading
-import time
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from typing import Any, Optional
+from datetime import UTC
+from typing import Any
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -41,25 +42,26 @@ BOT_PREFIX = "!justai"
 
 # Stage emoji mapping
 STAGE_EMOJI = {
-    "intent-gate": "\U0001f50d",   # 🔍
-    "planner": "\U0001f4cb",       # 📋
-    "reviewer": "\u2705",          # ✅
-    "executor": "\u2699\ufe0f",    # ⚙️
-    "delegator": "\U0001f4e4",     # 📤
-    "synthesizer": "\U0001f4ca",   # 📊
-    "checkpoint": "\U0001f6d1",    # 🛑
+    "intent-gate": "\U0001f50d",  # 🔍
+    "planner": "\U0001f4cb",  # 📋
+    "reviewer": "\u2705",  # ✅
+    "local": "\u2699\ufe0f",  # ⚙️
+    "external": "\U0001f4e4",  # 📤
+    "synthesizer": "\U0001f4ca",  # 📊
+    "checkpoint": "\U0001f6d1",  # 🛑
 }
 
 STATUS_EMOJI = {
-    "complete": "\u2705",          # ✅
-    "partial": "\u26a0\ufe0f",     # ⚠️
-    "failed": "\u274c",            # ❌
-    "blocked": "\U0001f6ab",       # 🚫
-    "ambiguous": "\u2753",         # ❓
+    "complete": "\u2705",  # ✅
+    "partial": "\u26a0\ufe0f",  # ⚠️
+    "failed": "\u274c",  # ❌
+    "blocked": "\U0001f6ab",  # 🚫
+    "ambiguous": "\u2753",  # ❓
 }
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
+
 
 def is_configured() -> bool:
     """Check if Discord notifications are configured."""
@@ -68,9 +70,9 @@ def is_configured() -> bool:
 
 def notify(
     message: str,
-    title: Optional[str] = None,
-    color: int = 0xf43f5e,  # rose-500
-    fields: Optional[list[dict]] = None,
+    title: str | None = None,
+    color: int = 0xF43F5E,  # rose-500
+    fields: list[dict] | None = None,
 ) -> bool:
     """
     Send a Discord embed notification via webhook.
@@ -100,7 +102,7 @@ def notify_stage(
     stage: str,
     detail: str,
     run_id: str = "",
-    color: int = 0x94a3b8,  # text-secondary
+    color: int = 0x94A3B8,  # text-secondary
 ) -> bool:
     """Send a stage transition notification."""
     emoji = STAGE_EMOJI.get(stage, "\u25b6\ufe0f")
@@ -118,16 +120,20 @@ def notify_complete(
     status = summary.get("status", "unknown")
     emoji = STATUS_EMOJI.get(status, "\u2754")
     color = {
-        "complete": 0x10b981,   # emerald
-        "partial": 0xf59e0b,    # amber
-        "failed": 0xef4444,     # red
-    }.get(status, 0x94a3b8)
+        "complete": 0x10B981,  # emerald
+        "partial": 0xF59E0B,  # amber
+        "failed": 0xEF4444,  # red
+    }.get(status, 0x94A3B8)
 
     title = f"{emoji} Run {'#' + run_id if run_id else ''} — {status.title()}"
 
     fields = [
         {"name": "Goal", "value": summary.get("goal", "—")[:100], "inline": False},
-        {"name": "Tasks", "value": f"{summary.get('done', 0)}/{summary.get('total', 0)} done", "inline": True},
+        {
+            "name": "Tasks",
+            "value": f"{summary.get('done', 0)}/{summary.get('total', 0)} done",
+            "inline": True,
+        },
         {"name": "Duration", "value": f"{summary.get('duration', 0):.1f}s", "inline": True},
     ]
 
@@ -154,10 +160,11 @@ def notify_error(
     if root_cause:
         fields.append({"name": "Root Cause", "value": root_cause[:200], "inline": False})
 
-    return notify(message, title=title, color=0xef4444, fields=fields)
+    return notify(message, title=title, color=0xEF4444, fields=fields)
 
 
 # ── Webhook Transport ────────────────────────────────────────────────────────
+
 
 def _send_webhook(payload: dict) -> bool:
     """Send a payload to the Discord webhook. Blocking."""
@@ -185,10 +192,11 @@ def _send_webhook_async(payload: dict) -> None:
 
 # ── Bot Listener (optional) ─────────────────────────────────────────────────
 
+
 @dataclass
 class BotCommand:
-    command: str       # "run", "status", "health"
-    args: str          # everything after the command
+    command: str  # "run", "status", "health"
+    args: str  # everything after the command
     channel_id: str
     author: str
 
@@ -198,7 +206,7 @@ def parse_bot_command(content: str) -> BotCommand | None:
     content = content.strip()
     if not content.lower().startswith(BOT_PREFIX):
         return None
-    rest = content[len(BOT_PREFIX):].strip()
+    rest = content[len(BOT_PREFIX) :].strip()
     if not rest:
         return BotCommand(command="help", args="", channel_id="", author="")
     parts = rest.split(None, 1)
@@ -214,7 +222,7 @@ def format_help() -> str:
     """Return the bot help message."""
     return (
         "**JustAi Bot Commands**\n"
-        f"`{BOT_PREFIX} run \"goal\"` — Start a pipeline run\n"
+        f'`{BOT_PREFIX} run "goal"` — Start a pipeline run\n'
         f"`{BOT_PREFIX} status` — Current pipeline status\n"
         f"`{BOT_PREFIX} health` — Service health check\n"
         f"`{BOT_PREFIX} help` — Show this message"
@@ -222,6 +230,7 @@ def format_help() -> str:
 
 
 # ── Orchestrator Hooks ──────────────────────────────────────────────────────
+
 
 class OrchestratorHook:
     """
@@ -253,6 +262,8 @@ class OrchestratorHook:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _iso_now() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+
+    return datetime.now(UTC).isoformat()

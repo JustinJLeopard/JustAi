@@ -5,6 +5,7 @@ JustAi — Configuration
 Centralized configuration with defaults and env var overrides.
 Single source of truth for all module settings.
 """
+
 from __future__ import annotations
 
 import os
@@ -18,11 +19,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ROOT = Path(os.environ.get("JUSTAI_RUNTIME_ROOT", "/tmp/justai"))
 
 # ── Services ──────────────────────────────────────────────────────────────────
-LITELLM_BASE_URL = os.environ.get(
-    "LITELLM_BASE_URL", "http://localhost:4000"
-).rstrip("/").removesuffix("/v1")
+LITELLM_BASE_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 
-LITELLM_KEY = os.environ.get("LITELLM_KEY", "sk-justai")
+LITELLM_KEY = os.environ.get("LITELLM_KEY", "")
 
 SPACETIMEDB_URL = os.environ.get("SPACETIMEDB_URL", "http://127.0.0.1:3000")
 
@@ -44,8 +45,6 @@ R1_TIMEOUT_SECONDS = int(os.environ.get("JUSTAI_R1_TIMEOUT", "60"))
 
 # ── Delegator ─────────────────────────────────────────────────────────────────
 RELAY_BIN = os.environ.get("RELAY_BIN", str(Path.home() / ".local" / "bin" / "relay"))
-RELAY_DB_NAME = os.environ.get("RELAY_DB_NAME", "relay-room-dev")
-DELEGATE_AGENT = os.environ.get("JUSTAI_DELEGATE_AGENT", "manuslocal")
 CLAIM_TIMEOUT = int(os.environ.get("JUSTAI_CLAIM_TIMEOUT", "120"))
 EXEC_TIMEOUT = int(os.environ.get("JUSTAI_EXEC_TIMEOUT", "1800"))
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LiveData, msAgo } from '@/lib/spacetime'
+import { DB_NAME, LiveData, msAgo } from '@/lib/spacetime'
 import { fetchHealth, fetchRuns, fetchObservabilitySummary } from '../lib/api-client'
 import type { HealthData, RunEntry, ObservabilitySummary } from '../lib/api-client'
 import { MetricCard } from '@/components/MetricCard'
@@ -152,7 +152,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
     return () => clearInterval(id)
   }, [])
 
-  // ── Observability data (30s poll — slower than SpacetimeDB) ───────────────
+  // ── Observability data (30s poll — slower than control-plane data) ───────────────
   useEffect(() => {
     const loadObs = () => {
       fetchObservabilitySummary().then(setObsSummary).catch(() => {})
@@ -182,7 +182,7 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
   const successRate = total > 0 ? Math.round((doneTasks.length / total) * 100) : null
 
   const litellmSvc  = health?.services.find(s => s.name === 'LiteLLM')
-  const stdbSvc     = health?.services.find(s => s.name === 'SpacetimeDB')
+  const dataSvc     = health?.services.find(s => s.name === 'control-plane data')
   const mcpSvc      = health?.services.find(s => s.name === 'claude-flow MCP')
   const langfuseSvc = health?.services.find(s => s.name === 'LangFuse')
 
@@ -483,9 +483,9 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
             Services
           </div>
           <ServiceRow
-            name="SpacetimeDB"
+            name="control-plane data"
             ok={connected ? true : false}
-            detail={connected ? 'relay-room-dev' : 'disconnected'}
+            detail={connected ? DB_NAME || 'connected' : 'disconnected'}
             ping={connected ? '—' : 'err'}
           />
           <ServiceRow
