@@ -1,4 +1,5 @@
 """Synthesizer tests kept after Sprint 10 executor removal."""
+
 from __future__ import annotations
 
 from justai.results import DelegationResult

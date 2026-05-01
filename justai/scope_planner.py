@@ -24,37 +24,37 @@ Task sizing rules (from evidence):
     the whole task is done, it's probably two tasks.
   - Dependencies must be explicit — task N lists which prior task IDs it needs
 """
+
 from __future__ import annotations
 
 import json
 import os
 import urllib.request
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 
-class RiskLevel(str, Enum):
-    R0 = "R0"   # no gate — read-only, low-risk file creation
-    R1 = "R1"   # notify only — auto-proceed after 60s
-    R2 = "R2"   # hard gate — wait for explicit approval
-    R3 = "R3"   # blocked — operator must manually unlock
+class RiskLevel(StrEnum):
+    R0 = "R0"  # no gate — read-only, low-risk file creation
+    R1 = "R1"  # notify only — auto-proceed after 60s
+    R2 = "R2"  # hard gate — wait for explicit approval
+    R3 = "R3"  # blocked — operator must manually unlock
 
 
-class AgentType(str, Enum):
-    MINI = "mini"           # mini-swe-agent — any bash-possible task
+class AgentType(StrEnum):
+    MINI = "mini"  # mini-swe-agent — any bash-possible task
     RESEARCHER = "researcher"  # Ruflo researcher agent
 
 
 @dataclass
 class Task:
     title: str
-    description: str                  # full task text sent to mini
+    description: str  # full task text sent to mini
     agent: AgentType
     risk: RiskLevel
-    success_criteria: str            # bash command or grep that verifies completion
+    success_criteria: str  # bash command or grep that verifies completion
     depends_on: list[int] = field(default_factory=list)  # indices into task list
-    session_ref: str = ""            # e.g. "sprint-2"
+    session_ref: str = ""  # e.g. "sprint-2"
 
 
 @dataclass
@@ -106,7 +106,9 @@ as a complete, unambiguous instruction. Include file paths, expected behavior,
 and how to verify. Do not leave any decisions to mini.
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+LITELLM_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 PLANNER_MODEL = os.environ.get("JUSTAI_PLANNER_MODEL", "openai/claude-opus-4-6")
 
 
@@ -115,15 +117,17 @@ def _call_litellm(goal: str, context: str = "") -> dict:
     if context:
         user_content += f"\n\nContext:\n{context}"
 
-    payload = json.dumps({
-        "model": PLANNER_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "max_tokens": 2000,
-        "temperature": 0.0,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": PLANNER_MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.0,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{LITELLM_URL}/v1/chat/completions",
@@ -147,15 +151,17 @@ def _call_litellm(goal: str, context: str = "") -> dict:
 def _parse_tasks(raw: dict, session_ref: str = "") -> list[Task]:
     tasks = []
     for t in raw.get("tasks", []):
-        tasks.append(Task(
-            title=t["title"],
-            description=t["description"],
-            agent=AgentType(t.get("agent", "mini")),
-            risk=RiskLevel(t.get("risk", "R1")),
-            success_criteria=t.get("success_criteria", "echo 'no criteria defined'"),
-            depends_on=t.get("depends_on", []),
-            session_ref=session_ref,
-        ))
+        tasks.append(
+            Task(
+                title=t["title"],
+                description=t["description"],
+                agent=AgentType(t.get("agent", "mini")),
+                risk=RiskLevel(t.get("risk", "R1")),
+                success_criteria=t.get("success_criteria", "echo 'no criteria defined'"),
+                depends_on=t.get("depends_on", []),
+                session_ref=session_ref,
+            )
+        )
     return tasks
 
 
@@ -173,48 +179,52 @@ def _heuristic_plan(goal: str, session_ref: str = "") -> Plan:
     tasks = []
 
     # Task 0: always explore first
-    tasks.append(Task(
-        title="Explore relevant files",
-        description=(
-            f"Read the codebase to understand what exists before making changes.\n"
-            f"Goal context: {goal}\n"
-            f"List files in the project, read the main module, and identify where changes are needed."
-        ),
-        agent=AgentType.MINI,
-        risk=RiskLevel.R0,
-        success_criteria="ls -la && echo 'exploration complete'",
-        depends_on=[],
-        session_ref=session_ref,
-    ))
+    tasks.append(
+        Task(
+            title="Explore relevant files",
+            description=(
+                f"Read the codebase to understand what exists before making changes.\n"
+                f"Goal context: {goal}\n"
+                f"List files in the project, read the main module, and identify where changes are needed."
+            ),
+            agent=AgentType.MINI,
+            risk=RiskLevel.R0,
+            success_criteria="ls -la && echo 'exploration complete'",
+            depends_on=[],
+            session_ref=session_ref,
+        )
+    )
 
     # Task 1: the actual work
     risk = RiskLevel.R1
-    if is_fix:
-        risk = RiskLevel.R1
-    elif is_add:
+    if is_fix or is_add:
         risk = RiskLevel.R1
 
-    tasks.append(Task(
-        title=goal[:60],
-        description=goal,
-        agent=AgentType.MINI,
-        risk=risk,
-        success_criteria=_infer_verify_command(goal),
-        depends_on=[0],
-        session_ref=session_ref,
-    ))
+    tasks.append(
+        Task(
+            title=goal[:60],
+            description=goal,
+            agent=AgentType.MINI,
+            risk=risk,
+            success_criteria=_infer_verify_command(goal),
+            depends_on=[0],
+            session_ref=session_ref,
+        )
+    )
 
     # Task 2: verify if not already a test task
     if not is_test:
-        tasks.append(Task(
-            title=f"Verify: {goal[:50]}",
-            description=f"Verify that the following goal was accomplished correctly:\n{goal}",
-            agent=AgentType.MINI,
-            risk=RiskLevel.R0,
-            success_criteria=_infer_verify_command(goal),
-            depends_on=[1],
-            session_ref=session_ref,
-        ))
+        tasks.append(
+            Task(
+                title=f"Verify: {goal[:50]}",
+                description=f"Verify that the following goal was accomplished correctly:\n{goal}",
+                agent=AgentType.MINI,
+                risk=RiskLevel.R0,
+                success_criteria=_infer_verify_command(goal),
+                depends_on=[1],
+                session_ref=session_ref,
+            )
+        )
 
     return Plan(goal=goal, tasks=tasks, session_ref=session_ref)
 
@@ -257,8 +267,11 @@ def decompose(
             last_error = e
             if attempt < LLM_RETRY_ATTEMPTS - 1:
                 import time
-                wait = 2 ** attempt
-                print(f"[planner] LLM call failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+
+                wait = 2**attempt
+                print(
+                    f"[planner] LLM call failed (attempt {attempt + 1}), retrying in {wait}s: {e}"
+                )
                 time.sleep(wait)
 
     # Fallback: heuristic plan with explore-execute-verify structure
@@ -282,6 +295,7 @@ def format_plan(plan: Plan) -> str:
 
 if __name__ == "__main__":
     import sys
+
     goal = " ".join(sys.argv[1:]) or (
         "Add a /health/agents endpoint to scripts/health_server.py "
         "that returns a JSON list of registered agents with their status"

@@ -16,6 +16,7 @@ Usage:
     totals = ledger.all_agents()
     budget = ledger.check_budget("mini-swe", daily_limit=5.0)
 """
+
 from __future__ import annotations
 
 import os
@@ -23,7 +24,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,7 @@ DEFAULT_DB_PATH = os.environ.get(
 
 
 # ── Data Types ──────────────────────────────────────────────────────────────
+
 
 @dataclass
 class LedgerEntry:
@@ -71,6 +72,7 @@ class BudgetStatus:
 
 
 # ── Ledger ──────────────────────────────────────────────────────────────────
+
 
 class Ledger:
     """SQLite-backed cost ledger with per-agent tracking."""
@@ -127,7 +129,7 @@ class Ledger:
         tokens_out: int = 0,
         duration_s: float = 0.0,
         stage: str = "",
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> int:
         """Record a cost entry in the ledger. Returns the entry ID."""
         ts = timestamp or time.time()

@@ -5,6 +5,7 @@ JustAi — Configuration
 Centralized configuration with defaults and env var overrides.
 Single source of truth for all module settings.
 """
+
 from __future__ import annotations
 
 import os
@@ -18,9 +19,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ROOT = Path(os.environ.get("JUSTAI_RUNTIME_ROOT", "/tmp/justai"))
 
 # ── Services ──────────────────────────────────────────────────────────────────
-LITELLM_BASE_URL = os.environ.get(
-    "LITELLM_BASE_URL", "http://localhost:4000"
-).rstrip("/").removesuffix("/v1")
+LITELLM_BASE_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 
 LITELLM_KEY = os.environ.get("LITELLM_KEY", "")
 

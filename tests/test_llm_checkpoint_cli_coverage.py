@@ -1,9 +1,9 @@
 """Non-backend coverage tests salvaged from obsolete coverage padding files."""
+
 from __future__ import annotations
 
 import io
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -51,7 +51,9 @@ def test_planner_call_litellm_includes_context():
             }
         ]
     }
-    with patch("justai.scope_planner.urllib.request.urlopen", return_value=_make_http_mock(response)) as mock_open:
+    with patch(
+        "justai.scope_planner.urllib.request.urlopen", return_value=_make_http_mock(response)
+    ) as mock_open:
         _call_litellm("add endpoint", context="Prior attempt failed")
 
     payload = json.loads(mock_open.call_args[0][0].data)
@@ -59,8 +61,8 @@ def test_planner_call_litellm_includes_context():
 
 
 def test_reviewer_merges_feedback_and_suggestions():
-    from justai.scope_planner import AgentType, Plan, RiskLevel, Task
     from justai.reviewer import review
+    from justai.scope_planner import AgentType, Plan, RiskLevel, Task
 
     plan = Plan(
         goal="add endpoint",
@@ -68,7 +70,11 @@ def test_reviewer_merges_feedback_and_suggestions():
     )
     with patch(
         "justai.reviewer._call_litellm",
-        return_value={"approved": False, "feedback": ["Task too large"], "suggestions": ["Split it"]},
+        return_value={
+            "approved": False,
+            "feedback": ["Task too large"],
+            "suggestions": ["Split it"],
+        },
     ):
         result = review(plan)
 

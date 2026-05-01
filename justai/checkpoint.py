@@ -22,12 +22,12 @@ Discord integration: posts to DISCORD_RELAY_CHANNEL_ID if token is set.
 If Discord is not configured, R1 auto-proceeds silently, R2/R3 block
 until a local signal file is written by the operator.
 """
+
 from __future__ import annotations
 
-import os
-import sys
-import time
 import json
+import os
+import time
 from pathlib import Path
 
 from justai.scope_planner import RiskLevel, Task
@@ -49,6 +49,7 @@ def _discord_notify(message: str) -> bool:
         return False
     try:
         import urllib.request
+
         payload = json.dumps({"content": message}).encode()
         req = urllib.request.Request(
             f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages",
@@ -71,12 +72,16 @@ def _gate_file(task_id: str) -> Path:
 
 
 def _write_gate(task_id: str, status: str, reason: str = "") -> None:
-    _gate_file(task_id).write_text(json.dumps({
-        "task_id": task_id,
-        "status": status,
-        "reason": reason,
-        "ts": time.time(),
-    }))
+    _gate_file(task_id).write_text(
+        json.dumps(
+            {
+                "task_id": task_id,
+                "status": status,
+                "reason": reason,
+                "ts": time.time(),
+            }
+        )
+    )
 
 
 def _read_gate(task_id: str) -> dict | None:
@@ -116,11 +121,13 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
             f"[JustAi R1] Task starting in {R1_TIMEOUT_SECONDS}s — veto to stop:\n"
             f"  **{task.title}**\n"
             f"  Risk: R1 (low — modifying existing code)\n"
-            f"  To veto: write `{{\"status\": \"vetoed\"}}` to {_gate_file(task_id)}"
+            f'  To veto: write `{{"status": "vetoed"}}` to {_gate_file(task_id)}'
         )
         notified = _discord_notify(msg)
         if not notified:
-            print(f"[checkpoint] R1: {task.title} — proceeding in {R1_TIMEOUT_SECONDS}s (Discord not configured)")
+            print(
+                f"[checkpoint] R1: {task.title} — proceeding in {R1_TIMEOUT_SECONDS}s (Discord not configured)"
+            )
 
         deadline = time.time() + R1_TIMEOUT_SECONDS
         while time.time() < deadline:
@@ -139,8 +146,8 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
             f"[JustAi R2] **APPROVAL REQUIRED** before task executes:\n"
             f"  **{task.title}**\n"
             f"  Risk: R2 (interface/schema change)\n"
-            f"  To approve: write `{{\"status\": \"approved\"}}` to {_gate_file(task_id)}\n"
-            f"  To reject: write `{{\"status\": \"rejected\"}}`"
+            f'  To approve: write `{{"status": "approved"}}` to {_gate_file(task_id)}\n'
+            f'  To reject: write `{{"status": "rejected"}}`'
         )
         notified = _discord_notify(msg)
         if not notified:
@@ -166,7 +173,7 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
         )
         _discord_notify(msg)
         print(f"[checkpoint] R3 BLOCKED: {task.title}")
-        print(f"  This task requires manual operator intervention.")
+        print("  This task requires manual operator intervention.")
         return False, "R3 blocked — operator must manually unlock"
 
     return True, "unknown risk level — defaulting to proceed"

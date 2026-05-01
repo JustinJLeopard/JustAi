@@ -19,6 +19,7 @@ What the reviewer checks:
 
 Output: APPROVED (proceed) or REJECTED (with specific feedback for replanning)
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,7 @@ from justai.scope_planner import Plan, Task
 @dataclass
 class ReviewResult:
     approved: bool
-    feedback: list[str]      # specific issues found, empty if approved
+    feedback: list[str]  # specific issues found, empty if approved
     revised_tasks: list[Task] | None = None  # optional revised plan
 
 
@@ -68,39 +69,48 @@ If approved, feedback and suggestions should be empty arrays.
 Be direct. One sentence per issue. Reference the task title.
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+LITELLM_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 REVIEWER_MODEL = os.environ.get("JUSTAI_REVIEWER_MODEL", "openai/claude-opus-4-6")
 
 
 def _format_plan_for_review(plan: Plan) -> str:
     tasks_json = []
     for i, t in enumerate(plan.tasks):
-        tasks_json.append({
-            "index": i,
-            "title": t.title,
-            "description": t.description,
-            "agent": t.agent.value,
-            "risk": t.risk.value,
-            "success_criteria": t.success_criteria,
-            "depends_on": t.depends_on,
-        })
-    return json.dumps({
-        "goal": plan.goal,
-        "task_count": len(plan.tasks),
-        "tasks": tasks_json,
-    }, indent=2)
+        tasks_json.append(
+            {
+                "index": i,
+                "title": t.title,
+                "description": t.description,
+                "agent": t.agent.value,
+                "risk": t.risk.value,
+                "success_criteria": t.success_criteria,
+                "depends_on": t.depends_on,
+            }
+        )
+    return json.dumps(
+        {
+            "goal": plan.goal,
+            "task_count": len(plan.tasks),
+            "tasks": tasks_json,
+        },
+        indent=2,
+    )
 
 
 def _call_litellm(plan_json: str) -> dict:
-    payload = json.dumps({
-        "model": REVIEWER_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Review this plan:\n\n{plan_json}"},
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.0,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": REVIEWER_MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": f"Review this plan:\n\n{plan_json}"},
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.0,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{LITELLM_URL}/v1/chat/completions",
@@ -163,8 +173,9 @@ def review(plan: Plan) -> ReviewResult:
 
 
 if __name__ == "__main__":
-    from justai.scope_planner import decompose, format_plan
     import sys
+
+    from justai.scope_planner import decompose, format_plan
 
     goal = " ".join(sys.argv[1:]) or (
         "Add a /health/agents endpoint to scripts/health_server.py "

@@ -1,4 +1,5 @@
 """Shared result types for JustAi task execution."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

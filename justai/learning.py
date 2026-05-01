@@ -9,10 +9,12 @@ Called by orchestrator at two points:
 
 Both functions are fire-and-forget — they never raise, never block the pipeline.
 """
+
 from __future__ import annotations
 
 import logging
-from justai.trajectory import TrajectoryStore, TrajectoryMatch
+
+from justai.trajectory import TrajectoryStore
 
 logger = logging.getLogger(__name__)
 

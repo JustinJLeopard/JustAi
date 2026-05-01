@@ -16,16 +16,17 @@ Usage:
     analysis = analyze_trajectory(traj_data)
     patterns = get_patterns(limit=20)
 """
+
 from __future__ import annotations
 
 import json
 import os
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 ANALYSIS_MODEL = os.environ.get("JUSTAI_ANALYSIS_MODEL", "openai/claude-opus-4-6")
@@ -40,10 +41,11 @@ _PATTERNS_TTL = 300.0  # 5 minutes
 
 # ── Data Types ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TrajStep:
     index: int
-    action_type: str        # bash, edit, read, think, write
+    action_type: str  # bash, edit, read, think, write
     command: str
     reasoning: str
     result: str
@@ -61,7 +63,7 @@ class TrajAnalysis:
     root_cause: str
     divergence_step: int | None
     recommendation: str
-    status: str             # "success" | "failure" | "partial"
+    status: str  # "success" | "failure" | "partial"
     step_count: int
     failed_steps: list[int]
     files_changed: list[str]
@@ -91,6 +93,7 @@ class PatternReport:
 
 # ── Trajectory Loading ──────────────────────────────────────────────────────
 
+
 def _traj_dir() -> Path:
     if TRAJ_DIR is not None:
         return TRAJ_DIR
@@ -106,7 +109,7 @@ def _traj_dir() -> Path:
 
 def list_trajectory_files() -> list[dict]:
     """List all .traj.json files with metadata."""
-    files = []
+    files: list[dict[str, str | int | float]] = []
     traj_dir = _traj_dir()
     dirs = [traj_dir]
     relay_sub = traj_dir / "relay_dispatch"
@@ -120,12 +123,14 @@ def list_trajectory_files() -> list[dict]:
             if f.suffix == ".json" and ".traj" in f.name:
                 st = f.stat()
                 rel = str(f.relative_to(traj_dir))
-                files.append({
-                    "name": rel,
-                    "size": st.st_size,
-                    "mtime": st.st_mtime,
-                })
-    files.sort(key=lambda x: x["mtime"], reverse=True)
+                files.append(
+                    {
+                        "name": rel,
+                        "size": st.st_size,
+                        "mtime": st.st_mtime,
+                    }
+                )
+    files.sort(key=lambda x: x["mtime"] if isinstance(x["mtime"], float) else 0.0, reverse=True)
     return files
 
 
@@ -183,15 +188,17 @@ def parse_steps(traj: dict) -> list[TrajStep]:
             except (json.JSONDecodeError, TypeError):
                 result = tool_content
 
-        steps.append(TrajStep(
-            index=idx,
-            action_type=action_type,
-            command=command,
-            reasoning=content,
-            result=result,
-            returncode=returncode,
-            file_touched=file_touched,
-        ))
+        steps.append(
+            TrajStep(
+                index=idx,
+                action_type=action_type,
+                command=command,
+                reasoning=content,
+                result=result,
+                returncode=returncode,
+                file_touched=file_touched,
+            )
+        )
         idx += 1
 
     return steps
@@ -313,15 +320,17 @@ def _condense_trajectory(traj: dict, steps: list[TrajStep]) -> str:
 def _call_analysis_llm(condensed: str) -> dict | None:
     """Call LiteLLM for AI trajectory analysis. Returns None on failure."""
     try:
-        payload = json.dumps({
-            "model": ANALYSIS_MODEL,
-            "messages": [
-                {"role": "system", "content": _ANALYSIS_PROMPT},
-                {"role": "user", "content": condensed},
-            ],
-            "max_tokens": 800,
-            "temperature": 0.0,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": ANALYSIS_MODEL,
+                "messages": [
+                    {"role": "system", "content": _ANALYSIS_PROMPT},
+                    {"role": "user", "content": condensed},
+                ],
+                "max_tokens": 800,
+                "temperature": 0.0,
+            }
+        ).encode()
 
         req = urllib.request.Request(
             f"{LITELLM_URL}/v1/chat/completions",
@@ -350,13 +359,18 @@ def _heuristic_analysis(filename: str, steps: list[TrajStep], info: dict) -> dic
     failed = [s.index for s in steps if s.returncode is not None and s.returncode != 0]
     exit_status = info.get("exit_status", "unknown")
 
-    status = "success" if exit_status == "Submitted" and not failed else "failure" if failed else "partial"
+    status = (
+        "success"
+        if exit_status == "Submitted" and not failed
+        else "failure"
+        if failed
+        else "partial"
+    )
     divergence = failed[0] if failed else None
 
-    files_changed = list({
-        s.file_touched for s in steps
-        if s.file_touched and s.action_type in ("edit", "write")
-    })
+    files_changed = list(
+        {s.file_touched for s in steps if s.file_touched and s.action_type in ("edit", "write")}
+    )
 
     summary = f"Agent completed {len(steps)} steps. "
     if failed:
@@ -387,6 +401,7 @@ def _heuristic_analysis(filename: str, steps: list[TrajStep], info: dict) -> dic
 
 # ── Pattern Analysis (Learning Mode) ────────────────────────────────────────
 
+
 def get_patterns(limit: int = 50) -> dict:
     """
     Aggregate patterns across recent trajectories.
@@ -413,15 +428,17 @@ def get_patterns(limit: int = 50) -> dict:
             traj = load_trajectory(f["name"])
             steps = parse_steps(traj)
             info = traj.get("info", {})
-            trajs.append({
-                "name": f["name"],
-                "mtime": f["mtime"],
-                "steps": steps,
-                "info": info,
-                "exit_status": info.get("exit_status", "unknown"),
-                "cost": info.get("model_stats", {}).get("instance_cost", 0.0),
-                "step_count": len(steps),
-            })
+            trajs.append(
+                {
+                    "name": f["name"],
+                    "mtime": f["mtime"],
+                    "steps": steps,
+                    "info": info,
+                    "exit_status": info.get("exit_status", "unknown"),
+                    "cost": info.get("model_stats", {}).get("instance_cost", 0.0),
+                    "step_count": len(steps),
+                }
+            )
         except Exception:
             continue
 
@@ -446,12 +463,12 @@ def get_patterns(limit: int = 50) -> dict:
                     break  # Only count first failure per trajectory
 
     common_failures = [
-        {"pattern": k, "count": v}
-        for k, v in sorted(failure_reasons.items(), key=lambda x: -x[1])
+        {"pattern": k, "count": v} for k, v in sorted(failure_reasons.items(), key=lambda x: -x[1])
     ][:10]
 
     # ── Efficiency trend (grouped by date)
     from datetime import datetime
+
     daily: dict[str, dict] = {}
     for t in trajs:
         day = datetime.fromtimestamp(t["mtime"]).strftime("%Y-%m-%d")
@@ -465,13 +482,15 @@ def get_patterns(limit: int = 50) -> dict:
     efficiency = []
     for day in sorted(daily):
         d = daily[day]
-        efficiency.append({
-            "date": day,
-            "runs": d["count"],
-            "avg_steps": round(d["steps"] / d["count"], 1),
-            "avg_cost": round(d["cost"] / d["count"], 4),
-            "success_rate": round(d["success"] / d["count"], 3),
-        })
+        efficiency.append(
+            {
+                "date": day,
+                "runs": d["count"],
+                "avg_steps": round(d["steps"] / d["count"], 1),
+                "avg_cost": round(d["cost"] / d["count"], 4),
+                "success_rate": round(d["success"] / d["count"], 3),
+            }
+        )
 
     # ── Heuristic suggestions
     suggestions = _generate_suggestions(trajs, successes, total, avg_steps)
@@ -497,17 +516,25 @@ def _generate_suggestions(trajs: list, successes: int, total: int, avg_steps: fl
 
     success_rate = successes / total if total > 0 else 0
     if success_rate < 0.5:
-        suggestions.append("Success rate is below 50%. Consider breaking goals into smaller, more specific tasks.")
+        suggestions.append(
+            "Success rate is below 50%. Consider breaking goals into smaller, more specific tasks."
+        )
     elif success_rate < 0.8:
-        suggestions.append("Success rate is improving but below 80%. Add explicit verification criteria to goals.")
+        suggestions.append(
+            "Success rate is improving but below 80%. Add explicit verification criteria to goals."
+        )
 
     if avg_steps > 30:
-        suggestions.append(f"Average step count is high ({avg_steps:.0f}). Complex tasks may benefit from decomposition.")
+        suggestions.append(
+            f"Average step count is high ({avg_steps:.0f}). Complex tasks may benefit from decomposition."
+        )
 
     # Check for high retry rates
     high_retry = sum(1 for t in trajs if t["step_count"] > 50)
     if high_retry > total * 0.2:
-        suggestions.append(f"{high_retry} runs exceeded 50 steps. Consider adding early-exit conditions.")
+        suggestions.append(
+            f"{high_retry} runs exceeded 50 steps. Consider adding early-exit conditions."
+        )
 
     if not suggestions:
         suggestions.append("Pipeline is performing well. Continue monitoring efficiency trends.")
@@ -529,6 +556,7 @@ def _empty_patterns() -> dict:
 
 # ── Audit Data ──────────────────────────────────────────────────────────────
 
+
 def get_audit_data(filename: str) -> dict:
     """
     Build a complete audit record for a trajectory.
@@ -547,18 +575,20 @@ def get_audit_data(filename: str) -> dict:
     # Chronological event log
     events = []
     for step in steps:
-        events.append({
-            "step": step.index,
-            "action_type": step.action_type,
-            "command": step.command,
-            "target": step.file_touched,
-            "returncode": step.returncode,
-            "reasoning_length": len(step.reasoning),
-            "result_length": len(step.result),
-        })
+        events.append(
+            {
+                "step": step.index,
+                "action_type": step.action_type,
+                "command": step.command,
+                "target": step.file_touched,
+                "returncode": step.returncode,
+                "reasoning_length": len(step.reasoning),
+                "result_length": len(step.result),
+            }
+        )
 
     # File change manifest
-    files_modified = {}
+    files_modified: dict[str, dict[str, str | int]] = {}
     for step in steps:
         if step.file_touched and step.action_type in ("edit", "write"):
             if step.file_touched not in files_modified:
@@ -567,7 +597,10 @@ def get_audit_data(filename: str) -> dict:
                     "first_touch_step": step.index,
                     "modifications": 0,
                 }
-            files_modified[step.file_touched]["modifications"] += 1
+            modifications = files_modified[step.file_touched]["modifications"]
+            files_modified[step.file_touched]["modifications"] = (
+                modifications + 1 if isinstance(modifications, int) else 1
+            )
 
     # Chain of evidence
     model_name = info.get("config", {}).get("model", {}).get("model_name", "unknown")
@@ -607,13 +640,17 @@ class TrajectoryMatch:
 
 def _mcp_call(method: str, params: dict) -> dict:
     """Make a JSON-RPC 2.0 call to claude-flow MCP."""
-    payload = json.dumps({
-        "jsonrpc": "2.0",
-        "id": int(time.time() * 1000),
-        "method": "tools/call",
-        "params": {"name": method, "arguments": params},
-    }).encode()
-    req = urllib.request.Request(MCP_RPC, data=payload, headers={"Content-Type": "application/json"})
+    payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": int(time.time() * 1000),
+            "method": "tools/call",
+            "params": {"name": method, "arguments": params},
+        }
+    ).encode()
+    req = urllib.request.Request(
+        MCP_RPC, data=payload, headers={"Content-Type": "application/json"}
+    )
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read())
     content = data.get("result", {}).get("content", [])
@@ -636,28 +673,36 @@ class TrajectoryStore:
     ) -> bool:
         """Store a trajectory outcome for future retrieval."""
         key = f"trajectory/{goal[:50].replace(' ', '-').lower()}-{int(time.time())}"
-        value = json.dumps({
-            "goal": goal,
-            "steps": steps,
-            "outcome": outcome,
-            "duration": duration,
-            "tech_stack": tech_stack or [],
-            "stored_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        })
-        result = _mcp_call("memory_store", {
-            "key": key,
-            "value": value,
-            "namespace": TRAJECTORY_NAMESPACE,
-        })
+        value = json.dumps(
+            {
+                "goal": goal,
+                "steps": steps,
+                "outcome": outcome,
+                "duration": duration,
+                "tech_stack": tech_stack or [],
+                "stored_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        )
+        result = _mcp_call(
+            "memory_store",
+            {
+                "key": key,
+                "value": value,
+                "namespace": TRAJECTORY_NAMESPACE,
+            },
+        )
         return result.get("success", False) or result.get("stored", False)
 
     def search(self, query: str, limit: int = 5) -> list[TrajectoryMatch]:
         """Search for similar trajectories using HNSW vector search."""
-        result = _mcp_call("memory_search", {
-            "query": query,
-            "namespace": TRAJECTORY_NAMESPACE,
-            "limit": limit,
-        })
+        result = _mcp_call(
+            "memory_search",
+            {
+                "query": query,
+                "namespace": TRAJECTORY_NAMESPACE,
+                "limit": limit,
+            },
+        )
         matches = []
         for r in result.get("results", []):
             key = r.get("key", "")
@@ -670,7 +715,9 @@ class TrajectoryStore:
             except (json.JSONDecodeError, TypeError):
                 # Truncated — do a full retrieve
                 try:
-                    full = _mcp_call("memory_retrieve", {"key": key, "namespace": TRAJECTORY_NAMESPACE})
+                    full = _mcp_call(
+                        "memory_retrieve", {"key": key, "namespace": TRAJECTORY_NAMESPACE}
+                    )
                     val = full.get("value", {})
                     data = val if isinstance(val, dict) else json.loads(str(val))
                 except Exception:
@@ -682,15 +729,17 @@ class TrajectoryStore:
                 except (json.JSONDecodeError, TypeError):
                     continue
 
-            matches.append(TrajectoryMatch(
-                key=key,
-                goal=data.get("goal", ""),
-                steps=data.get("steps", []),
-                outcome=data.get("outcome", ""),
-                similarity=similarity,
-                duration=data.get("duration", 0.0),
-                tech_stack=data.get("tech_stack", []),
-            ))
+            matches.append(
+                TrajectoryMatch(
+                    key=key,
+                    goal=data.get("goal", ""),
+                    steps=data.get("steps", []),
+                    outcome=data.get("outcome", ""),
+                    similarity=similarity,
+                    duration=data.get("duration", 0.0),
+                    tech_stack=data.get("tech_stack", []),
+                )
+            )
         matches.sort(key=lambda m: m.similarity, reverse=True)
         return matches
 
@@ -701,7 +750,7 @@ class TrajectoryStore:
             return ""
         lines = ["Similar past trajectories (use as reference):"]
         for i, m in enumerate(matches):
-            lines.append(f"\n--- Trajectory {i+1} (similarity: {m.similarity:.2f}) ---")
+            lines.append(f"\n--- Trajectory {i + 1} (similarity: {m.similarity:.2f}) ---")
             lines.append(f"Goal: {m.goal}")
             lines.append(f"Outcome: {m.outcome}")
             lines.append(f"Steps: {' → '.join(m.steps)}")

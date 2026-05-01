@@ -12,24 +12,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import justai_runtime
+
 from tools import justai_cli
 
 
 class JustAiCliTests(unittest.TestCase):
     def test_runtime_env_populates_root_aliases_and_preserves_existing_runtime_settings(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ,
-            {
-                "JUSTAI_RELAY_SERVER": "custom-server",
-                "JUSTAI_SPACETIME_SESSION": "custom-session",
-                "SENTINEL": "kept",
-            },
-            clear=True,
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(
+                os.environ,
+                {
+                    "JUSTAI_RELAY_SERVER": "custom-server",
+                    "JUSTAI_SPACETIME_SESSION": "custom-session",
+                    "SENTINEL": "kept",
+                },
+                clear=True,
+            ),
         ):
             root = Path(tmp)
-            with mock.patch.object(justai_runtime, "repo_root", return_value=root), mock.patch.object(
-                justai_runtime, "localmanus_root", return_value=root / "LocalManus"
-            ), mock.patch.object(justai_runtime, "relay_root", return_value=root / "relay-room"):
+            with (
+                mock.patch.object(justai_runtime, "repo_root", return_value=root),
+                mock.patch.object(
+                    justai_runtime, "localmanus_root", return_value=root / "LocalManus"
+                ),
+                mock.patch.object(justai_runtime, "relay_root", return_value=root / "relay-room"),
+            ):
                 env = justai_cli.runtime_env()
 
         self.assertEqual(env["JUSTAI_ROOT"], str(root))
@@ -43,9 +51,10 @@ class JustAiCliTests(unittest.TestCase):
 
     def test_run_passes_computed_env_to_subprocess_call(self):
         env = {"JUSTAI_ROOT": "/tmp/justai-root", "LOCALMANUS_ROOT": "/tmp/localmanus"}
-        with mock.patch.object(justai_cli, "runtime_env", return_value=env), mock.patch.object(
-            justai_cli.subprocess, "call", return_value=17
-        ) as call_mock:
+        with (
+            mock.patch.object(justai_cli, "runtime_env", return_value=env),
+            mock.patch.object(justai_cli.subprocess, "call", return_value=17) as call_mock,
+        ):
             rc = justai_cli.run(["bash", "/tmp/script.sh"])
 
         self.assertEqual(rc, 17)
@@ -61,8 +70,9 @@ class JustAiCliTests(unittest.TestCase):
                 calls.append(cmd)
                 return 0
 
-            with mock.patch.object(justai_cli, "repo_root", return_value=root), mock.patch.object(
-                justai_cli, "run", side_effect=fake_run
+            with (
+                mock.patch.object(justai_cli, "repo_root", return_value=root),
+                mock.patch.object(justai_cli, "run", side_effect=fake_run),
             ):
                 self.assertEqual(
                     justai_cli.start_cmd(
@@ -109,11 +119,15 @@ class JustAiCliTests(unittest.TestCase):
                 calls.append(cmd)
                 return 0
 
-            with mock.patch.object(justai_cli, "repo_root", return_value=root), mock.patch.object(
-                justai_cli, "localmanus_root", return_value=root / "LocalManus"
-            ), mock.patch.object(justai_cli, "run", side_effect=fake_run):
+            with (
+                mock.patch.object(justai_cli, "repo_root", return_value=root),
+                mock.patch.object(justai_cli, "localmanus_root", return_value=root / "LocalManus"),
+                mock.patch.object(justai_cli, "run", side_effect=fake_run),
+            ):
                 self.assertEqual(justai_cli.task_cmd(SimpleNamespace(description="ship this")), 0)
-                self.assertEqual(justai_cli.mini_cmd(SimpleNamespace(description="summarize it")), 0)
+                self.assertEqual(
+                    justai_cli.mini_cmd(SimpleNamespace(description="summarize it")), 0
+                )
 
         self.assertEqual(
             calls,
@@ -126,8 +140,9 @@ class JustAiCliTests(unittest.TestCase):
     def test_task_cmd_reports_missing_localmanus_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with mock.patch.object(justai_cli, "repo_root", return_value=root), mock.patch.object(
-                justai_cli, "localmanus_root", return_value=root / "LocalManus"
+            with (
+                mock.patch.object(justai_cli, "repo_root", return_value=root),
+                mock.patch.object(justai_cli, "localmanus_root", return_value=root / "LocalManus"),
             ):
                 err = io.StringIO()
                 with redirect_stderr(err):
@@ -151,9 +166,11 @@ class JustAiCliTests(unittest.TestCase):
                 calls.append(cmd)
                 return 0
 
-            with mock.patch.object(justai_cli, "repo_root", return_value=root), mock.patch.object(
-                justai_cli, "relay_root", return_value=relay
-            ), mock.patch.object(justai_cli, "run", side_effect=fake_run):
+            with (
+                mock.patch.object(justai_cli, "repo_root", return_value=root),
+                mock.patch.object(justai_cli, "relay_root", return_value=relay),
+                mock.patch.object(justai_cli, "run", side_effect=fake_run),
+            ):
                 self.assertEqual(justai_cli.relay_cmd(SimpleNamespace(action="restart")), 0)
 
             missing_relay = root / "missing-relay"

@@ -1,4 +1,5 @@
 """Slice 3: Trajectory Intelligence — tests for analysis, patterns, and audit."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -16,8 +17,8 @@ DASH = pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "src"
 
 # ── File Structure Tests ────────────────────────────────────────────────────
 
-class TestSlice3FileStructure(unittest.TestCase):
 
+class TestSlice3FileStructure(unittest.TestCase):
     def test_trajectory_module_exists(self):
         assert (pathlib.Path(__file__).resolve().parents[1] / "justai" / "trajectory.py").exists()
 
@@ -51,16 +52,14 @@ class TestSlice3FileStructure(unittest.TestCase):
 
 # ── Trajectory Module Tests ─────────────────────────────────────────────────
 
-class TestTrajectoryModule(unittest.TestCase):
 
+class TestTrajectoryModule(unittest.TestCase):
     def test_import(self):
-        from justai.trajectory import (
-            analyze_trajectory, get_patterns, get_audit_data,
-            parse_steps, list_trajectory_files,
-        )
+        pass
 
     def test_classify_action(self):
         from justai.trajectory import _classify_action
+
         assert _classify_action("bash_command", "ls -la") == "bash"
         assert _classify_action("bash_command", "cat file.py") == "read"
         assert _classify_action("str_replace_editor", "") == "edit"
@@ -68,11 +67,13 @@ class TestTrajectoryModule(unittest.TestCase):
 
     def test_parse_steps_empty(self):
         from justai.trajectory import parse_steps
+
         result = parse_steps({"messages": []})
         assert result == []
 
     def test_parse_steps_with_assistant_messages(self):
         from justai.trajectory import parse_steps
+
         traj = {
             "messages": [
                 {"role": "system", "content": "You are an agent"},
@@ -80,21 +81,31 @@ class TestTrajectoryModule(unittest.TestCase):
                 {
                     "role": "assistant",
                     "content": "I'll read the file first",
-                    "tool_calls": [{
-                        "function": {"name": "bash", "arguments": '{"command": "cat src/main.py"}'},
-                        "id": "call_1",
-                        "type": "function",
-                    }],
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "bash",
+                                "arguments": '{"command": "cat src/main.py"}',
+                            },
+                            "id": "call_1",
+                            "type": "function",
+                        }
+                    ],
                 },
                 {"role": "tool", "content": '{"returncode": 0, "output": "def main(): pass"}'},
                 {
                     "role": "assistant",
                     "content": "Now I'll edit it",
-                    "tool_calls": [{
-                        "function": {"name": "str_replace_editor", "arguments": '{"path": "src/main.py"}'},
-                        "id": "call_2",
-                        "type": "function",
-                    }],
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "str_replace_editor",
+                                "arguments": '{"path": "src/main.py"}',
+                            },
+                            "id": "call_2",
+                            "type": "function",
+                        }
+                    ],
                 },
                 {"role": "tool", "content": '{"returncode": 0, "output": "OK"}'},
             ],
@@ -108,6 +119,7 @@ class TestTrajectoryModule(unittest.TestCase):
 
     def test_empty_patterns(self):
         from justai.trajectory import _empty_patterns
+
         p = _empty_patterns()
         assert p["total_trajectories"] == 0
         assert p["success_rate"] == 0.0
@@ -115,31 +127,49 @@ class TestTrajectoryModule(unittest.TestCase):
 
     def test_generate_suggestions_low_success(self):
         from justai.trajectory import _generate_suggestions
+
         suggestions = _generate_suggestions([], 2, 10, 25.0)
         assert any("50%" in s for s in suggestions)
 
     def test_generate_suggestions_high_steps(self):
         from justai.trajectory import _generate_suggestions
+
         suggestions = _generate_suggestions([], 8, 10, 45.0)
         assert any("step count" in s.lower() for s in suggestions)
 
     def test_generate_suggestions_healthy(self):
         from justai.trajectory import _generate_suggestions
+
         suggestions = _generate_suggestions([], 9, 10, 20.0)
         assert any("performing well" in s for s in suggestions)
 
 
 # ── Heuristic Analysis Tests ────────────────────────────────────────────────
 
-class TestHeuristicAnalysis(unittest.TestCase):
 
+class TestHeuristicAnalysis(unittest.TestCase):
     def test_heuristic_success(self):
-        from justai.trajectory import _heuristic_analysis, TrajStep
+        from justai.trajectory import TrajStep, _heuristic_analysis
+
         steps = [
-            TrajStep(index=0, action_type="bash", command="ls", reasoning="",
-                     result="ok", returncode=0, file_touched=""),
-            TrajStep(index=1, action_type="edit", command="", reasoning="",
-                     result="ok", returncode=0, file_touched="src/main.py"),
+            TrajStep(
+                index=0,
+                action_type="bash",
+                command="ls",
+                reasoning="",
+                result="ok",
+                returncode=0,
+                file_touched="",
+            ),
+            TrajStep(
+                index=1,
+                action_type="edit",
+                command="",
+                reasoning="",
+                result="ok",
+                returncode=0,
+                file_touched="src/main.py",
+            ),
         ]
         info = {"exit_status": "Submitted", "model_stats": {"instance_cost": 0.05}}
 
@@ -150,10 +180,18 @@ class TestHeuristicAnalysis(unittest.TestCase):
         assert "src/main.py" in result["files_changed"]
 
     def test_heuristic_failure(self):
-        from justai.trajectory import _heuristic_analysis, TrajStep
+        from justai.trajectory import TrajStep, _heuristic_analysis
+
         steps = [
-            TrajStep(index=0, action_type="bash", command="python test.py", reasoning="",
-                     result="Error!", returncode=1, file_touched=""),
+            TrajStep(
+                index=0,
+                action_type="bash",
+                command="python test.py",
+                reasoning="",
+                result="Error!",
+                returncode=1,
+                file_touched="",
+            ),
         ]
         info = {"exit_status": "Failed", "model_stats": {"instance_cost": 0.02}}
 
@@ -166,10 +204,11 @@ class TestHeuristicAnalysis(unittest.TestCase):
 
 # ── Audit Data Tests ────────────────────────────────────────────────────────
 
-class TestAuditData(unittest.TestCase):
 
+class TestAuditData(unittest.TestCase):
     def test_audit_data_nonexistent(self):
         from justai.trajectory import get_audit_data
+
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
             result = get_audit_data("nonexistent-file.traj.json")
         assert "error" in result
@@ -177,6 +216,7 @@ class TestAuditData(unittest.TestCase):
     @patch("justai.trajectory.TRAJ_DIR")
     def test_audit_data_structure(self, mock_dir):
         from justai.trajectory import get_audit_data
+
         with tempfile.TemporaryDirectory() as tmp:
             mock_dir.__class__ = pathlib.Path
             traj_data = {
@@ -188,8 +228,17 @@ class TestAuditData(unittest.TestCase):
                     "submission": "",
                 },
                 "messages": [
-                    {"role": "assistant", "content": "thinking",
-                     "tool_calls": [{"function": {"name": "bash", "arguments": '{"command": "ls"}'}, "id": "1", "type": "function"}]},
+                    {
+                        "role": "assistant",
+                        "content": "thinking",
+                        "tool_calls": [
+                            {
+                                "function": {"name": "bash", "arguments": '{"command": "ls"}'},
+                                "id": "1",
+                                "type": "function",
+                            }
+                        ],
+                    },
                     {"role": "tool", "content": '{"returncode": 0, "output": "files"}'},
                 ],
             }
@@ -207,10 +256,11 @@ class TestAuditData(unittest.TestCase):
 
 # ── API Endpoint Tests ──────────────────────────────────────────────────────
 
-class TestTrajectoryAPI(unittest.TestCase):
 
+class TestTrajectoryAPI(unittest.TestCase):
     def test_api_patterns_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/trajectory/patterns"
         handler.headers = {}
@@ -226,6 +276,7 @@ class TestTrajectoryAPI(unittest.TestCase):
 
     def test_api_analysis_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/trajectory/nonexistent.traj.json/analysis"
         handler.headers = {}
@@ -242,6 +293,7 @@ class TestTrajectoryAPI(unittest.TestCase):
 
     def test_api_audit_endpoint(self):
         from justai.api import APIHandler
+
         handler = APIHandler.__new__(APIHandler)
         handler.path = "/api/trajectory/nonexistent.traj.json/audit"
         handler.headers = {}

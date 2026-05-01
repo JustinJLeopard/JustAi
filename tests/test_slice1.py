@@ -1,8 +1,9 @@
 """Slice 1: Glass Aurora Redesign — structural tests."""
+
 import pathlib
-import pytest
 
 DASH = pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "src"
+
 
 class TestDesignSystem:
     def test_theme_css_exists(self):
@@ -21,6 +22,7 @@ class TestDesignSystem:
     def test_old_index_css_removed(self):
         assert not (DASH / "index.css").exists()
 
+
 class TestComponents:
     def test_sidebar_exists(self):
         assert (DASH / "components" / "Sidebar.tsx").exists()
@@ -37,14 +39,23 @@ class TestComponents:
     def test_pipeline_exists(self):
         assert (DASH / "components" / "Pipeline.tsx").exists()
 
+
 class TestViews:
     def test_agent_registry_exists(self):
         assert (DASH / "views" / "AgentRegistry.tsx").exists()
 
     def test_all_views_exist(self):
-        views = ["MissionControl", "TaskBoard", "RunHistory", "TrajectoryViewer", "MemoryBrowser", "AgentRegistry"]
+        views = [
+            "MissionControl",
+            "TaskBoard",
+            "RunHistory",
+            "TrajectoryViewer",
+            "MemoryBrowser",
+            "AgentRegistry",
+        ]
         for v in views:
             assert (DASH / "views" / f"{v}.tsx").exists(), f"Missing view: {v}"
+
 
 class TestHooks:
     def test_use_theme_exists(self):
@@ -52,6 +63,7 @@ class TestHooks:
 
     def test_use_keyboard_exists(self):
         assert (DASH / "hooks" / "useKeyboard.ts").exists()
+
 
 class TestAppStructure:
     def test_app_imports_sidebar(self):

@@ -15,11 +15,11 @@ Usage:
 Can also be invoked as:
     python3 -m justai run "your goal"
 """
+
 from __future__ import annotations
 
 import argparse
 import sys
-import time
 
 from justai import __version__
 
@@ -31,10 +31,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     goal = " ".join(args.goal)
     if not goal:
         print("Error: no goal provided.")
-        print("Usage: justai run \"your goal here\"")
+        print('Usage: justai run "your goal here"')
         return 1
 
-    result = run(goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False))
+    result = run(
+        goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False)
+    )
     return 0 if result.status in ("complete", "ambiguous") else 1
 
 
@@ -66,6 +68,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     # Also check if memory has data
     from justai.memory import Memory
+
     mem = Memory()
     try:
         stats = mem.stats()
@@ -119,7 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="JustAi — AI Development Orchestrator",
     )
     parser.add_argument(
-        "--version", action="version",
+        "--version",
+        action="version",
         version=f"%(prog)s {__version__}",
     )
     sub = parser.add_subparsers(dest="command")
@@ -127,19 +131,19 @@ def build_parser() -> argparse.ArgumentParser:
     # run
     p_run = sub.add_parser("run", help="Run the orchestrator pipeline")
     p_run.add_argument("goal", nargs="*", help="The goal to accomplish")
-    p_run.add_argument("--auto", action="store_true",
-                       help="Auto-approve R1 checkpoints (no 60s wait)")
-    p_run.add_argument("--local", action="store_true",
-                       help="Execute tasks locally instead of delegating to agent")
-    p_run.add_argument("--session", default="",
-                       help="Session reference for tracing")
+    p_run.add_argument(
+        "--auto", action="store_true", help="Auto-approve R1 checkpoints (no 60s wait)"
+    )
+    p_run.add_argument(
+        "--local", action="store_true", help="Execute tasks locally instead of delegating to agent"
+    )
+    p_run.add_argument("--session", default="", help="Session reference for tracing")
     p_run.set_defaults(func=cmd_run)
 
     # plan
     p_plan = sub.add_parser("plan", help="Plan tasks without executing")
     p_plan.add_argument("goal", nargs="*", help="The goal to plan")
-    p_plan.add_argument("--session", default="",
-                        help="Session reference")
+    p_plan.add_argument("--session", default="", help="Session reference")
     p_plan.set_defaults(func=cmd_plan)
 
     # status
@@ -148,8 +152,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # history
     p_hist = sub.add_parser("history", help="Show recent runs")
-    p_hist.add_argument("--limit", type=int, default=10,
-                        help="Number of runs to show (default: 10)")
+    p_hist.add_argument(
+        "--limit", type=int, default=10, help="Number of runs to show (default: 10)"
+    )
     p_hist.set_defaults(func=cmd_history)
 
     # version

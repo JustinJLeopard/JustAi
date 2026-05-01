@@ -28,17 +28,20 @@ Usage:
     # At end of pipeline
     flush_traces()
 """
+
 from __future__ import annotations
 
 import os
 import time
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, Generator, Optional
+from datetime import UTC
+from typing import Any
 
 # ── Conditional Import ───────────────────────────────────────────────────────
 
-_langfuse = None
+_langfuse: Any = None
 _enabled = False
 
 try:
@@ -59,6 +62,7 @@ except ImportError:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+
 def is_enabled() -> bool:
     """Whether LangFuse tracing is active."""
     return _enabled
@@ -67,6 +71,7 @@ def is_enabled() -> bool:
 @dataclass
 class GenerationHandle:
     """Wraps a LangFuse generation span. Safe to use even when tracing is off."""
+
     _trace: Any = None
     _generation: Any = None
     _start: float = field(default_factory=time.time)
@@ -74,8 +79,8 @@ class GenerationHandle:
     def end(
         self,
         output_text: str = "",
-        usage: Optional[dict] = None,
-        metadata: Optional[dict] = None,
+        usage: dict | None = None,
+        metadata: dict | None = None,
         level: str = "DEFAULT",
     ) -> None:
         if self._generation is None:
@@ -89,10 +94,8 @@ class GenerationHandle:
             kwargs["usage"] = usage
         if metadata:
             kwargs["metadata"] = metadata
-        try:
+        with suppress(Exception):
             self._generation.end(**kwargs)
-        except Exception:
-            pass
 
     def error(self, message: str) -> None:
         self.end(output_text=message, level="ERROR")
@@ -103,9 +106,9 @@ def trace_generation(
     name: str,
     model: str = "",
     input_text: str = "",
-    metadata: Optional[dict] = None,
-    session_id: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    metadata: dict | None = None,
+    session_id: str | None = None,
+    tags: list[str] | None = None,
 ) -> Generator[GenerationHandle, None, None]:
     """
     Context manager that creates a LangFuse trace + generation span.
@@ -152,8 +155,8 @@ def trace_generation(
 
 def trace_event(
     name: str,
-    metadata: Optional[dict] = None,
-    session_id: Optional[str] = None,
+    metadata: dict | None = None,
+    session_id: str | None = None,
 ) -> None:
     """Log a non-LLM event (checkpoint gate, delegation, etc.)."""
     if not _enabled or _langfuse is None:
@@ -173,10 +176,8 @@ def trace_event(
 def flush_traces() -> None:
     """Flush pending traces to LangFuse. Call at end of pipeline."""
     if _langfuse is not None:
-        try:
+        with suppress(Exception):
             _langfuse.flush()
-        except Exception:
-            pass
 
 
 # ── Query Layer (read-side) ──────────────────────────────────────────────────
@@ -187,7 +188,7 @@ PIPELINE_STAGES = ["intent-gate", "planner", "reviewer", "local", "external", "s
 
 def get_traces(
     limit: int = 50,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
 ) -> list[dict]:
     """
     Fetch recent traces from LangFuse.
@@ -204,19 +205,21 @@ def get_traces(
         resp = _langfuse.fetch_traces(**kwargs)
         traces = []
         for t in resp.data:
-            traces.append({
-                "id": t.id,
-                "name": getattr(t, "name", ""),
-                "session_id": getattr(t, "session_id", ""),
-                "timestamp": getattr(t, "timestamp", ""),
-                "latency_ms": _calc_latency_ms(t),
-                "total_cost": _sum_cost(t),
-                "input_tokens": _sum_tokens(t, "input"),
-                "output_tokens": _sum_tokens(t, "output"),
-                "status": _trace_status(t),
-                "tags": getattr(t, "tags", []),
-                "metadata": getattr(t, "metadata", {}),
-            })
+            traces.append(
+                {
+                    "id": t.id,
+                    "name": getattr(t, "name", ""),
+                    "session_id": getattr(t, "session_id", ""),
+                    "timestamp": getattr(t, "timestamp", ""),
+                    "latency_ms": _calc_latency_ms(t),
+                    "total_cost": _sum_cost(t),
+                    "input_tokens": _sum_tokens(t, "input"),
+                    "output_tokens": _sum_tokens(t, "output"),
+                    "status": _trace_status(t),
+                    "tags": getattr(t, "tags", []),
+                    "metadata": getattr(t, "metadata", {}),
+                }
+            )
         return traces
     except Exception:
         return []
@@ -250,9 +253,10 @@ def get_aggregated_metrics(days: int = 7) -> dict:
     if not traces:
         return _empty_metrics()
 
-    from datetime import datetime, timezone, timedelta
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    cutoff_24h = datetime.now(timezone.utc) - timedelta(days=1)
+    from datetime import datetime, timedelta
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    cutoff_24h = datetime.now(UTC) - timedelta(days=1)
 
     # Filter to time window
     recent = []
@@ -310,15 +314,17 @@ def get_aggregated_metrics(days: int = 7) -> dict:
     cost_daily = []
     for d in sorted(daily_cost):
         running_total += daily_cost[d]
-        cost_daily.append({
-            "date": d,
-            "total": round(daily_cost[d], 4),
-            "running_total": round(running_total, 4),
-            "by_model": {k: round(v, 4) for k, v in daily_cost_by_model.get(d, {}).items()},
-            "by_stage": {k: round(v, 4) for k, v in daily_cost_by_stage.get(d, {}).items()},
-            "input_tokens": daily_tokens.get(d, {}).get("input", 0),
-            "output_tokens": daily_tokens.get(d, {}).get("output", 0),
-        })
+        cost_daily.append(
+            {
+                "date": d,
+                "total": round(daily_cost[d], 4),
+                "running_total": round(running_total, 4),
+                "by_model": {k: round(v, 4) for k, v in daily_cost_by_model.get(d, {}).items()},
+                "by_stage": {k: round(v, 4) for k, v in daily_cost_by_stage.get(d, {}).items()},
+                "input_tokens": daily_tokens.get(d, {}).get("input", 0),
+                "output_tokens": daily_tokens.get(d, {}).get("output", 0),
+            }
+        )
     cost_total = round(running_total, 4)
 
     # ── Latency aggregation ──────────────────────────────────────────────
@@ -342,20 +348,32 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 
     bottleneck = ""
     if stage_latencies:
-        bottleneck = max(stage_latencies, key=lambda s: sum(stage_latencies[s]) / len(stage_latencies[s]))
+        bottleneck = max(
+            stage_latencies, key=lambda s: sum(stage_latencies[s]) / len(stage_latencies[s])
+        )
 
     latency_daily = []
     for d in sorted(daily_latency):
         vals = daily_latency[d]
         dp50, dp90, dp99 = _percentiles(vals)
-        latency_daily.append({
-            "date": d,
-            "avg_ms": int(sum(vals) / len(vals)),
-            "p50": dp50, "p90": dp90, "p99": dp99,
-            "by_stage": {s: int(sum(v) / len(v)) for s, v in stage_latencies.items()
-                         if any(_day_key(t.get("timestamp")) == d for t in recent
-                                if _stage_from_name(t.get("name", "")) == s)},
-        })
+        latency_daily.append(
+            {
+                "date": d,
+                "avg_ms": int(sum(vals) / len(vals)),
+                "p50": dp50,
+                "p90": dp90,
+                "p99": dp99,
+                "by_stage": {
+                    s: int(sum(v) / len(v))
+                    for s, v in stage_latencies.items()
+                    if any(
+                        _day_key(t.get("timestamp")) == d
+                        for t in recent
+                        if _stage_from_name(t.get("name", "")) == s
+                    )
+                },
+            }
+        )
 
     # ── Quality aggregation ──────────────────────────────────────────────
     daily_quality: dict[str, dict[str, int]] = {}
@@ -364,8 +382,9 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 
     for t in recent:
         day = _day_key(t.get("timestamp"))
-        daily_quality.setdefault(day, {"total": 0, "success": 0, "failed": 0,
-                                        "first_try": 0, "retry": 0})
+        daily_quality.setdefault(
+            day, {"total": 0, "success": 0, "failed": 0, "first_try": 0, "retry": 0}
+        )
         daily_quality[day]["total"] += 1
 
         status = t.get("status", "")
@@ -387,11 +406,13 @@ def get_aggregated_metrics(days: int = 7) -> dict:
         # Cost-vs-quality data point
         cost = t.get("total_cost") or 0.0
         if cost > 0:
-            cost_quality_pairs.append({
-                "cost": round(cost, 4),
-                "success": 1 if status != "error" else 0,
-                "session_id": t.get("session_id", ""),
-            })
+            cost_quality_pairs.append(
+                {
+                    "cost": round(cost, 4),
+                    "success": 1 if status != "error" else 0,
+                    "session_id": t.get("session_id", ""),
+                }
+            )
 
     total_runs = sum(dq["total"] for dq in daily_quality.values())
     total_success = sum(dq["success"] for dq in daily_quality.values())
@@ -403,11 +424,17 @@ def get_aggregated_metrics(days: int = 7) -> dict:
     for d in sorted(daily_quality):
         dq = daily_quality[d]
         rate = round(dq["success"] / dq["total"], 3) if dq["total"] > 0 else 0.0
-        quality_daily.append({
-            "date": d, "total": dq["total"], "success": dq["success"],
-            "failed": dq["failed"], "rate": rate,
-            "first_try": dq["first_try"], "retry": dq["retry"],
-        })
+        quality_daily.append(
+            {
+                "date": d,
+                "total": dq["total"],
+                "success": dq["success"],
+                "failed": dq["failed"],
+                "rate": rate,
+                "first_try": dq["first_try"],
+                "retry": dq["retry"],
+            }
+        )
 
     # ── Build cost/latency trends (last 7 daily values) ──────────────────
     cost_trend = [e["total"] for e in cost_daily[-7:]]
@@ -415,8 +442,12 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 
     # ── AI insight (heuristic — real AI call deferred to API layer) ────────
     ai_insight = _generate_quality_insight(
-        overall_rate, total_first_try, total_retry, total_runs,
-        failure_cats, cost_quality_pairs,
+        overall_rate,
+        total_first_try,
+        total_retry,
+        total_runs,
+        failure_cats,
+        cost_quality_pairs,
     )
 
     return {
@@ -431,7 +462,9 @@ def get_aggregated_metrics(days: int = 7) -> dict:
         },
         "latency": {
             "daily": latency_daily,
-            "p50": p50, "p90": p90, "p99": p99,
+            "p50": p50,
+            "p90": p90,
+            "p99": p99,
             "avg_ms": avg_lat,
             "bottleneck": bottleneck,
             "by_stage": {s: int(sum(v) / len(v)) for s, v in stage_latencies.items()},
@@ -461,16 +494,43 @@ def get_aggregated_metrics(days: int = 7) -> dict:
 def _empty_metrics() -> dict:
     """Return zero-valued metrics structure."""
     return {
-        "cost": {"daily": [], "total": 0.0, "by_model": {}, "by_stage": {},
-                 "models": [], "input_tokens": 0, "output_tokens": 0},
-        "latency": {"daily": [], "p50": 0, "p90": 0, "p99": 0, "avg_ms": 0,
-                     "bottleneck": "", "by_stage": {}},
-        "quality": {"daily": [], "overall_rate": 0.0, "failure_categories": {},
-                     "first_try_total": 0, "retry_total": 0,
-                     "cost_quality": [], "ai_insight": ""},
-        "summary": {"cost_24h": 0.0, "cost_trend": [], "avg_latency_ms": 0,
-                     "latency_trend": [], "p50": 0, "p90": 0,
-                     "input_tokens": 0, "output_tokens": 0},
+        "cost": {
+            "daily": [],
+            "total": 0.0,
+            "by_model": {},
+            "by_stage": {},
+            "models": [],
+            "input_tokens": 0,
+            "output_tokens": 0,
+        },
+        "latency": {
+            "daily": [],
+            "p50": 0,
+            "p90": 0,
+            "p99": 0,
+            "avg_ms": 0,
+            "bottleneck": "",
+            "by_stage": {},
+        },
+        "quality": {
+            "daily": [],
+            "overall_rate": 0.0,
+            "failure_categories": {},
+            "first_try_total": 0,
+            "retry_total": 0,
+            "cost_quality": [],
+            "ai_insight": "",
+        },
+        "summary": {
+            "cost_24h": 0.0,
+            "cost_trend": [],
+            "avg_latency_ms": 0,
+            "latency_trend": [],
+            "p50": 0,
+            "p90": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        },
     }
 
 
@@ -494,7 +554,9 @@ def _generate_quality_insight(
         if ft_rate >= 0.8:
             parts.append(f"Strong first-try success rate ({ft_rate:.0%}) — plans are well-formed.")
         elif ft_rate >= 0.5:
-            parts.append(f"First-try rate is {ft_rate:.0%}. Consider adding clearer success criteria to goals.")
+            parts.append(
+                f"First-try rate is {ft_rate:.0%}. Consider adding clearer success criteria to goals."
+            )
         else:
             parts.append(f"Low first-try rate ({ft_rate:.0%}) — plans frequently need revision.")
 
@@ -513,33 +575,40 @@ def _generate_quality_insight(
             avg_s = sum(successes) / len(successes)
             avg_f = sum(failures) / len(failures)
             if avg_f > avg_s * 1.5:
-                parts.append("Failed runs cost significantly more than successful ones — early failure detection could save budget.")
+                parts.append(
+                    "Failed runs cost significantly more than successful ones — early failure detection could save budget."
+                )
             elif avg_s > avg_f * 1.5:
-                parts.append("Higher-cost runs tend to succeed — the extra tokens may be paying for thoroughness.")
+                parts.append(
+                    "Higher-cost runs tend to succeed — the extra tokens may be paying for thoroughness."
+                )
 
     return " ".join(parts) if parts else "Insufficient data for insights."
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _now():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc)
+    from datetime import datetime
+
+    return datetime.now(UTC)
 
 
 def _parse_ts(ts: Any) -> Any:
     """Parse a timestamp to datetime. Handles str and datetime."""
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     if isinstance(ts, datetime):
-        return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+        return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
     if isinstance(ts, str):
         # ISO 8601 with or without Z
         ts_clean = ts.replace("Z", "+00:00")
         try:
             return datetime.fromisoformat(ts_clean)
         except ValueError:
-            return datetime.min.replace(tzinfo=timezone.utc)
-    return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min.replace(tzinfo=UTC)
+    return datetime.min.replace(tzinfo=UTC)
 
 
 def _day_key(ts: Any) -> str:
@@ -559,7 +628,6 @@ def _stage_from_name(name: str) -> str:
 def _calc_latency_ms(trace: Any) -> int:
     """Calculate trace latency in milliseconds from start/end times."""
     try:
-        start = getattr(trace, "timestamp", None)
         # LangFuse traces have latency as a direct attribute in newer SDKs
         lat = getattr(trace, "latency", None)
         if lat is not None:

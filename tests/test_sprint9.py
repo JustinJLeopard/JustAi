@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Sprint 9 tests — API server, dashboard integration."""
+
 import json
-import os
 import sys
 import threading
 import time
 import unittest
 import urllib.request
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -18,6 +17,7 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_get_health_returns_dict(self):
         from justai.api import _get_health
+
         result = _get_health()
         self.assertIsInstance(result, dict)
         self.assertIn("services", result)
@@ -26,11 +26,13 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_get_health_has_three_services(self):
         from justai.api import _get_health
+
         result = _get_health()
         self.assertEqual(len(result["services"]), 3)
 
     def test_get_health_service_structure(self):
         from justai.api import _get_health
+
         result = _get_health()
         for svc in result["services"]:
             self.assertIn("name", svc)
@@ -40,16 +42,19 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_get_runs_returns_list(self):
         from justai.api import _get_runs
+
         result = _get_runs()
         self.assertIsInstance(result, list)
 
     def test_get_runs_with_limit(self):
         from justai.api import _get_runs
+
         result = _get_runs(limit=5)
         self.assertLessEqual(len(result), 5)
 
     def test_get_config_returns_dict(self):
         from justai.api import _get_config
+
         result = _get_config()
         self.assertIsInstance(result, dict)
         self.assertIn("version", result)
@@ -57,9 +62,16 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_get_config_has_required_fields(self):
         from justai.api import _get_config
+
         result = _get_config()
-        for key in ("version", "session_ref", "auto_mode", "litellm_url",
-                     "planner_model", "spacetimedb_url"):
+        for key in (
+            "version",
+            "session_ref",
+            "auto_mode",
+            "litellm_url",
+            "planner_model",
+            "spacetimedb_url",
+        ):
             self.assertIn(key, result)
 
 
@@ -68,13 +80,15 @@ class TestAPIStartRun(unittest.TestCase):
 
     def test_start_run_missing_goal(self):
         from justai.api import _start_run
+
         # Empty goal should still create a run (validation is in handler)
         result = _start_run("")
         self.assertIn("started", result)
 
     def test_start_run_returns_run_id(self):
-        from justai.api import _start_run
         import justai.api
+        from justai.api import _start_run
+
         # Reset active run
         justai.api._active_run = None
         result = _start_run("test goal", auto=True)
@@ -85,8 +99,9 @@ class TestAPIStartRun(unittest.TestCase):
         justai.api._active_run = None
 
     def test_concurrent_run_blocked(self):
-        from justai.api import _start_run
         import justai.api
+        from justai.api import _start_run
+
         # Simulate active run
         justai.api._active_run = {"status": "running", "id": "test"}
         result = _start_run("another goal")
@@ -100,6 +115,7 @@ class TestAPIRunHistory(unittest.TestCase):
     def test_run_entry_parsing(self):
         """Verify the key=val parsing logic."""
         from justai.api import _get_runs
+
         # This depends on actual memory content. Just verify it doesn't crash.
         runs = _get_runs(limit=3)
         self.assertIsInstance(runs, list)
@@ -112,8 +128,10 @@ class TestAPIServer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from justai.api import APIHandler
         from http.server import HTTPServer
+
+        from justai.api import APIHandler
+
         cls.port = 13902  # Use a non-standard port for testing
         cls.server = HTTPServer(("127.0.0.1", cls.port), APIHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -189,7 +207,13 @@ class TestDashboardFiles(unittest.TestCase):
         self.assertIn("'runs'", content)
 
     def test_mission_control_has_health_import(self):
-        p = Path(__file__).resolve().parents[1] / "dashboard" / "src" / "views" / "MissionControl.tsx"
+        p = (
+            Path(__file__).resolve().parents[1]
+            / "dashboard"
+            / "src"
+            / "views"
+            / "MissionControl.tsx"
+        )
         content = p.read_text()
         self.assertIn("fetchHealth", content)
 

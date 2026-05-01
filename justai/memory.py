@@ -26,17 +26,17 @@ Transport note (2026-04-11):
     that automatically on first call. If the MCP server restarts mid-session,
     the next call re-initializes.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
 import subprocess
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Optional
-
+from typing import Any
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +48,7 @@ _logger = logging.getLogger(__name__)
 
 
 # ── Data Types ────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class MemoryEntry:
@@ -68,6 +69,7 @@ class MemoryStats:
 
 # ── JSON-RPC Transport ───────────────────────────────────────────────────────
 
+
 class _RPCClient:
     """Minimal JSON-RPC 2.0 client for MCP HTTP transport."""
 
@@ -80,7 +82,7 @@ class _RPCClient:
         self._req_id += 1
         return self._req_id
 
-    def _post(self, method: str, params: Optional[dict] = None) -> dict:
+    def _post(self, method: str, params: dict | None = None) -> dict:
         payload = {
             "jsonrpc": "2.0",
             "id": self._next_id(),
@@ -101,11 +103,14 @@ class _RPCClient:
 
     def initialize(self) -> None:
         """Send the MCP initialize handshake. Required before any tool call."""
-        self._post("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "justai-memory", "version": "1.0"},
-        })
+        self._post(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "justai-memory", "version": "1.0"},
+            },
+        )
         self._initialized = True
 
     def call_tool(self, name: str, arguments: dict) -> dict:
@@ -156,6 +161,7 @@ class _RPCClient:
 
 # ── CLI Fallback ──────────────────────────────────────────────────────────────
 
+
 def _memory_cwd() -> str:
     val = os.environ.get("JUSTAI_MEMORY_CWD")
     if not val:
@@ -179,16 +185,14 @@ def _cli_store(key: str, value: str, namespace: str) -> bool:
         return False
 
 
-def _cli_retrieve(key: str, namespace: str) -> Optional[str]:
+def _cli_retrieve(key: str, namespace: str) -> str | None:
     """Fallback: retrieve via claude-flow CLI subprocess."""
     cwd = _memory_cwd()
     try:
         args = ["claude-flow", "memory", "retrieve", "-k", key]
         if namespace:
             args.extend(["-n", namespace])
-        result = subprocess.run(
-            args, capture_output=True, text=True, cwd=cwd, timeout=15
-        )
+        result = subprocess.run(args, capture_output=True, text=True, cwd=cwd, timeout=15)
         # Parse the CLI table output for the value
         for line in result.stdout.splitlines():
             if "| Value:" in line or "│ Value:" in line:
@@ -203,6 +207,7 @@ def _cli_retrieve(key: str, namespace: str) -> Optional[str]:
 
 
 # ── Memory Client ─────────────────────────────────────────────────────────────
+
 
 class Memory:
     """
@@ -233,8 +238,8 @@ class Memory:
         self,
         key: str,
         value: str,
-        namespace: Optional[str] = None,
-        tags: Optional[list[str]] = None,
+        namespace: str | None = None,
+        tags: list[str] | None = None,
     ) -> bool:
         """Store a key-value pair with optional embedding."""
         ns = namespace or self.namespace
@@ -251,7 +256,7 @@ class Memory:
                 pass
         return _cli_store(key, value, ns)
 
-    def retrieve(self, key: str, namespace: Optional[str] = None) -> Optional[str]:
+    def retrieve(self, key: str, namespace: str | None = None) -> str | None:
         """Retrieve a value by exact key."""
         ns = namespace or self.namespace
         if self._rpc:
@@ -268,7 +273,7 @@ class Memory:
     def search(
         self,
         query: str,
-        namespace: Optional[str] = None,
+        namespace: str | None = None,
         limit: int = 10,
     ) -> list[MemoryEntry]:
         """Semantic search over memory entries."""
@@ -281,18 +286,20 @@ class Memory:
                 result = self._rpc.call_tool("memory_search", args)
                 entries = []
                 for r in result.get("results", []):
-                    entries.append(MemoryEntry(
-                        key=r.get("key", ""),
-                        value=r.get("value", ""),
-                        namespace=r.get("namespace", ns),
-                        similarity=r.get("similarity", 0.0),
-                    ))
+                    entries.append(
+                        MemoryEntry(
+                            key=r.get("key", ""),
+                            value=r.get("value", ""),
+                            namespace=r.get("namespace", ns),
+                            similarity=r.get("similarity", 0.0),
+                        )
+                    )
                 return entries
             except Exception:
                 return []
         return []
 
-    def delete(self, key: str, namespace: Optional[str] = None) -> bool:
+    def delete(self, key: str, namespace: str | None = None) -> bool:
         """Delete a memory entry by key."""
         ns = namespace or self.namespace
         if self._rpc:
@@ -306,7 +313,7 @@ class Memory:
                 return False
         return False
 
-    def list_keys(self, namespace: Optional[str] = None) -> list[str]:
+    def list_keys(self, namespace: str | None = None) -> list[str]:
         """List all memory keys in a namespace."""
         ns = namespace or self.namespace
         if self._rpc:

@@ -5,9 +5,11 @@ JustAi — Synthesizer
 Aggregates execution results into a structured summary.
 Stores results in claude-flow memory for future sessions.
 """
+
 from __future__ import annotations
 
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 
 from justai.memory import Memory
@@ -25,7 +27,7 @@ class RunSummary:
     skipped: int
     duration_seconds: float
     session_ref: str
-    status: str   # "complete" | "partial" | "failed"
+    status: str  # "complete" | "partial" | "failed"
     details: list[dict]
 
 
@@ -94,17 +96,13 @@ def _store_summary(s: RunSummary) -> None:
         f"duration={s.duration_seconds:.0f}s | session={s.session_ref} | "
         f"status={s.status}"
     )
-    try:
+    with suppress(Exception):
         _memory.store(key, value)
-    except Exception:
-        pass
 
     # Also update session context
-    try:
+    with suppress(Exception):
         _memory.store(f"justai/session/{s.session_ref}", value)
         _memory.store("justai/session/latest", value)
-    except Exception:
-        pass
 
 
 def format_summary(s: RunSummary) -> str:
@@ -118,7 +116,11 @@ def format_summary(s: RunSummary) -> str:
         icon = "+" if d["status"] == "done" else "-" if d["status"] == "skipped" else "x"
         lines.append(f"|  {icon} [{d['task_id']}] {d['title'][:38]:<38}  |")
     lines.append("+" + "-" * 58 + "+")
-    lines.append(f"|  {s.done}/{s.total_tasks} done | {s.failed} failed | {s.skipped} skipped | {s.duration_seconds:.0f}s" + " " * 10 + "|")
+    lines.append(
+        f"|  {s.done}/{s.total_tasks} done | {s.failed} failed | {s.skipped} skipped | {s.duration_seconds:.0f}s"
+        + " " * 10
+        + "|"
+    )
     lines.append(f"|  Status: {s.status:<48} |")
     lines.append("+" + "=" * 58 + "+")
     return "\n".join(lines)

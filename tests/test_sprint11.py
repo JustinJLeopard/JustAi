@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Sprint 11 tests — release quality, config, version consistency, E2E smoke."""
-import json
-import os
+
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,10 +16,12 @@ class TestVersionConsistency(unittest.TestCase):
 
     def test_init_version(self):
         from justai import __version__
+
         self.assertEqual(__version__, "1.0.0")
 
     def test_config_version(self):
         from justai.config import VERSION
+
         self.assertEqual(VERSION, "1.0.0")
 
     def test_pyproject_version(self):
@@ -30,6 +31,7 @@ class TestVersionConsistency(unittest.TestCase):
     def test_all_versions_match(self):
         from justai import __version__
         from justai.config import VERSION
+
         self.assertEqual(__version__, VERSION)
 
 
@@ -38,29 +40,35 @@ class TestConfig(unittest.TestCase):
 
     def test_project_root(self):
         from justai.config import PROJECT_ROOT as cfg_root
+
         self.assertTrue(cfg_root.exists())
         self.assertTrue((cfg_root / "justai").is_dir())
 
     def test_litellm_url_strips_v1(self):
         from justai.config import LITELLM_BASE_URL
+
         self.assertNotIn("/v1", LITELLM_BASE_URL)
 
     def test_default_models(self):
-        from justai.config import PLANNER_MODEL, INTENT_MODEL, REVIEWER_MODEL
+        from justai.config import INTENT_MODEL, PLANNER_MODEL, REVIEWER_MODEL
+
         self.assertTrue(PLANNER_MODEL.startswith("openai/"))
         self.assertTrue(INTENT_MODEL.startswith("openai/"))
         self.assertTrue(REVIEWER_MODEL.startswith("openai/"))
 
     def test_runtime_root_path(self):
         from justai.config import RUNTIME_ROOT
+
         self.assertIsInstance(RUNTIME_ROOT, Path)
 
     def test_api_port_default(self):
         from justai.config import API_PORT
+
         self.assertEqual(API_PORT, 3002)
 
     def test_work_dir_is_project(self):
         from justai.config import WORK_DIR
+
         self.assertTrue(WORK_DIR.exists())
 
 
@@ -129,6 +137,7 @@ class TestImportAll(unittest.TestCase):
 
     def test_all_modules_import(self):
         import importlib
+
         for mod_name in self.MODULES:
             with self.subTest(module=mod_name):
                 mod = importlib.import_module(mod_name)
@@ -167,10 +176,10 @@ class TestE2ESmokeLocal(unittest.TestCase):
     """Smoke test: full pipeline with mocked LLM, local execution."""
 
     def test_full_pipeline_smoke(self):
+        from justai.intent_gate import Intent, IntentResult
         from justai.orchestrator import run
-        from justai.scope_planner import Plan, Task, RiskLevel, AgentType
-        from justai.intent_gate import IntentResult, Intent
         from justai.reviewer import ReviewResult
+        from justai.scope_planner import AgentType, Plan, RiskLevel, Task
 
         mock_intent = IntentResult(
             intent=Intent.EXECUTION,
@@ -178,17 +187,20 @@ class TestE2ESmokeLocal(unittest.TestCase):
             reasoning="smoke test",
             clarifying_question=None,
         )
-        mock_plan = Plan(goal="smoke", tasks=[
-            Task("check", "echo smoke", AgentType.MINI, RiskLevel.R0,
-                 "echo ok", []),
-        ])
+        mock_plan = Plan(
+            goal="smoke",
+            tasks=[
+                Task("check", "echo smoke", AgentType.MINI, RiskLevel.R0, "echo ok", []),
+            ],
+        )
 
         with patch("justai.orchestrator.classify", return_value=mock_intent):
             with patch("justai.orchestrator.decompose", return_value=mock_plan):
-                with patch("justai.orchestrator.review",
-                           return_value=ReviewResult(approved=True, feedback=[])):
-                    result = run("smoke test", session_ref="v1-smoke",
-                                 auto=True, local=True)
+                with patch(
+                    "justai.orchestrator.review",
+                    return_value=ReviewResult(approved=True, feedback=[]),
+                ):
+                    result = run("smoke test", session_ref="v1-smoke", auto=True, local=True)
 
         self.assertEqual(result.status, "complete")
         self.assertEqual(result.intent, "execution")

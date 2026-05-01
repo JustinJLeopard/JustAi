@@ -1,4 +1,5 @@
 """Focused orchestrator and CLI pipeline tests kept after backend amputation."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -84,12 +85,14 @@ def _patch_pipeline(*, intent=None, plan=None, review=None, results=None):
 def test_run_returns_ambiguous_status_when_intent_is_ambiguous():
     from justai.orchestrator import run
 
-    with patch("justai.orchestrator.classify", return_value=_intent("ambiguous")), \
-         patch("justai.orchestrator.preflight", return_value=[]), \
-         patch("justai.orchestrator.print_preflight", return_value=True), \
-         patch("justai.orchestrator.OrchestratorHook"), \
-         patch("justai.orchestrator.trace_generation", return_value=_trace_ctx()), \
-         patch("justai.orchestrator._ledger"):
+    with (
+        patch("justai.orchestrator.classify", return_value=_intent("ambiguous")),
+        patch("justai.orchestrator.preflight", return_value=[]),
+        patch("justai.orchestrator.print_preflight", return_value=True),
+        patch("justai.orchestrator.OrchestratorHook"),
+        patch("justai.orchestrator.trace_generation", return_value=_trace_ctx()),
+        patch("justai.orchestrator._ledger"),
+    ):
         result = run("do something vague", session_ref="test")
 
     assert result.status == "ambiguous"
@@ -118,7 +121,9 @@ def test_run_returns_complete_when_all_tasks_succeed():
 def test_run_returns_partial_when_some_tasks_fail():
     from justai.orchestrator import run
 
-    with _patch_pipeline(plan=_plan(2), results=[_result("done", "Task 0"), _result("failed", "Task 1")]):
+    with _patch_pipeline(
+        plan=_plan(2), results=[_result("done", "Task 0"), _result("failed", "Task 1")]
+    ):
         result = run("multi-task goal", session_ref="test")
 
     assert result.status == "partial"
@@ -173,6 +178,20 @@ def test_cli_run_cmd_exit_codes():
     partial = OrchestrationResult("goal", "execution", 2, [], 1.0, "partial")
 
     with patch("justai.orchestrator.run", return_value=complete):
-        assert run_cmd(SimpleNamespace(goal="goal", session_ref="test", auto=False, local=False, swarm=False)) == 0
+        assert (
+            run_cmd(
+                SimpleNamespace(
+                    goal="goal", session_ref="test", auto=False, local=False, swarm=False
+                )
+            )
+            == 0
+        )
     with patch("justai.orchestrator.run", return_value=partial):
-        assert run_cmd(SimpleNamespace(goal="goal", session_ref="test", auto=False, local=False, swarm=False)) == 1
+        assert (
+            run_cmd(
+                SimpleNamespace(
+                    goal="goal", session_ref="test", auto=False, local=False, swarm=False
+                )
+            )
+            == 1
+        )

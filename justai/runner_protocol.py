@@ -20,17 +20,18 @@ DO NOT ADD JustAi-specific fields to these types. They are intentionally
 generic - the substrate doesn't know about session_ref, dashboards, Discord,
 learning aggregation, etc.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 
 # -- Failure taxonomy (7-class) ---------------------------------------------
 # From safe-mini-substrate-architecture. Two NEW classes added 2026-04-29:
 # safety-violation and action-protocol-violation.
-class FailureClass(str, Enum):
+class FailureClass(StrEnum):
     SAFETY_VIOLATION = "safety-violation"  # blocked-op attempt
     ACTION_PROTOCOL_VIOLATION = "action-protocol-violation"  # malformed bash
     EXHAUSTED_IDEAS = "exhausted-ideas"
@@ -41,7 +42,7 @@ class FailureClass(str, Enum):
 
 
 # -- Policies ----------------------------------------------------------------
-class ObservationPolicy(str, Enum):
+class ObservationPolicy(StrEnum):
     FULL = "full"
     TAIL = "tail"
     HEAD_TAIL = "head-tail"
@@ -49,7 +50,7 @@ class ObservationPolicy(str, Enum):
     STRUCTURED_RAW_TAIL = "structured+raw-tail"
 
 
-class ExecutorPolicy(str, Enum):
+class ExecutorPolicy(StrEnum):
     OPEN = "open"  # bare shell, no guard
     SAFE = "safe"  # path guard + env scrub
     ALLOWLIST = "allowlist"  # explicit command allowlist

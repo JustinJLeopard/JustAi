@@ -6,6 +6,7 @@ Auto-loads environment variables from LocalManus .env on import so
 all components have LITELLM_KEY, GAMERON_API_KEY etc. available
 regardless of whether source ~/.ruv_env was run first.
 """
+
 from __future__ import annotations
 
 __version__ = "1.0.0"

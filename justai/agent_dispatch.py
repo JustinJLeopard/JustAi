@@ -28,6 +28,7 @@ Usage:
     pipeline = AgentDispatchPipeline(cfg)
     result = pipeline.run("implement feature X", spec="detailed spec...")
 """
+
 from __future__ import annotations
 
 import json
@@ -35,11 +36,13 @@ import os
 import subprocess
 import time
 import urllib.request
-from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from justai.results import DelegationResult
-from justai.runner_protocol import AgentRunner  # noqa: F401  # stub; full integration post-safe-mini
+from justai.runner_protocol import (
+    AgentRunner,  # noqa: F401  # stub; full integration post-safe-mini
+)
 from justai.scope_planner import Task
 
 PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
@@ -90,12 +93,14 @@ def _llm_call(model: str, prompt: str, system: str = "") -> str:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    payload = json.dumps({
-        "model": model,
-        "messages": messages,
-        "temperature": 0.2,
-        "max_tokens": 4096,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 4096,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{LITELLM_URL}/chat/completions",
@@ -112,7 +117,8 @@ def _run_tests(test_cmd: str, work_dir: str = "") -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["bash", "-c", test_cmd],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
             cwd=work_dir or None,
             timeout=60,
         )
@@ -152,13 +158,19 @@ class AgentDispatchPipeline:
             f"Output clean pseudocode with function signatures, data structures, "
             f"and control flow. No implementation yet — just the skeleton."
         )
-        output = _llm_call(self.config.pseudocode_model, prompt,
-                           system="You are a code architect. Output pseudocode only.")
+        output = _llm_call(
+            self.config.pseudocode_model,
+            prompt,
+            system="You are a code architect. Output pseudocode only.",
+        )
         self._model_calls += 1
         self._mini_calls += 1
         return PhaseResult(
-            phase="pseudocode", status="done", output=output,
-            model=self.config.pseudocode_model, duration_seconds=time.time() - start,
+            phase="pseudocode",
+            status="done",
+            output=output,
+            model=self.config.pseudocode_model,
+            duration_seconds=time.time() - start,
         )
 
     def _phase_write_tests(self, pseudocode: str, spec: str) -> PhaseResult:
@@ -170,10 +182,15 @@ class AgentDispatchPipeline:
             f"Each test function should have a unique ID in its name. "
             f"Cover happy path and edge cases."
         )
-        output = self._call_mini(prompt, system="You write Python pytest tests. Output test code only.")
+        output = self._call_mini(
+            prompt, system="You write Python pytest tests. Output test code only."
+        )
         return PhaseResult(
-            phase="write_tests", status="done", output=output,
-            model=self.config.mini_model, duration_seconds=time.time() - start,
+            phase="write_tests",
+            status="done",
+            output=output,
+            model=self.config.mini_model,
+            duration_seconds=time.time() - start,
         )
 
     def _phase_write_code(self, pseudocode: str, tests: str) -> PhaseResult:
@@ -185,10 +202,15 @@ class AgentDispatchPipeline:
             f"Pseudocode:\n{pseudocode}\n\nTests:\n{tests}\n\n"
             f"Output implementation code only."
         )
-        output = self._call_mini(prompt, system="You write Python code. Output implementation only.")
+        output = self._call_mini(
+            prompt, system="You write Python code. Output implementation only."
+        )
         return PhaseResult(
-            phase="write_code", status="done", output=output,
-            model=self.config.mini_model, duration_seconds=time.time() - start,
+            phase="write_code",
+            status="done",
+            output=output,
+            model=self.config.mini_model,
+            duration_seconds=time.time() - start,
         )
 
     def _phase_iterate(self, code: str, tests: str, test_output: str) -> PhaseResult:
@@ -200,13 +222,20 @@ class AgentDispatchPipeline:
             f"Test output:\n{test_output}\n\n"
             f"Output the fixed code only."
         )
-        output = self._call_mini(prompt, system="You fix Python code to pass tests. Output fixed code only.")
+        output = self._call_mini(
+            prompt, system="You fix Python code to pass tests. Output fixed code only."
+        )
         return PhaseResult(
-            phase="iterate", status="done", output=output,
-            model=self.config.mini_model, duration_seconds=time.time() - start,
+            phase="iterate",
+            status="done",
+            output=output,
+            model=self.config.mini_model,
+            duration_seconds=time.time() - start,
         )
 
-    def _phase_escalate(self, goal: str, spec: str, code: str, tests: str, test_output: str) -> PhaseResult:
+    def _phase_escalate(
+        self, goal: str, spec: str, code: str, tests: str, test_output: str
+    ) -> PhaseResult:
         """Phase 5: Capable model takes over."""
         start = time.time()
         prompt = (
@@ -220,8 +249,11 @@ class AgentDispatchPipeline:
             prompt, system="You are a senior engineer fixing code that a junior couldn't get right."
         )
         return PhaseResult(
-            phase="escalate", status="done", output=output,
-            model=self.config.escalation_model, duration_seconds=time.time() - start,
+            phase="escalate",
+            status="done",
+            output=output,
+            model=self.config.escalation_model,
+            duration_seconds=time.time() - start,
         )
 
     def run(self, goal: str, spec: str) -> PipelineResult:
@@ -253,11 +285,14 @@ class AgentDispatchPipeline:
             passed, test_output = _run_tests(self.config.test_command, self.config.work_dir)
 
             if passed:
-                phases.append(PhaseResult(
-                    phase="iterate", status="done",
-                    output=f"Tests pass on iteration {iteration}",
-                    iterations=iteration,
-                ))
+                phases.append(
+                    PhaseResult(
+                        phase="iterate",
+                        status="done",
+                        output=f"Tests pass on iteration {iteration}",
+                        iterations=iteration,
+                    )
+                )
                 break
 
             # Mini attempts fix
@@ -318,7 +353,9 @@ def escalate_task(
         return result
 
     # Escalate: expensive model with failure context
-    print(f"[escalation] task '{task.title}' failed on {MINI_MODEL}, escalating to {ESCALATION_MODEL}")
+    print(
+        f"[escalation] task '{task.title}' failed on {MINI_MODEL}, escalating to {ESCALATION_MODEL}"
+    )
     escalated_task = Task(
         title=task.title,
         description=(
@@ -345,7 +382,10 @@ def escalate_task(
 def _verify_task(task: Task) -> tuple[bool, str]:
     """Run the task's success criteria and return (passed, output)."""
     criteria = task.success_criteria
-    if not criteria or criteria.strip() in ("echo 'verify manually'", "echo 'task completed -- verify manually'"):
+    if not criteria or criteria.strip() in (
+        "echo 'verify manually'",
+        "echo 'task completed -- verify manually'",
+    ):
         return True, "no automated verification"
 
     try:
@@ -373,7 +413,9 @@ def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult
         task_id=f"local-{session_ref or 'task'}",
         title=task.title,
         status=status,
-        result=output[:200] if passed else f"Task requires manual execution: {task.description[:100]}",
+        result=output[:200]
+        if passed
+        else f"Task requires manual execution: {task.description[:100]}",
         duration_seconds=time.time() - start,
     )
 
@@ -419,10 +461,14 @@ def escalate_plan(
         # Check dependencies
         skip = False
         for dep_idx in task.depends_on:
-            if dep_idx < len(results) and results[dep_idx] and results[dep_idx].status != "done":
-                print(f"[escalation] skipping task [{i}] '{task.title}' — dependency [{dep_idx}] failed")
+            dep_result = results[dep_idx] if dep_idx < len(results) else None
+            if dep_result is not None and dep_result.status != "done":
+                print(
+                    f"[escalation] skipping task [{i}] '{task.title}' — dependency [{dep_idx}] failed"
+                )
                 results[i] = DelegationResult(
-                    task_id="skipped", title=task.title,
+                    task_id="skipped",
+                    title=task.title,
                     status="skipped",
                     result=f"Skipped — dependency [{dep_idx}] did not complete after escalation",
                     duration_seconds=0,
@@ -431,8 +477,8 @@ def escalate_plan(
                 break
 
         if not skip:
-            results[i] = escalate_task(task, session_ref=session_ref, runner=runner)
-            status = results[i].status
-            print(f"[escalation] task [{i}] {status}: {results[i].result[:80]}")
+            result = escalate_task(task, session_ref=session_ref, runner=runner)
+            results[i] = result
+            print(f"[escalation] task [{i}] {result.status}: {result.result[:80]}")
 
     return [r for r in results if r is not None]

@@ -5,6 +5,7 @@ JustAi — Service Health Preflight
 Quick checks for required services before running the pipeline.
 Returns structured results so the orchestrator can degrade gracefully.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,15 +64,21 @@ def _is_spacetimedb_response(status: int, headers: dict[str, str], body: bytes) 
     # from a /v1/database probe still proves this is the SpacetimeDB API, while
     # an arbitrary HTML 200/404 from another service does not.
     known_error_variants = {
-        "DatabaseNotFound", "PermissionDenied", "NoSuchDatabase", "NotFound",
-        "InvalidDatabaseIdentity", "error",
+        "DatabaseNotFound",
+        "PermissionDenied",
+        "NoSuchDatabase",
+        "NotFound",
+        "InvalidDatabaseIdentity",
+        "error",
     }
     return status in (400, 401, 403, 404, 405) and any(k in data for k in known_error_variants)
 
 
 def check_litellm() -> ServiceStatus:
     """Check LiteLLM proxy is reachable and speaks the OpenAI models API."""
-    url = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+    url = (
+        os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+    )
     models_url = f"{url}/v1/models"
     try:
         req = urllib.request.Request(
@@ -109,7 +116,9 @@ def check_spacetimedb() -> ServiceStatus:
         body = e.read()
         headers = {k.lower(): v for k, v in dict(e.headers).items()}
         if _is_spacetimedb_response(e.code, headers, body):
-            return ServiceStatus("SpacetimeDB", url, True, f"database API reachable (http {e.code})")
+            return ServiceStatus(
+                "SpacetimeDB", url, True, f"database API reachable (http {e.code})"
+            )
         return ServiceStatus("SpacetimeDB", url, False, "responded but not SpacetimeDB")
     except Exception as e:
         return ServiceStatus("SpacetimeDB", url, False, str(e)[:120])
@@ -139,12 +148,17 @@ def check_swarm() -> ServiceStatus:
     url = os.environ.get("JUSTAI_MCP_URL", "http://127.0.0.1:3100")
     rpc_url = f"{url}/rpc"
     try:
-        payload = json.dumps({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "tools/call",
-            "params": {"name": "swarm_status", "arguments": {}},
-        }).encode()
-        req = urllib.request.Request(rpc_url, data=payload, headers={"Content-Type": "application/json"})
+        payload = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "swarm_status", "arguments": {}},
+            }
+        ).encode()
+        req = urllib.request.Request(
+            rpc_url, data=payload, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
             content = data.get("result", {}).get("content", [])
