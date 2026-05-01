@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known historical secrets in initial combined workspace snapshot; files are absent from current HEAD and rotation remains an owner action."
+commits = [
+  "92a6e26f5ee096e11c41a91603d354ae08749e47",
+]

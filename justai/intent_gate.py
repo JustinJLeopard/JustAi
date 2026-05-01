@@ -14,17 +14,18 @@ Intent types (evidence-based from 10 sprint history):
 Design principle: fast, deterministic classification. Uses LiteLLM
 at localhost:4000 (Gameron → local fallback chain). No external calls.
 """
+
 from __future__ import annotations
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class Intent(str, Enum):
+class Intent(StrEnum):
     EXECUTION = "execution"
     MULTI_STEP = "multi-step"
     RESEARCH = "research"
@@ -34,9 +35,9 @@ class Intent(str, Enum):
 @dataclass
 class IntentResult:
     intent: Intent
-    confidence: float          # 0.0–1.0
-    reasoning: str             # one sentence
-    clarifying_question: str   # non-empty only when intent == AMBIGUOUS
+    confidence: float  # 0.0–1.0
+    reasoning: str  # one sentence
+    clarifying_question: str  # non-empty only when intent == AMBIGUOUS
 
 
 _SYSTEM_PROMPT = """\
@@ -48,7 +49,7 @@ Classify the user's goal into exactly one of these intent types:
                "write tests for the relay board command", "fix the import error")
   multi-step — a goal that requires multiple distinct subtasks in sequence
                (e.g. "build a FastAPI webhook that posts to Discord",
-               "set up SpacetimeDB, write the schema, and add a CLI")
+               "define safe-mini executor policies and add a CLI")
   research   — information gathering with no immediate code output
                (e.g. "what are the tradeoffs of X vs Y", "find examples of Z")
   ambiguous  — the goal is too vague to classify without one clarifying question
@@ -62,28 +63,32 @@ Respond with JSON only, no prose, no markdown fences:
 }
 """
 
-LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+LITELLM_URL = (
+    os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
+)
 INTENT_MODEL = os.environ.get("JUSTAI_INTENT_MODEL", "openai/claude-opus-4-6")
 
 
 def _call_litellm(goal: str) -> dict:
     """Call LiteLLM proxy and return parsed JSON response."""
-    payload = json.dumps({
-        "model": INTENT_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Goal: {goal}"},
-        ],
-        "max_tokens": 200,
-        "temperature": 0.0,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": INTENT_MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": f"Goal: {goal}"},
+            ],
+            "max_tokens": 200,
+            "temperature": 0.0,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{LITELLM_URL}/v1/chat/completions",
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', 'sk-justai')}",
+            "Authorization": f"Bearer {os.environ.get('LITELLM_KEY', '')}",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -105,8 +110,17 @@ def _heuristic_classify(goal: str) -> IntentResult:
     """
     g = goal.lower().strip()
 
-    research_keywords = ["what is", "what are", "explain", "compare", "research",
-                         "find examples", "tradeoffs", "how does", "why does"]
+    research_keywords = [
+        "what is",
+        "what are",
+        "explain",
+        "compare",
+        "research",
+        "find examples",
+        "tradeoffs",
+        "how does",
+        "why does",
+    ]
     if any(g.startswith(k) or f" {k}" in g for k in research_keywords):
         return IntentResult(
             intent=Intent.RESEARCH,
@@ -117,10 +131,24 @@ def _heuristic_classify(goal: str) -> IntentResult:
 
     # Short, specific, single-file or single-concern goals → execution
     word_count = len(goal.split())
-    has_single_target = any(k in g for k in [
-        "add ", "fix ", "update ", "write test", "rename ", "delete ",
-        "move ", "create file", "in ", ".py", ".sh", ".ts", ".rs",
-    ])
+    has_single_target = any(
+        k in g
+        for k in [
+            "add ",
+            "fix ",
+            "update ",
+            "write test",
+            "rename ",
+            "delete ",
+            "move ",
+            "create file",
+            "in ",
+            ".py",
+            ".sh",
+            ".ts",
+            ".rs",
+        ]
+    )
     if word_count <= 20 and has_single_target:
         return IntentResult(
             intent=Intent.EXECUTION,
@@ -175,7 +203,11 @@ def classify(goal: str) -> IntentResult:
 
 if __name__ == "__main__":
     import sys
-    goal = " ".join(sys.argv[1:]) or "Build a FastAPI endpoint that accepts a GitHub webhook and posts to Discord"
+
+    goal = (
+        " ".join(sys.argv[1:])
+        or "Build a FastAPI endpoint that accepts a GitHub webhook and posts to Discord"
+    )
     result = classify(goal)
     print(f"Intent:    {result.intent.value}")
     print(f"Confidence:{result.confidence:.2f}")

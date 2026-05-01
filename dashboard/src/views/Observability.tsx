@@ -23,7 +23,7 @@ const STAGE_COLORS: Record<string, string> = {
   'planner': '#a78bfa',
   'reviewer': '#38bdf8',
   'executor': '#34d399',
-  'delegator': '#34d399',
+  'dispatch': '#34d399',
   'synthesizer': '#fbbf24',
 }
 
