@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Public-facing landing repo at github.com/JustinJLeopard/justai-demo with polished README, screenshots, architecture diagram, OG image, and .github/ scaffolding.
+
+### Changed
+- Dashboard identity rename: `SpacetimeClient` → `RealtimeClient`, `dashboard/src/lib/spacetime.ts` → `realtime.ts`, `dashboard/src/components/Pipeline.tsx` → `ControlPlaneStages.tsx` (PR #2).
+- Page titles, meta descriptions, and Open Graph tags reframed around control-plane / safe-mini / 3-repo identity in `dashboard/index.html` and `dashboard/app.html` (PR #2).
+- README test count corrected: 363 → 370 (post-Phase-4-H reality).
+
 ## [v0.4.0] - 2026-04-30
 
 ### Changed
@@ -20,10 +30,20 @@
 
 ### Fixed
 - Various test references to amputated services (test_orchestrator, test_sprint5, test_sprint7, test_slice2, test_justai_cli).
+- Demo deployment (2026-04-24): `dashboard/index.html` now loads the simulation entry (`/demo/demo-entry.tsx`); was loading the real prod app. The canonical demo URL `justai-demo.vercel.app/` was previously serving the LoginPage with no live backend.
+- Demo deployment (2026-04-24): `useSimulation.initialState()` changed from `{phase:'idle', paused:true}` to `{phase:'planning', paused:false}` — the sprint auto-plays on page load.
+- Demo deployment (2026-04-24): `+ New Run` button in `DemoMissionControl` wired to `controls.replay()` (was a placeholder with no `onClick`).
 
 ### Documentation
 - README and `docs/ARCHITECTURE.md` rewritten around control-plane thesis and the three-repo plan.
 - Historical evidence archived under `docs/archive/`.
+
+### Renamed
+- `dashboard/demo.html` → `dashboard/app.html` (the file at this URL serves the original production dashboard, not the demo).
+
+### Build
+- `dashboard/vercel.json` added with explicit framework/build/cleanUrls config.
+- `vite.config.ts` rollup input keys renamed `main`→`demo` and `demo`→`app` so dist/assets bundle filenames match content.
 
 ### Internal
 - Memory keys: `justai-architecture-decision-mini-swe-agent-control-plane`, `safe-mini-substrate-architecture`, `justai-two-repo-ship-pattern` (note: key name is provisional; content reflects the 3-repo decision).

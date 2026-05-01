@@ -21,6 +21,7 @@ control-plane/tests/__pycache__/
 
 # Tool/plugin configs (per-machine, not project)
 .codex
+.claude-flow/
 .playwright-mcp/
 .serena/
 .superpowers/
@@ -39,3 +40,6 @@ htmlcov/
 
 # Dashboard screenshots (kept locally, not in repo)
 dashboard-*.png
+
+# Claude Code local settings (per-machine, not for repo)
+.claude/

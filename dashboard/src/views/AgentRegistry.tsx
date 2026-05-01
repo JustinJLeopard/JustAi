@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchSwarmStatus, type SwarmStatus } from '@/lib/spacetime'
+import { fetchSwarmStatus, type SwarmStatus } from '@/lib/realtime'
 
 export default function AgentRegistry({ data }: { data: any }) {
   const agents = data?.agents ?? []
