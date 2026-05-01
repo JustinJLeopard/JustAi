@@ -27,6 +27,9 @@ classifiers = [
 
 dependencies = [
     "langfuse>=2.0",
+    # Future Phase A dependency once the substrate repo exists:
+    # "safe-mini @ git+https://github.com/JustinJLeopard/safe-mini.git@<sha>",
+    # Phase B should replace that git URL with a normal version pin.
 ]
 
 [project.optional-dependencies]
