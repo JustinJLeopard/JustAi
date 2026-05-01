@@ -3,11 +3,11 @@
  *
  * Full Mission Control dashboard for the interactive demo.
  * Mirrors the real MissionControl.tsx layout and styling but reads
- * all data from SimulationState instead of live SpacetimeDB / API data.
+ * all data from SimulationState instead of live control-plane API data.
  */
 
 import { useState } from 'react'
-import type { SimulationState, DemoView, DemoTask, PipelineStage, StageStatus } from '../data/types'
+import type { SimulationState, DemoView, DemoTask, ControlPlaneStage, StageStatus } from '../data/types'
 
 // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ function StatCard({
 
 // ── Pipeline Stage Dot ──────────────────────────────────────────────────────
 
-function PipelineStageDot({
+function ControlPlaneStageDot({
   name,
   status,
 }: {
@@ -234,8 +234,8 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
   const costSparkline = [0.001, 0.003, 0.002, 0.005, 0.004, 0.008, state.totalCost].map(v => Math.max(0, v))
   const latencySparkline = [1.2, 2.0, 1.5, 2.5, 1.8, 3.0, state.avgLatency].map(v => Math.max(0, v))
 
-  // Pipeline stages array
-  const pipelineStages: { name: string; key: PipelineStage }[] = [
+  // Control-plane stages array
+  const controlPlaneStages: { name: string; key: ControlPlaneStage }[] = [
     { name: 'Intent', key: 'intent' },
     { name: 'Plan', key: 'plan' },
     { name: 'Execute', key: 'execute' },
@@ -340,17 +340,17 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
           label="Avg Latency"
           value={state.avgLatency > 0 ? `${state.avgLatency.toFixed(1)}s` : '--'}
           color="var(--rose-400)"
-          subText={state.avgLatency > 0 ? 'across pipeline' : 'no data yet'}
+          subText={state.avgLatency > 0 ? 'across control plane' : 'no data yet'}
           sparkline={latencySparkline}
           sparklineColor="var(--rose-400)"
         />
       </div>
 
-      {/* ── Active Pipeline Panel ────────────────────────────────────────── */}
+      {/* ── Active Control Plane Panel ───────────────────────────────────── */}
       <div className="panel panel-pad">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-4)' }}>
           <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-            Active Pipeline
+            Active Control Plane
           </span>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 'var(--sp-1)',
@@ -371,7 +371,7 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
           </div>
         </div>
 
-        {/* Pipeline stages (horizontal) */}
+        {/* Control-plane stages (horizontal) */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -380,18 +380,18 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
           padding: 'var(--sp-5) 0',
           position: 'relative',
         }}>
-          {pipelineStages.map((stage, i) => (
+          {controlPlaneStages.map((stage, i) => (
             <div key={stage.key} style={{ display: 'flex', alignItems: 'center' }}>
-              <PipelineStageDot
+              <ControlPlaneStageDot
                 name={stage.name}
                 status={state.pipeline[stage.key]}
               />
-              {i < pipelineStages.length - 1 && (
+              {i < controlPlaneStages.length - 1 && (
                 <div style={{
                   width: 48,
                   height: 1,
                   background:
-                    state.pipeline[pipelineStages[i + 1].key] !== 'idle'
+                    state.pipeline[controlPlaneStages[i + 1].key] !== 'idle'
                       ? 'var(--emerald-500)'
                       : state.pipeline[stage.key] === 'active' || state.pipeline[stage.key] === 'done'
                         ? 'var(--border-default)'
@@ -511,7 +511,7 @@ export function DemoMissionControl({ state, onNavigate, onNewRun }: DemoMissionC
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 'var(--sp-4)' }}>
             Services
           </div>
-          <ServiceRow name="SpacetimeDB" detail="localhost:3000" ping="ok" />
+          <ServiceRow name="Control-plane API" detail="localhost:3000" ping="ok" />
           <ServiceRow name="LiteLLM" detail="localhost:4000" ping="ok" />
           <ServiceRow name="claude-flow MCP" detail="localhost:3100" ping="ok" />
           <ServiceRow name="LangFuse" detail="localhost:3010" ping="ok" />

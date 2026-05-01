@@ -16,7 +16,7 @@ import type {
   DemoAgent,
   DemoEvent,
   DemoMemoryEntry,
-  PipelineState,
+  ControlPlaneState,
   SimPhase,
   SimulationState,
   SpeedMultiplier,
@@ -46,9 +46,9 @@ function cloneAgents(agents: DemoAgent[]): DemoAgent[] {
   return agents.map(a => ({ ...a }))
 }
 
-// ── Initial pipeline state ───────────────────────────────────────────────────
+// ── Initial control-plane state ──────────────────────────────────────────────
 
-function initialPipeline(): PipelineState {
+function initialPipeline(): ControlPlaneState {
   return {
     intent: 'idle',
     plan: 'idle',

@@ -230,7 +230,7 @@ export type LiveDataCallback = (data: LiveData) => void
 
 const WS_RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000] // exponential backoff
 
-export class ControlPlaneClient {
+export class RealtimeClient {
   private ws: WebSocket | null = null
   private pollIntervalId: ReturnType<typeof setInterval> | null = null
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -393,10 +393,10 @@ export class ControlPlaneClient {
 // ── Legacy Polling Client (kept for backwards compatibility) ─────────────────
 
 export class ControlPlanePoller {
-  private client: ControlPlaneClient
+  private client: RealtimeClient
 
   constructor(cb: LiveDataCallback, sessionRef?: string) {
-    this.client = new ControlPlaneClient(cb, sessionRef)
+    this.client = new RealtimeClient(cb, sessionRef)
   }
 
   start(intervalMs = 3000): void {

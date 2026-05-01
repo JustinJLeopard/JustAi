@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ControlPlaneClient, LiveData, Task } from '@/lib/spacetime'
+import { RealtimeClient, LiveData, Task } from '@/lib/realtime'
 import { Sidebar } from '@/components/Sidebar'
 import type { View } from '@/components/Sidebar'
 import { useKeyboard } from '@/hooks/useKeyboard'
@@ -63,7 +63,7 @@ export default function App() {
 
   useEffect(() => {
     if (auth && !auth.authenticated) return // Don't poll if not authenticated
-    const client = new ControlPlaneClient(handleData)
+    const client = new RealtimeClient(handleData)
     client.start()
     return () => client.stop()
   }, [handleData, auth])
