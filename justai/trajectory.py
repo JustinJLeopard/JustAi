@@ -636,6 +636,11 @@ class TrajectoryMatch:
     similarity: float
     duration: float = 0.0
     tech_stack: list[str] = field(default_factory=list)
+    failure_class: str | None = None
+    execution_evidence: list[dict] = field(default_factory=list)
+    strategy_used: dict | None = None
+    did_next_plan_change: bool | None = None
+    correlation_id: str | None = None
 
 
 def _mcp_call(method: str, params: dict) -> dict:
@@ -670,6 +675,11 @@ class TrajectoryStore:
         outcome: str,
         duration: float = 0.0,
         tech_stack: list[str] | None = None,
+        failure_class: str | None = None,
+        execution_evidence: list[dict] | None = None,
+        strategy_used: dict | None = None,
+        did_next_plan_change: bool | None = None,
+        correlation_id: str | None = None,
     ) -> bool:
         """Store a trajectory outcome for future retrieval."""
         key = f"trajectory/{goal[:50].replace(' ', '-').lower()}-{int(time.time())}"
@@ -680,6 +690,11 @@ class TrajectoryStore:
                 "outcome": outcome,
                 "duration": duration,
                 "tech_stack": tech_stack or [],
+                "failure_class": failure_class,
+                "execution_evidence": execution_evidence or [],
+                "strategy_used": strategy_used,
+                "did_next_plan_change": did_next_plan_change,
+                "correlation_id": correlation_id,
                 "stored_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }
         )
@@ -738,6 +753,11 @@ class TrajectoryStore:
                     similarity=similarity,
                     duration=data.get("duration", 0.0),
                     tech_stack=data.get("tech_stack", []),
+                    failure_class=data.get("failure_class"),
+                    execution_evidence=data.get("execution_evidence", []),
+                    strategy_used=data.get("strategy_used"),
+                    did_next_plan_change=data.get("did_next_plan_change"),
+                    correlation_id=data.get("correlation_id"),
                 )
             )
         matches.sort(key=lambda m: m.similarity, reverse=True)
@@ -753,6 +773,20 @@ class TrajectoryStore:
             lines.append(f"\n--- Trajectory {i + 1} (similarity: {m.similarity:.2f}) ---")
             lines.append(f"Goal: {m.goal}")
             lines.append(f"Outcome: {m.outcome}")
+            if m.failure_class:
+                lines.append(f"Failure class: {m.failure_class}")
+            if m.strategy_used:
+                name = m.strategy_used.get("name", "unknown")
+                outcome = m.strategy_used.get("outcome", "unknown")
+                lines.append(f"Strategy: {name} ({outcome})")
+            if m.did_next_plan_change is not None:
+                lines.append(f"Next plan changed: {m.did_next_plan_change}")
+            if m.execution_evidence:
+                pairs = [
+                    f"{item.get('action_id')} -> {item.get('result_id')}"
+                    for item in m.execution_evidence[:5]
+                ]
+                lines.append(f"Execution evidence: {', '.join(pairs)}")
             lines.append(f"Steps: {' → '.join(m.steps)}")
             if m.tech_stack:
                 lines.append(f"Tech: {', '.join(m.tech_stack)}")

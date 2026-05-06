@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from justai.results import DelegationResult
@@ -118,3 +119,95 @@ class TestRecordRun:
             mock_store.store.side_effect = Exception("MCP down")
             ok = record_run("goal", results, duration=1.0)
         assert ok is False
+
+    def test_records_execution_evidence_from_run_result_actions_and_results(self):
+        """RunResult actions/results produce action_id -> result_id evidence."""
+        from justai.learning import record_run
+
+        action = SimpleNamespace(action_id="act-1", action_type="bash", args={})
+        result = SimpleNamespace(
+            result_id="res-1",
+            action_id="act-1",
+            status="ok",
+            evidence_ref="traj://step/1",
+        )
+        run_result = SimpleNamespace(
+            title="run tests",
+            status="done",
+            actions=[action],
+            results=[result],
+        )
+        with patch("justai.learning._store") as mock_store:
+            mock_store.store.return_value = True
+            record_run("verify feature", [run_result], duration=2.0)
+
+        assert mock_store.store.call_args.kwargs["execution_evidence"] == [
+            {
+                "step": "run tests",
+                "action_id": "act-1",
+                "result_id": "res-1",
+                "evidence_ref": "traj://step/1",
+                "status": "ok",
+            }
+        ]
+
+    def test_derives_timeout_failure_class_from_run_result_records(self):
+        """Nested ResultRecord status has priority over generic top-level failure."""
+        from justai.learning import record_run
+
+        run_result = SimpleNamespace(
+            title="slow command",
+            status="failed",
+            actions=[SimpleNamespace(action_id="act-timeout")],
+            results=[
+                SimpleNamespace(
+                    result_id="res-timeout",
+                    action_id="act-timeout",
+                    status="timeout",
+                    evidence_ref=None,
+                )
+            ],
+        )
+        with patch("justai.learning._store") as mock_store:
+            mock_store.store.return_value = True
+            record_run("run slow thing", [run_result], duration=99.0)
+
+        assert mock_store.store.call_args.kwargs["outcome"] == "failed"
+        assert mock_store.store.call_args.kwargs["failure_class"] == "timeout"
+
+    def test_records_strategy_used_with_explicit_ignored_outcome(self):
+        """Strategy metadata includes catalog choice and accepted/ignored outcome."""
+        from justai.learning import record_run
+
+        with patch("justai.learning._store") as mock_store:
+            mock_store.store.return_value = True
+            record_run(
+                "try risky strategy",
+                [_make_result("bad task", status="failed")],
+                duration=3.0,
+                strategy_used="catalog:fast-path",
+                strategy_outcome="ignored",
+            )
+
+        assert mock_store.store.call_args.kwargs["strategy_used"] == {
+            "name": "catalog:fast-path",
+            "outcome": "ignored",
+        }
+
+    def test_computes_did_next_plan_change_from_focus_and_experiment(self):
+        """Next-plan change is true when focus or next experiment shifts."""
+        from justai.learning import record_run
+
+        with patch("justai.learning._store") as mock_store:
+            mock_store.store.return_value = True
+            record_run(
+                "learn from prior run",
+                [_make_result("task")],
+                duration=1.0,
+                prior_chosen_focus="implementation",
+                chosen_focus="verification",
+                prior_next_experiment="unit-test",
+                next_experiment="browser-test",
+            )
+
+        assert mock_store.store.call_args.kwargs["did_next_plan_change"] is True
