@@ -5,14 +5,27 @@
 
 JustAi is a project-orchestration control-plane for breaking engineering goals into small, reviewable tasks and running them through checkpointed local workflows.
 
+[Live demo](https://justai-demo.vercel.app) · [Case study](https://www.delegateandorchestrate.com/work/justai) · [Portfolio](https://www.delegateandorchestrate.com) · [Safe execution substrate](https://github.com/JustinJLeopard/safe-mini)
+
 ## Status
 
-This repository is in a public stabilization pass after a cleanup and architecture reset.
+JustAi is public as the control-plane layer of a broader agent-infrastructure system. The current split is intentional: keep orchestration, execution safety, evaluation, and experiments auditable as separate surfaces instead of hiding them in one opaque agent repo.
 
 - Current code is the JustAi control-plane layer.
 - The execution substrate is being separated into `safe-mini`.
 - The experiment/calibration driver is being separated into `local-resident`.
 - Some CLI paths still expose transitional behavior while the split finishes.
+
+## Public Proof Path
+
+| Surface | What to inspect |
+| --- | --- |
+| [JustAi demo](https://justai-demo.vercel.app) | Mission-control UI for tasks, routing, trajectories, review quality, and run accounting. |
+| [JustAi case study](https://www.delegateandorchestrate.com/work/justai) | Product framing, system boundaries, and why orchestration needs visible checkpoints. |
+| [`safe-mini`](https://github.com/JustinJLeopard/safe-mini) | Safe local execution substrate for bash-action coding agents. |
+| [`route-mini`](https://github.com/JustinJLeopard/route-mini) | Routing-policy reference implementation for provider/model selection. |
+| [`memory-mini`](https://github.com/JustinJLeopard/memory-mini) | Typed durable memory substrate for agent runs. |
+| [`lab-mini`](https://github.com/JustinJLeopard/lab-mini) | Experiment loop for small, repeatable agent capability checks. |
 
 ## Architecture
 
@@ -124,7 +137,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the fuller control-plane ov
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for responsible disclosure and the documented historical-secret allowlist.
+See [SECURITY.md](SECURITY.md) for responsible disclosure and repository hygiene notes.
 
 ## License
 
