@@ -1,12 +1,14 @@
 import pytest
 
 from justai.runner_protocol import (
+    ActionRecord,
     AgentRunner,
     Budget,
     Chunk,
     ExecutorPolicy,
     FailureClass,
     ObservationPolicy,
+    ResultRecord,
     RunResult,
 )
 from justai.scope_planner import AgentType, RiskLevel, Task
@@ -85,6 +87,66 @@ def test_run_result_defaults_optional_fields():
     assert result.cost_usd == 0.0
     assert result.tokens_used == 0
     assert result.latency_seconds == 0.0
+    assert result.actions == []
+    assert result.results == []
+
+
+def test_run_result_carries_action_and_result_records():
+    chunk = Chunk(
+        goal="Verify action evidence",
+        success_criteria="python -m pytest tests/test_runner_protocol.py",
+        budget=Budget(move_budget=2, observation_budget=1000),
+    )
+    action = ActionRecord.create("bash", {"command": "pytest"})
+    result_record = ResultRecord.create(
+        action.action_id,
+        "ok",
+        evidence_ref="/tmp/action-1.json",
+    )
+
+    result = RunResult(
+        chunk=chunk,
+        success=True,
+        steps_used=1,
+        final_diff="",
+        transcript_path="/tmp/run.txt",
+        actions=[action],
+        results=[result_record],
+    )
+
+    assert result.actions == [action]
+    assert result.results == [result_record]
+    assert result.results[0].action_id == result.actions[0].action_id
+    assert result.results[0].status == "ok"
+    assert result.results[0].evidence_ref == "/tmp/action-1.json"
+
+
+def test_every_action_lands_matching_result_or_timeout_result():
+    chunk = Chunk(
+        goal="Verify every action has explicit evidence closure",
+        success_criteria="python -m pytest tests/test_runner_protocol.py",
+        budget=Budget(move_budget=3, observation_budget=1000),
+    )
+    completed = ActionRecord.create("bash", {"command": "pytest"})
+    timed_out = ActionRecord.create("bash", {"command": "sleep 999"})
+    result = RunResult(
+        chunk=chunk,
+        success=False,
+        steps_used=2,
+        final_diff="",
+        transcript_path="/tmp/run.txt",
+        actions=[completed, timed_out],
+        results=[
+            ResultRecord.create(completed.action_id, "ok", evidence_ref="/tmp/completed.json"),
+            ResultRecord.create(timed_out.action_id, "timeout", evidence_ref="/tmp/timeout.json"),
+        ],
+    )
+
+    result_by_action_id = {record.action_id: record for record in result.results}
+
+    assert set(result_by_action_id) == {action.action_id for action in result.actions}
+    assert result_by_action_id[completed.action_id].status == "ok"
+    assert result_by_action_id[timed_out.action_id].status == "timeout"
 
 
 def test_agent_runner_protocol_runtime_checkable_by_duck_typing():
