@@ -24,9 +24,11 @@ learning aggregation, etc.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
+from uuid import UUID, uuid4
 
 
 # -- Failure taxonomy (7-class) ---------------------------------------------
@@ -93,6 +95,60 @@ class Chunk:
             raise TypeError("Chunk.budget must be a Budget")
 
 
+# -- Action evidence -----------------------------------------------------------
+@dataclass
+class ActionRecord:
+    """A substrate action emitted during a run."""
+
+    action_id: UUID
+    action_type: str
+    args: dict
+    issued_at: datetime
+
+    @classmethod
+    def create(
+        cls,
+        action_type: str,
+        args: dict | None = None,
+        *,
+        issued_at: datetime | None = None,
+    ) -> "ActionRecord":
+        return cls(
+            action_id=uuid4(),
+            action_type=action_type,
+            args=args or {},
+            issued_at=issued_at or datetime.now(timezone.utc),
+        )
+
+
+@dataclass
+class ResultRecord:
+    """A substrate result correlated to an emitted action."""
+
+    result_id: UUID
+    action_id: UUID
+    status: Literal["ok", "fail", "timeout"]
+    evidence_ref: str | None
+    finished_at: datetime
+
+    @classmethod
+    def create(
+        cls,
+        action_id: UUID,
+        status: Literal["ok", "fail", "timeout"],
+        *,
+        evidence_ref: str | None = None,
+        finished_at: datetime | None = None,
+    ) -> "ResultRecord":
+        return cls(
+            result_id=uuid4(),
+            action_id=action_id,
+            status=status,
+            evidence_ref=evidence_ref,
+            finished_at=finished_at or datetime.now(timezone.utc),
+        )
+
+
 # -- Run result --------------------------------------------------------------
 @dataclass
 class RunResult:
@@ -112,6 +168,8 @@ class RunResult:
     cost_usd: float = 0.0
     tokens_used: int = 0
     latency_seconds: float = 0.0
+    actions: list[ActionRecord] = field(default_factory=list)
+    results: list[ResultRecord] = field(default_factory=list)
 
 
 # -- The dispatch contract ---------------------------------------------------
