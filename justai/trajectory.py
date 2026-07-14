@@ -191,7 +191,7 @@ def _list_trajectory_files_in_directory(directory_fd: int, prefix: str = "") -> 
             continue
         try:
             fd = _open_regular_file(name, dir_fd=directory_fd)
-        except FileNotFoundError:
+        except (FileNotFoundError, RuntimeError):
             continue
         try:
             st = os.fstat(fd)
@@ -210,13 +210,13 @@ def list_trajectory_files() -> list[dict]:
     """List all .traj.json files with metadata."""
     try:
         root_fd = _open_directory(_traj_dir().resolve())
-    except FileNotFoundError:
+    except (FileNotFoundError, RuntimeError):
         return []
     try:
         files = _list_trajectory_files_in_directory(root_fd)
         try:
             relay_fd = _open_directory("relay_dispatch", dir_fd=root_fd)
-        except FileNotFoundError:
+        except (FileNotFoundError, RuntimeError):
             relay_fd = None
         if relay_fd is not None:
             try:

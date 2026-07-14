@@ -281,6 +281,26 @@ class TestTrajectoryPathContainment(unittest.TestCase):
 
         assert names == {"visible.traj.json"}
 
+    def test_patterns_fail_closed_when_secure_open_is_unavailable(self):
+        from justai.trajectory import get_patterns, list_trajectory_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "trajectories"
+            root.mkdir()
+            (root / "visible.traj.json").write_text('{"messages": []}')
+
+            with (
+                patch("justai.trajectory.TRAJ_DIR", root),
+                patch("justai.trajectory._open_directory", side_effect=RuntimeError("unsupported")),
+                patch("justai.trajectory._patterns_cache", {}),
+                patch("justai.trajectory._patterns_cache_ts", 0.0),
+            ):
+                assert list_trajectory_files() == []
+                patterns = get_patterns()
+
+        assert patterns["total_trajectories"] == 0
+        assert patterns["success_rate"] == 0.0
+
 
 # ── Heuristic Analysis Tests ────────────────────────────────────────────────
 
