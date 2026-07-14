@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import time
 import urllib.error
 import urllib.request
@@ -107,39 +108,135 @@ def _traj_dir() -> Path:
     return Path(val)
 
 
+def _safe_trajectory_parts(filename: str) -> tuple[str, ...]:
+    """Validate a relative trajectory path before opening it by descriptor."""
+    if not isinstance(filename, str) or "\x00" in filename:
+        raise FileNotFoundError(f"Trajectory not found: {filename}")
+    path = Path(filename)
+    parts = path.parts
+    if (
+        path.is_absolute()
+        or not parts
+        or any(part in (os.curdir, os.pardir) for part in parts)
+        or not parts[-1].endswith(".traj.json")
+    ):
+        raise FileNotFoundError(f"Trajectory not found: {filename}")
+    return parts
+
+
+def _secure_open_flags(*, directory: bool = False) -> int:
+    """Return fail-closed descriptor flags for attacker-writable trajectory trees."""
+    if (
+        os.open not in os.supports_dir_fd
+        or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_NONBLOCK")
+    ):
+        raise RuntimeError("Secure trajectory file access is unavailable on this platform")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    if directory:
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    return flags
+
+
+def _open_directory(name: str | Path, *, dir_fd: int | None = None) -> int:
+    """Open a real directory without following a final symlink."""
+    try:
+        fd = os.open(name, _secure_open_flags(directory=True), dir_fd=dir_fd)
+    except OSError as exc:
+        raise FileNotFoundError(f"Trajectory directory not found: {name}") from exc
+    try:
+        if not stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise FileNotFoundError(f"Trajectory directory not found: {name}")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _open_regular_file(name: str, *, dir_fd: int) -> int:
+    """Open a real file without following a final symlink."""
+    try:
+        fd = os.open(name, _secure_open_flags(), dir_fd=dir_fd)
+    except OSError as exc:
+        raise FileNotFoundError(f"Trajectory not found: {name}") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise FileNotFoundError(f"Trajectory not found: {name}")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _open_trajectory_file(filename: str) -> int:
+    """Open a trajectory through no-follow directory descriptors."""
+    parts = _safe_trajectory_parts(filename)
+    root_fd = _open_directory(_traj_dir().resolve())
+    current_fd = root_fd
+    try:
+        for part in parts[:-1]:
+            next_fd = _open_directory(part, dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+        return _open_regular_file(parts[-1], dir_fd=current_fd)
+    finally:
+        os.close(current_fd)
+
+
+def _list_trajectory_files_in_directory(directory_fd: int, prefix: str = "") -> list[dict]:
+    """Read metadata from real directory entries without following symlinks."""
+    files = []
+    for name in os.listdir(directory_fd):
+        if not name.endswith(".traj.json"):
+            continue
+        try:
+            fd = _open_regular_file(name, dir_fd=directory_fd)
+        except FileNotFoundError:
+            continue
+        try:
+            st = os.fstat(fd)
+            files.append(
+                {
+                    "name": str(Path(prefix) / name) if prefix else name,
+                    "size": st.st_size,
+                    "mtime": st.st_mtime,
+                }
+            )
+        finally:
+            os.close(fd)
+    return files
+
 def list_trajectory_files() -> list[dict]:
     """List all .traj.json files with metadata."""
-    files: list[dict[str, str | int | float]] = []
-    traj_dir = _traj_dir()
-    dirs = [traj_dir]
-    relay_sub = traj_dir / "relay_dispatch"
-    if relay_sub.exists():
-        dirs.append(relay_sub)
-
-    for d in dirs:
-        if not d.exists():
-            continue
-        for f in d.iterdir():
-            if f.suffix == ".json" and ".traj" in f.name:
-                st = f.stat()
-                rel = str(f.relative_to(traj_dir))
-                files.append(
-                    {
-                        "name": rel,
-                        "size": st.st_size,
-                        "mtime": st.st_mtime,
-                    }
-                )
+    try:
+        root_fd = _open_directory(_traj_dir().resolve())
+    except FileNotFoundError:
+        return []
+    try:
+        files = _list_trajectory_files_in_directory(root_fd)
+        try:
+            relay_fd = _open_directory("relay_dispatch", dir_fd=root_fd)
+        except FileNotFoundError:
+            relay_fd = None
+        if relay_fd is not None:
+            try:
+                files.extend(_list_trajectory_files_in_directory(relay_fd, "relay_dispatch"))
+            finally:
+                os.close(relay_fd)
+    finally:
+        os.close(root_fd)
     files.sort(key=lambda x: x["mtime"] if isinstance(x["mtime"], float) else 0.0, reverse=True)
     return files
 
 
 def load_trajectory(filename: str) -> dict:
     """Load and parse a .traj.json file."""
-    fp = _traj_dir() / filename
-    if not fp.exists() or not fp.name.endswith(".json"):
-        raise FileNotFoundError(f"Trajectory not found: {filename}")
-    return json.loads(fp.read_text())
+    try:
+        fd = _open_trajectory_file(filename)
+    except (OSError, RuntimeError) as exc:
+        raise FileNotFoundError(f"Trajectory not found: {filename}") from exc
+    with os.fdopen(fd, encoding="utf-8") as fp:
+        return json.load(fp)
 
 
 def parse_steps(traj: dict) -> list[TrajStep]:

@@ -144,6 +144,144 @@ class TestTrajectoryModule(unittest.TestCase):
         assert any("performing well" in s for s in suggestions)
 
 
+class TestTrajectoryPathContainment(unittest.TestCase):
+    def test_load_allows_nested_relay_trajectory(self):
+        from justai.trajectory import load_trajectory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "trajectories"
+            relay = root / "relay_dispatch"
+            relay.mkdir(parents=True)
+            payload = {"messages": []}
+            (relay / "nested.traj.json").write_text(json.dumps(payload))
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                assert load_trajectory("relay_dispatch/nested.traj.json") == payload
+
+    def test_load_rejects_parent_traversal(self):
+        from justai.trajectory import load_trajectory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            (base / "outside.traj.json").write_text('{"messages": []}')
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                with self.assertRaises(FileNotFoundError):
+                    load_trajectory("../outside.traj.json")
+
+    def test_load_rejects_absolute_path(self):
+        from justai.trajectory import load_trajectory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            outside = base / "outside.traj.json"
+            outside.write_text('{"messages": []}')
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                with self.assertRaises(FileNotFoundError):
+                    load_trajectory(str(outside))
+
+    def test_load_rejects_symlink_escape(self):
+        from justai.trajectory import load_trajectory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            outside = base / "outside.traj.json"
+            outside.write_text('{"messages": []}')
+            link = root / "linked.traj.json"
+            try:
+                link.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                with self.assertRaises(FileNotFoundError):
+                    load_trajectory(link.name)
+
+    def test_load_rejects_fifo_without_blocking(self):
+        from justai.trajectory import load_trajectory
+
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("FIFOs unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "trajectories"
+            root.mkdir()
+            fifo = root / "blocked.traj.json"
+            os.mkfifo(fifo)
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                with self.assertRaises(FileNotFoundError):
+                    load_trajectory(fifo.name)
+
+    def test_load_keeps_open_file_after_symlink_swap(self):
+        from justai.trajectory import load_trajectory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            safe = root / "safe.traj.json"
+            safe_payload = {"messages": [{"content": "safe"}]}
+            safe.write_text(json.dumps(safe_payload))
+            outside = base / "outside.traj.json"
+            outside.write_text('{"messages": [{"content": "outside"}]}')
+            original_fdopen = os.fdopen
+
+            def swap_then_open(fd, *args, **kwargs):
+                safe.unlink()
+                safe.symlink_to(outside)
+                return original_fdopen(fd, *args, **kwargs)
+
+            with patch("justai.trajectory.TRAJ_DIR", root), patch(
+                "justai.trajectory.os.fdopen", side_effect=swap_then_open
+            ):
+                assert load_trajectory(safe.name) == safe_payload
+
+    def test_list_allows_real_nested_relay_trajectory(self):
+        from justai.trajectory import list_trajectory_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "trajectories"
+            relay = root / "relay_dispatch"
+            relay.mkdir(parents=True)
+            (relay / "nested.traj.json").write_text('{"messages": []}')
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                names = {entry["name"] for entry in list_trajectory_files()}
+
+        assert names == {str(pathlib.Path("relay_dispatch") / "nested.traj.json")}
+
+    def test_list_ignores_symlinked_files_and_relay_directory(self):
+        from justai.trajectory import list_trajectory_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            (root / "visible.traj.json").write_text('{"messages": []}')
+            outside_file = base / "outside.traj.json"
+            outside_file.write_text('{"messages": []}')
+            outside_dir = base / "outside"
+            outside_dir.mkdir()
+            (outside_dir / "hidden.traj.json").write_text('{"messages": []}')
+            try:
+                (root / "linked.traj.json").symlink_to(outside_file)
+                (root / "relay_dispatch").symlink_to(outside_dir, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                names = {entry["name"] for entry in list_trajectory_files()}
+
+        assert names == {"visible.traj.json"}
+
+
 # ── Heuristic Analysis Tests ────────────────────────────────────────────────
 
 
@@ -302,6 +440,28 @@ class TestTrajectoryAPI(unittest.TestCase):
         handler._json = lambda data, status=200: responses.append((data, status))
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"JUSTAI_TRAJ_DIR": tmp}):
             handler.do_GET()
+
+        assert len(responses) == 1
+        data, _ = responses[0]
+        assert "error" in data
+
+    def test_api_audit_rejects_parent_traversal(self):
+        from justai.api import APIHandler
+
+        handler = APIHandler.__new__(APIHandler)
+        handler.path = "/api/trajectory/../outside.traj.json/audit"
+        handler.headers = {}
+
+        responses = []
+        handler._json = lambda data, status=200: responses.append((data, status))
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            root = base / "trajectories"
+            root.mkdir()
+            (base / "outside.traj.json").write_text('{"messages": []}')
+
+            with patch("justai.trajectory.TRAJ_DIR", root):
+                handler.do_GET()
 
         assert len(responses) == 1
         data, _ = responses[0]
