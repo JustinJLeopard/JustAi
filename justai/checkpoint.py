@@ -12,11 +12,17 @@ Bother the human only when genuinely necessary. R2 and R3 are rare.
   R2 — hard gate, wait for explicit approval (Discord or dashboard)
   R3 — blocked, operator must manually unlock before anything proceeds
 
-AUTO MODE (JUSTAI_AUTO_MODE=1 or --auto):
+AUTO MODE (--auto, or JUSTAI_AUTO_MODE=1 for a caller that does not pass one):
   R0 → proceed immediately (no change)
   R1 → proceed immediately (skip the 60s wait)
   R2 → still requires explicit approval
   R3 → still blocked
+
+Auto mode is a property of one run, not of the process. :func:`evaluate` takes
+it as an argument so a caller that has the answer says so; the environment is
+only consulted when nobody did. Deriving it from process-global state let a
+single ``--auto`` run disable the R1 operator veto for every later run in the
+same interpreter — the API server shares one across all requests.
 
 Discord integration: posts to DISCORD_RELAY_CHANNEL_ID if token is set.
 If Discord is not configured, R1 auto-proceeds silently, R2/R3 block
@@ -39,7 +45,13 @@ GATE_SIGNAL_DIR = Path(os.environ.get("JUSTAI_RUNTIME_ROOT", "/tmp/justai")) / "
 
 
 def _is_auto_mode() -> bool:
-    """Check if auto mode is enabled (skip R1 waits)."""
+    """Read auto mode from the environment.
+
+    This is the fallback for a caller that has no per-run answer to give — a
+    direct ``evaluate`` call, or a shell that exported ``JUSTAI_AUTO_MODE``. A
+    caller that knows passes ``auto=`` instead, and nothing writes this
+    variable: a run's mode must not outlive the run.
+    """
     return os.environ.get("JUSTAI_AUTO_MODE", "").lower() in ("1", "true", "yes")
 
 
@@ -94,7 +106,7 @@ def _read_gate(task_id: str) -> dict | None:
     return None
 
 
-def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
+def evaluate(task: Task, task_id: str = "unknown", auto: bool | None = None) -> tuple[bool, str]:
     """
     Evaluate whether a task should proceed given its risk level.
 
@@ -105,8 +117,17 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
          In auto mode: (True, "R1 auto-approved (auto mode)") — no wait
     R2 → block until gate file written with status=approved
     R3 → always (False, "blocked — operator must manually unlock")
+
+    Args:
+        task: The task whose risk level gates it.
+        task_id: Identifies this task's gate file.
+        auto: This run's auto-mode decision. ``None`` means the caller has none
+            and the environment answers. Pass it explicitly rather than
+            exporting it: one run's mode must not decide another's, and R1 is
+            where the operator's veto lives.
     """
     risk = task.risk
+    auto_mode = _is_auto_mode() if auto is None else auto
 
     # R0: no gate
     if risk == RiskLevel.R0:
@@ -114,7 +135,7 @@ def evaluate(task: Task, task_id: str = "unknown") -> tuple[bool, str]:
 
     # R1: notify and auto-proceed after timeout (or immediately in auto mode)
     if risk == RiskLevel.R1:
-        if _is_auto_mode():
+        if auto_mode:
             return True, "R1 auto-approved (auto mode)"
 
         msg = (

@@ -75,12 +75,17 @@ def check_litellm() -> ServiceStatus:
 
 
 def check_safe_mini_boundary() -> ServiceStatus:
-    """Check the planned safe-mini boundary is represented by the local stub."""
+    """Report whether a concrete safe-mini runner is integrated."""
     try:
         from justai.runner_protocol import AgentRunner
 
         _ = AgentRunner
-        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "stub available")
+        return ServiceStatus(
+            "safe-mini boundary",
+            "justai.runner_protocol",
+            False,
+            "protocol present; concrete runner not integrated",
+        )
     except Exception as e:
         return ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, str(e)[:120])
 
@@ -139,14 +144,91 @@ def preflight() -> list[ServiceStatus]:
     return [check_litellm(), check_safe_mini_boundary(), check_memory()]
 
 
+#: The probe that gates model-backed planning. Without it the planner and
+#: reviewer fall back to heuristics, so planning degrades but stays usable.
+PLANNING_SERVICE = "LiteLLM"
+
+#: The probe that gates task execution. No concrete runner is integrated, so
+#: this is currently always down — which is the honest reading, not a bug.
+EXECUTION_SERVICE = "safe-mini boundary"
+
+
+@dataclass
+class Readiness:
+    """What the control plane can actually do right now.
+
+    Readiness is deliberately not one bit. Collapsing it lets a caller read
+    "planning works" as "the whole system works" — which is how `justai status`
+    came to exit 0 while the execution probe was down and the API's own
+    ``all_ok`` was false.
+    """
+
+    statuses: list[ServiceStatus]
+    planning_ready: bool
+    execution_ready: bool
+    all_ok: bool
+
+
+def readiness(statuses: list[ServiceStatus] | None = None) -> Readiness:
+    """Derive explicit readiness from probe results.
+
+    Args:
+        statuses: probe results; runs :func:`preflight` when omitted.
+    """
+    statuses = list(statuses) if statuses is not None else preflight()
+    by_name = {s.name: s for s in statuses}
+    planning = by_name.get(PLANNING_SERVICE)
+    execution = by_name.get(EXECUTION_SERVICE)
+
+    return Readiness(
+        statuses=statuses,
+        planning_ready=bool(planning and planning.ok),
+        execution_ready=bool(execution and execution.ok),
+        # An empty probe set is not evidence of health. `all(())` is True, and
+        # that default would report a system nobody checked as fully ready.
+        all_ok=bool(statuses) and all(s.ok for s in statuses),
+    )
+
+
 def print_preflight(statuses: list[ServiceStatus]) -> bool:
-    """Print preflight results. Returns True if all critical services are up."""
+    """Print preflight results. Returns whether *planning* can proceed.
+
+    This is the orchestrator's question — "can the planner reach a model, or
+    must it fall back to heuristics?" — and not a verdict on the whole system.
+    Use :func:`readiness` for that.
+    """
     print("  Service preflight:")
     all_ok = True
     for s in statuses:
         icon = "✓" if s.ok else "✗"
         print(f"    {icon} {s.name:<20} {s.url:<35} {s.detail}")
-        if not s.ok and s.name == "LiteLLM":
+        if not s.ok and s.name == PLANNING_SERVICE:
             all_ok = False  # LiteLLM is critical — planner/reviewer need it
     print()
     return all_ok
+
+
+def print_readiness(r: Readiness) -> None:
+    """Print probe results followed by an explicit capability breakdown."""
+    print_preflight(r.statuses)
+    print("  Readiness:")
+    print(
+        f"    planning   {'ready' if r.planning_ready else 'degraded':<12}"
+        + (
+            "model-backed planning available"
+            if r.planning_ready
+            else "model routing unreachable; `justai plan` falls back to heuristics"
+        )
+    )
+    print(
+        f"    execution  {'ready' if r.execution_ready else 'unavailable':<12}"
+        + (
+            "an execution backend is integrated"
+            if r.execution_ready
+            else "no concrete runner is integrated; `justai run` fails closed"
+        )
+    )
+    print(
+        f"    overall    {'ready' if r.all_ok else 'not ready':<12}exit 0 requires every probe ok"
+    )
+    print()

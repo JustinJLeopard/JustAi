@@ -14,6 +14,11 @@ export interface ServiceHealth {
 
 export interface HealthData {
   services: ServiceHealth[]
+  /** Model routing is reachable, so planning is model-backed rather than heuristic. */
+  planning_ready: boolean
+  /** An execution backend is integrated. False while `justai run` fails closed. */
+  execution_ready: boolean
+  /** Every probe is up. Matches the derivation `justai status` exits on. */
   all_ok: boolean
   timestamp: number
 }

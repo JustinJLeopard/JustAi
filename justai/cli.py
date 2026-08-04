@@ -22,6 +22,7 @@ import argparse
 import sys
 
 from justai import __version__
+from justai.exit_codes import FAILED, NOT_READY, OK, for_run_status
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -32,12 +33,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not goal:
         print("Error: no goal provided.")
         print('Usage: justai run "your goal here"')
-        return 1
+        return FAILED
 
     result = run(
         goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False)
     )
-    return 0 if result.status in ("complete", "ambiguous") else 1
+    # An ambiguous goal exits nonzero. Nothing was planned and nothing ran, so
+    # 0 would tell a script the work happened. See justai/exit_codes.py.
+    return for_run_status(result.status)
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -47,24 +50,30 @@ def cmd_plan(args: argparse.Namespace) -> int:
     goal = " ".join(args.goal)
     if not goal:
         print("Error: no goal provided.")
-        return 1
+        return FAILED
 
     print(f"Planning: {goal}")
     print()
     plan = decompose(goal, session_ref=args.session)
     print(format_plan(plan))
     print(f"{len(plan.tasks)} task(s) ready for execution.")
-    return 0
+    return OK
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Check service health."""
-    from justai.health import preflight, print_preflight
+    """Report control-plane readiness.
+
+    Exits 0 only when every probe is ok — the same derivation the API's
+    ``/health`` endpoint reports as ``all_ok``. The two used to disagree:
+    status exited 0 whenever model routing was reachable, so a shell chain saw
+    a healthy control plane while the dashboard showed it unable to execute.
+    """
+    from justai.health import print_readiness, readiness
 
     print("JustAi Service Status")
     print("=" * 60)
-    statuses = preflight()
-    all_ok = print_preflight(statuses)
+    r = readiness()
+    print_readiness(r)
 
     # Also check if memory has data
     from justai.memory import Memory
@@ -77,7 +86,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     except Exception:
         print("  Memory: unavailable")
 
-    return 0 if all_ok else 1
+    return OK if r.all_ok else NOT_READY
 
 
 def cmd_history(args: argparse.Namespace) -> int:
@@ -89,13 +98,13 @@ def cmd_history(args: argparse.Namespace) -> int:
         keys = mem.list_keys()
     except Exception:
         print("Memory service unavailable. Start claude-flow MCP first.")
-        return 1
+        return FAILED
 
     run_keys = sorted([k for k in keys if k.startswith("justai/runs/")], reverse=True)
 
     if not run_keys:
         print("No run history found.")
-        return 0
+        return OK
 
     limit = args.limit
     print(f"Recent runs (showing {min(limit, len(run_keys))} of {len(run_keys)}):")
@@ -107,13 +116,13 @@ def cmd_history(args: argparse.Namespace) -> int:
                 print(f"  {key.split('/')[-1]}: {value}")
         except Exception:
             print(f"  {key}: <read error>")
-    return 0
+    return OK
 
 
 def cmd_version(args: argparse.Namespace) -> int:
     """Print version."""
     print(f"justai {__version__}")
-    return 0
+    return OK
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,7 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto", action="store_true", help="Auto-approve R1 checkpoints (no 60s wait)"
     )
     p_run.add_argument(
-        "--local", action="store_true", help="Execute tasks locally instead of delegating to agent"
+        "--local",
+        action="store_true",
+        help="Request local execution (currently fails closed until safe-mini is wired)",
     )
     p_run.add_argument("--session", default="", help="Session reference for tracing")
     p_run.set_defaults(func=cmd_run)
@@ -170,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.command:
         parser.print_help()
-        return 0
+        return OK
 
     return args.func(args)
 

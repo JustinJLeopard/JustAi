@@ -176,7 +176,7 @@ class TestReadme(unittest.TestCase):
 
 
 class TestE2ESmokeLocal(unittest.TestCase):
-    """Smoke test: full pipeline with mocked LLM, local execution."""
+    """Smoke test: the unwired local backend fails closed."""
 
     def test_full_pipeline_smoke(self):
         from justai.intent_gate import Intent, IntentResult
@@ -205,8 +205,11 @@ class TestE2ESmokeLocal(unittest.TestCase):
                 ):
                     result = run("smoke test", session_ref="v1-smoke", auto=True, local=True)
 
-        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.status, "failed")
         self.assertEqual(result.intent, "execution")
+        self.assertEqual(len(result.results), 1)
+        self.assertEqual(result.results[0].status, "error")
+        self.assertIn("Local execution backend is unavailable", result.results[0].result)
         self.assertGreater(result.duration_seconds, 0)
 
 

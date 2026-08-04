@@ -22,7 +22,7 @@ JustAi control plane
   - synthesize results and memory
         |
         v
-safe-mini substrate (planned separate repo)
+safe-mini substrate (separate repo; not yet wired here)
   - mini-style bash-action loop
   - worktree isolation
   - env scrubbing
@@ -53,7 +53,7 @@ The long-term job of this layer is to predict both budgets:
 
 ### 2. Substrate
 
-Substrate lives in safe-mini once that repo is stood up.
+Substrate lives in the separate safe-mini repository. JustAi does not yet import or invoke it.
 
 The substrate is the load-bearing runtime around a mini-swe-agent-style loop:
 
@@ -92,7 +92,7 @@ Planned ship sequence:
 
 - Phase A: consumers pin `safe-mini @ git+https://github.com/JustinJLeopard/safe-mini.git@...`.
 - Phase B: safe-mini publishes to PyPI and consumers use a version pin.
-- Current state: the safe-mini repo does not exist yet. Stand-up is post-JustAi-closure work.
+- Current state: the safe-mini repo exists and has its own validation evidence, but JustAi has no pinned dependency or concrete runner integration. The local and delegated execution modes therefore fail closed.
 
 ## Current Repo Layout
 
@@ -125,9 +125,11 @@ justai/
 Important boundaries:
 
 - `scope_planner.py` owns task decomposition and task data shapes for the current repo.
-- `agent_dispatch.py` is transitional. Local mode runs verification commands; removed backends return explicit errors.
-- `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates.
-- `results.py`, `trajectory.py`, and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
+- `agent_dispatch.py` is transitional. Local, delegated, and swarm modes return explicit unavailable-backend errors; planner-authored success criteria are not executed as task completion. `escalate_plan` returns one result per planned task at its original position, so `depends_on` indices stay meaningful; a dependency that cannot name an earlier task fails the task closed instead of dispatching it. The standalone `AgentDispatchPipeline` experiment is quarantined and its `run` raises — it held generated code as strings and never materialized it, so its test run described the launching checkout rather than anything it produced.
+- `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates. A blocked task keeps its position in the plan and is passed to dispatch as blocked, rather than being filtered out.
+- `results.py` owns the canonical status vocabulary and the single run verdict. `synthesizer.py` and `learning.py` both read it, so the run summary and the stored trajectory cannot disagree about what succeeded. Only a nonempty result set in which every task reported `done` is `complete`; an unrecognised status raises instead of falling through to a non-failure bucket.
+- `exit_codes.py` documents the process exit codes. 0 means verified complete; an ambiguous goal exits `CLARIFICATION_REQUIRED`, and `justai status` exits `NOT_READY` on the same derivation the API reports as `all_ok`.
+- `trajectory.py` and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
 - `memory.py` is integration glue with the surrounding development memory system.
 
 ## Failure Taxonomy
@@ -165,13 +167,14 @@ justai run --auto --local "goal"
   -> scope_planner.decompose
   -> reviewer.review_plan
   -> checkpoint.evaluate
-  -> agent_dispatch.escalate_plan(mode="local")
-  -> verification command per task
-  -> synthesizer.synthesize
+  -> agent_dispatch.escalate_plan(mode="local", blocked_indices=<checkpoint blocks>)
+  -> explicit unavailable-backend results
+  -> synthesizer.synthesize(status="failed")
   -> trajectory / ledger / memory best-effort writes
+  -> exit_codes.for_run_status("failed") -> exit 1
 ```
 
-Default delegated mode is intentionally not a live backend right now. It returns an explicit removed-backend error and tells the caller to use local mode.
+No execution mode is a live backend right now. Local mode stays exposed only as a transitional compatibility surface and fails closed until exact-pinned safe-mini execution plus goal-bound artifact acceptance are integrated.
 
 ## Current Boundary
 
@@ -185,7 +188,7 @@ Historical sprint-era designs now live under `docs/archive/` when they are still
 
 ## Migration Plan
 
-When safe-mini is stood up, move or re-author these pieces there:
+When JustAi integrates safe-mini, remove or replace the remaining local placeholders and bind these pieces to the substrate's public API:
 
 - runner loop and action protocol
 - executor policy types

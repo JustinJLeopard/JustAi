@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 from justai.auth import AuthManager
 from justai.discord import is_configured as discord_configured
 from justai.discord import notify as discord_notify
-from justai.health import preflight
+from justai.health import preflight, readiness
 from justai.ledger import Ledger
 from justai.memory import Memory
 from justai.tracing import get_aggregated_metrics
@@ -51,12 +51,15 @@ _run_lock = threading.Lock()
 
 
 def _get_health() -> dict:
-    statuses = preflight()
+    """Report readiness using the same derivation `justai status` exits on."""
+    r = readiness(preflight())
     return {
         "services": [
-            {"name": s.name, "url": s.url, "ok": s.ok, "detail": s.detail} for s in statuses
+            {"name": s.name, "url": s.url, "ok": s.ok, "detail": s.detail} for s in r.statuses
         ],
-        "all_ok": all(s.ok for s in statuses),
+        "planning_ready": r.planning_ready,
+        "execution_ready": r.execution_ready,
+        "all_ok": r.all_ok,
         "timestamp": time.time(),
     }
 

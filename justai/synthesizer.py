@@ -13,6 +13,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from justai.memory import Memory
+from justai.results import WITHHELD_STATUSES, tally
 
 _memory = Memory()
 
@@ -25,9 +26,10 @@ class RunSummary:
     done: int
     failed: int
     skipped: int
+    blocked: int
     duration_seconds: float
     session_ref: str
-    status: str  # "complete" | "partial" | "failed"
+    status: str  # "complete" | "partial" | "blocked" | "failed"
     details: list[dict]
 
 
@@ -41,20 +43,19 @@ def synthesize(
     """
     Aggregate results and produce a run summary.
 
+    The verdict comes from :func:`justai.results.tally`, which is also what the
+    learning layer reads — the two used to derive success independently and
+    disagreed. It raises on a status outside the canonical vocabulary rather
+    than letting an unrecognised string fall through to a non-failure bucket.
+
     Args:
         results: list of DelegationResult or ExecResult objects
-    """
-    done = sum(1 for r in results if r.status == "done")
-    failed = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
-    skipped = sum(1 for r in results if r.status == "skipped")
-    total = len(results)
 
-    if failed == 0 and skipped == 0:
-        status = "complete"
-    elif done > 0:
-        status = "partial"
-    else:
-        status = "failed"
+    Raises:
+        ValueError: a result carries a status the vocabulary does not define.
+    """
+    counts = tally(results)
+    status = counts.run_status
 
     details = []
     for r in results:
@@ -71,10 +72,11 @@ def synthesize(
     summary = RunSummary(
         goal=goal,
         intent=intent,
-        total_tasks=total,
-        done=done,
-        failed=failed,
-        skipped=skipped,
+        total_tasks=counts.total,
+        done=counts.done,
+        failed=counts.failed,
+        skipped=counts.skipped,
+        blocked=counts.blocked,
         duration_seconds=duration,
         session_ref=session_ref,
         status=status,
@@ -93,6 +95,7 @@ def _store_summary(s: RunSummary) -> None:
     value = (
         f"goal={s.goal[:80]} | intent={s.intent} | "
         f"tasks={s.total_tasks} | done={s.done} | failed={s.failed} | "
+        f"skipped={s.skipped} | blocked={s.blocked} | "
         f"duration={s.duration_seconds:.0f}s | session={s.session_ref} | "
         f"status={s.status}"
     )
@@ -113,14 +116,14 @@ def format_summary(s: RunSummary) -> str:
     lines.append("|  Run Summary" + " " * 45 + "|")
     lines.append("+" + "=" * 58 + "+")
     for d in s.details:
-        icon = "+" if d["status"] == "done" else "-" if d["status"] == "skipped" else "x"
+        icon = "+" if d["status"] == "done" else "-" if d["status"] in WITHHELD_STATUSES else "x"
         lines.append(f"|  {icon} [{d['task_id']}] {d['title'][:38]:<38}  |")
     lines.append("+" + "-" * 58 + "+")
-    lines.append(
-        f"|  {s.done}/{s.total_tasks} done | {s.failed} failed | {s.skipped} skipped | {s.duration_seconds:.0f}s"
-        + " " * 10
-        + "|"
+    counts = (
+        f"{s.done}/{s.total_tasks} done | {s.failed} failed | "
+        f"{s.skipped} skipped | {s.blocked} blocked | {s.duration_seconds:.0f}s"
     )
+    lines.append(f"|  {counts:<56}|")
     lines.append(f"|  Status: {s.status:<48} |")
     lines.append("+" + "=" * 58 + "+")
     return "\n".join(lines)
