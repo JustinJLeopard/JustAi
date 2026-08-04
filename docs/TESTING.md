@@ -83,7 +83,7 @@ It proves that, on a clean checkout with a Linux runner and Node 24.x:
 - `npm ci` succeeds — so `package.json` and `package-lock.json` are in sync, and
   the install is exactly what the lockfile pins
 - `npm run build` succeeds — `tsc` typechecks and `vite build` produces `dist/`
-- `npm test` passes — 40 vitest tests across 8 files
+- `npm test` passes — the whole `dashboard/` vitest suite runs green
 
 It does not prove:
 
