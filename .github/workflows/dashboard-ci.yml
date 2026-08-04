@@ -1,0 +1,67 @@
+name: Dashboard CI
+
+# dashboard/ is the only npm project in this repo, so scope runs to it.
+# The workflow file itself is included in the filters: a change to CI must be
+# validated by the CI it describes, and dashboard/package.json and
+# dashboard/package-lock.json are already covered by the dashboard/** glob.
+on:
+  pull_request:
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/dashboard-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/dashboard-ci.yml'
+
+# Least privilege: this job only reads the tree. It never writes to the repo,
+# publishes anything, or comments on pull requests.
+permissions:
+  contents: read
+
+# Only the newest run for a ref matters; supersede in-flight ones.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Pinned rather than floating so a CI result is reproducible. This is the
+      # version the change was validated against locally.
+      NODE_VERSION: '24.16.0'
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      # Actions are pinned to the commit SHA behind the tag in the comment, so
+      # a retagged release cannot silently change what runs here.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs the token; don't leave it in .git/config.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          # Relative to the workspace root, not the job working-directory.
+          cache-dependency-path: dashboard/package-lock.json
+
+      # npm ci refuses to run when package.json and package-lock.json disagree,
+      # and installs exactly what the lockfile pins. `npm install` does neither.
+      - name: Install (lockfile-strict)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
