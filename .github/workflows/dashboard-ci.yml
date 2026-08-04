@@ -10,9 +10,9 @@ name: Dashboard CI
 # dummy "success" job) adds a dependency and a branch of logic whose only job is
 # to defeat the filter it just added.
 #
-# The honest trade is cost: this installs, builds, and runs 40 tests on every
-# PR. For a project this size that is a couple of minutes of a free runner —
-# cheaper than the machinery required to skip it correctly.
+# The honest trade is cost: this installs, builds, and runs the full dashboard
+# test suite on every PR. For a project this size that is a couple of minutes
+# of a free runner — cheaper than the machinery required to skip it correctly.
 on:
   pull_request:
   push:
