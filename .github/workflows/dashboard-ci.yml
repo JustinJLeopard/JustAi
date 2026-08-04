@@ -1,0 +1,123 @@
+name: Dashboard CI
+
+# No `paths:` filter on pull_request, deliberately.
+#
+# A path-filtered workflow is skipped entirely on PRs that miss the filter, and
+# a skipped workflow never reports a status. Once this check is marked required
+# in a ruleset, every PR that doesn't touch dashboard/ would sit forever on
+# "Expected — Waiting for status to be reported" and could not be merged. The
+# alternative (a third-party changed-files action, or a paths-filter plus a
+# dummy "success" job) adds a dependency and a branch of logic whose only job is
+# to defeat the filter it just added.
+#
+# The honest trade is cost: this installs, builds, and runs the full dashboard
+# test suite on every PR. For a project this size that is a couple of minutes
+# of a free runner — cheaper than the machinery required to skip it correctly.
+on:
+  pull_request:
+  push:
+    # main is the integration branch; demo-build is the branch the public Vercel
+    # demo deploys from. Both are branches whose broken state is visible, so
+    # both get a post-merge signal.
+    branches:
+      - main
+      - demo-build
+
+# Least privilege: this job only reads the tree. It never writes to the repo,
+# publishes anything, or comments on pull requests.
+permissions:
+  contents: read
+
+concurrency:
+  # The group always carries `github.ref`. Pushes additionally carry the commit
+  # SHA; pull requests carry the constant `pr` instead. Only `pull_request` and
+  # `push` trigger this workflow, so those are the only two shapes:
+  #
+  #   PR #10, any push to its head  ->  Dashboard CI-refs/pull/10/merge-pr
+  #   push main       @ abc1234     ->  Dashboard CI-refs/heads/main-abc1234
+  #   push demo-build @ abc1234     ->  Dashboard CI-refs/heads/demo-build-abc1234
+  #
+  # Keying push on the SHA *and* the ref matters because demo-build carries the
+  # same commits as main. A SHA-only group put a commit pushed to main and the
+  # identical commit pushed to demo-build into one group — two branches whose
+  # broken state is separately visible, sharing one CI slot. Adding the ref
+  # separates them; adding the SHA keeps consecutive commits on one branch
+  # apart. Both are needed.
+  #
+  # Why distinct push groups rather than relying on `cancel-in-progress`:
+  # that input only spares a run already *in progress*. A second run in a busy
+  # group sits `pending`, and "any existing pending job or workflow in the same
+  # concurrency group will be canceled" when a third joins it. Under one shared
+  # group, three quick pushes would leave the middle commit cancelled — a
+  # landed commit with no CI record, the exact gap this policy exists to close.
+  # Distinct groups remove the queue, so nothing is ever pending behind
+  # anything.
+  #
+  # The PR side deliberately does *not* include the SHA: the group must stay
+  # stable across pushes to the head for `cancel-in-progress` to supersede the
+  # run under review. The `pr` literal is a constant discriminator, and PR refs
+  # (refs/pull/*) cannot collide with push refs (refs/heads/*) anyway.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  # Superseding an in-flight run is right for a PR: only the newest push to a
+  # branch under review needs an answer. It is wrong for push, where each run is
+  # the record for one commit that already landed on main or demo-build —
+  # cancelling those leaves a merged commit with no CI result. This expression
+  # is false for every push event, so it never cancels one.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-test:
+    name: build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      # Actions are pinned to the commit SHA behind the tag in the comment, so
+      # a retagged release cannot silently change what runs here.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs the token; don't leave it in .git/config.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # dashboard/package.json is the single place the Node major is
+          # declared. setup-node v7 resolves a package.json passed here in a
+          # documented order — `volta.node`, then `devEngines.runtime`, then
+          # `engines.node`, then following `volta.extends`
+          # (setup-node docs/advanced-usage.md, "Node version file"). This
+          # package.json sets only `engines.node`, which is also the field
+          # Vercel reads, so CI and the deploy resolve the same declaration.
+          #
+          # There is deliberately no `node-version:` alongside this. When both
+          # inputs are set, setup-node uses `node-version` and ignores the file
+          # (it only logs a warning), so adding a literal back would silently
+          # re-create the drift this removes.
+          #
+          # `engines.node` is `24.x` rather than an exact patch because Vercel
+          # offers only major versions and "automatically rolls out minor and
+          # patch updates" — the deploy this build stands in for always runs
+          # the latest 24.x. Pinning a patch would test a toolchain Vercel
+          # never promises.
+          #
+          # Path is relative to the workspace root, not the job
+          # working-directory: setup-node joins it onto GITHUB_WORKSPACE.
+          node-version-file: dashboard/package.json
+          cache: npm
+          # Also relative to the workspace root.
+          cache-dependency-path: dashboard/package-lock.json
+
+      # npm ci refuses to run when package.json and package-lock.json disagree,
+      # and installs exactly what the lockfile pins. `npm install` does neither.
+      - name: Install (lockfile-strict)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
