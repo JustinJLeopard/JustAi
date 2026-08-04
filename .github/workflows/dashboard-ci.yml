@@ -29,19 +29,35 @@ permissions:
   contents: read
 
 concurrency:
-  # Pull requests share one group per PR ref, so a new push to the head
-  # supersedes the run under review. Pushes get their own group per commit SHA,
-  # so two post-merge runs never share a group at all.
+  # The group always carries `github.ref`. Pushes additionally carry the commit
+  # SHA; pull requests carry the constant `pr` instead. Only `pull_request` and
+  # `push` trigger this workflow, so those are the only two shapes:
   #
-  # The per-SHA split — not `cancel-in-progress` — is what actually protects
-  # push runs. `cancel-in-progress: false` only spares a run that is already
-  # *in progress*; a second run in the same group sits `pending`, and "any
-  # existing pending job or workflow in the same concurrency group will be
-  # canceled" when a third joins it. Three quick merges to main under one
-  # ref-keyed group would therefore have cancelled the middle commit's run —
-  # the exact gap this policy exists to close. Distinct groups per commit
-  # remove the queue, so nothing is ever pending behind anything.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  #   PR #10, any push to its head  ->  Dashboard CI-refs/pull/10/merge-pr
+  #   push main       @ abc1234     ->  Dashboard CI-refs/heads/main-abc1234
+  #   push demo-build @ abc1234     ->  Dashboard CI-refs/heads/demo-build-abc1234
+  #
+  # Keying push on the SHA *and* the ref matters because demo-build carries the
+  # same commits as main. A SHA-only group put a commit pushed to main and the
+  # identical commit pushed to demo-build into one group — two branches whose
+  # broken state is separately visible, sharing one CI slot. Adding the ref
+  # separates them; adding the SHA keeps consecutive commits on one branch
+  # apart. Both are needed.
+  #
+  # Why distinct push groups rather than relying on `cancel-in-progress`:
+  # that input only spares a run already *in progress*. A second run in a busy
+  # group sits `pending`, and "any existing pending job or workflow in the same
+  # concurrency group will be canceled" when a third joins it. Under one shared
+  # group, three quick pushes would leave the middle commit cancelled — a
+  # landed commit with no CI record, the exact gap this policy exists to close.
+  # Distinct groups remove the queue, so nothing is ever pending behind
+  # anything.
+  #
+  # The PR side deliberately does *not* include the SHA: the group must stay
+  # stable across pushes to the head for `cancel-in-progress` to supersede the
+  # run under review. The `pr` literal is a constant discriminator, and PR refs
+  # (refs/pull/*) cannot collide with push refs (refs/heads/*) anyway.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   # Superseding an in-flight run is right for a PR: only the newest push to a
   # branch under review needs an answer. It is wrong for push, where each run is
   # the record for one commit that already landed on main or demo-build —
