@@ -37,6 +37,7 @@ from justai.intent_gate import INTENT_MODEL, Intent, IntentResult, classify
 from justai.learning import enrich_context, record_run
 from justai.ledger import Ledger
 from justai.memory import Memory
+from justai.results import KNOWN_STATUSES, RUN_FAILED, tally
 from justai.reviewer import REVIEWER_MODEL, ReviewResult, review
 from justai.scope_planner import PLANNER_MODEL, Plan, decompose, format_plan
 from justai.synthesizer import format_summary, synthesize
@@ -95,6 +96,56 @@ def _save_session_context(session_ref: str, summary: str) -> None:
     _store_memory("justai/session/latest", summary)
 
 
+def _fail_uncountable_results(
+    *,
+    goal: str,
+    intent: str,
+    results: list,
+    duration: float,
+    run_id: str,
+    session_ref: str,
+    stage: str,
+    hook: OrchestratorHook,
+    error: ValueError,
+) -> OrchestrationResult:
+    """End a run whose results cannot be counted, without losing the evidence.
+
+    Two contracts under this stage raise rather than guess: ``tally`` refuses a
+    status outside the canonical vocabulary, and ``escalate_plan`` refuses a
+    blocked index that names no task in the plan. Both refusals are right.
+    Letting the exception leave ``run`` was not — it skipped the trace flush and
+    the run record, so the operator got a traceback in place of a verdict and
+    the run left no artefact behind.
+
+    The verdict is ``failed``: no result set was countable, so nothing here was
+    verified, and :func:`justai.exit_codes.for_run_status` maps that to nonzero.
+    ``record_run`` is still called and refuses an unusable status on its own —
+    the trajectory store must not file a run it cannot classify either.
+    """
+    offenders = [r for r in results if getattr(r, "status", None) not in KNOWN_STATUSES]
+    print()
+    print(f"  ✗ Run failed at [{stage}]: {error}")
+    for r in offenders:
+        print(f"      unusable [{r.task_id}] {r.title[:38]} → status {r.status!r}")
+    print(f"    {len(results)} result(s) produced, none countable. Nothing was verified.")
+    print("    Fix the executor that emitted this, or the caller that named the blocked tasks.")
+    print()
+
+    hook.on_error("Run results could not be counted", stage=stage, root_cause=str(error))
+    _ledger.record(run_id=run_id, agent=session_ref, stage=stage, duration_s=round(duration, 2))
+    record_run(goal, results, duration)
+    flush_traces()
+
+    return OrchestrationResult(
+        goal=goal,
+        intent=intent,
+        task_count=len(results),
+        results=results,
+        duration_seconds=duration,
+        status=RUN_FAILED,
+    )
+
+
 def _print_header(goal: str, auto: bool = False) -> None:
     print()
     print("╔══════════════════════════════════════════════════════╗")
@@ -119,6 +170,10 @@ def run(
         goal: The task to accomplish.
         session_ref: Session identifier for tracing and memory.
         auto: If True, R1 checkpoints auto-approve immediately (no 60s wait).
+            The decision is passed to each checkpoint rather than exported to
+            the environment: it belongs to this run, and a process-global copy
+            of it disabled the R1 operator veto for every later run in the same
+            interpreter — including every subsequent request to the API server.
         local: If True, execute tasks locally instead of delegating to agent.
     """
     start = time.time()
@@ -127,10 +182,6 @@ def run(
 
     # Discord notifications (no-op if webhook not configured)
     _hook = OrchestratorHook(run_id=run_id)
-
-    # Export auto mode so checkpoint.py can read it
-    if auto:
-        os.environ["JUSTAI_AUTO_MODE"] = "1"
 
     # ── Preflight: service health ─────────────────────────────────────────────
     statuses = preflight()
@@ -290,7 +341,7 @@ def run(
     blocked_reasons: dict[int, str] = {}
     for i, task in enumerate(plan.tasks):
         task_id = f"{session_ref}-plan-{i}"
-        proceed, reason = evaluate(task, task_id=task_id)
+        proceed, reason = evaluate(task, task_id=task_id, auto=auto)
         if proceed:
             print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
         else:
@@ -315,20 +366,49 @@ def run(
     ) as _t5:
         mode = "swarm" if swarm else ("local" if local else "delegated")
         print(f"\n[5/5] Executing {dispatchable} task(s) via {mode} (with escalation)...")
-        results = escalate_plan(
-            plan.tasks,
-            session_ref=session_ref,
-            mode=mode,
-            blocked_indices=blocked_reasons,
-        )
 
-        done_count = sum(1 for r in results if r.status == "done")
-        failed_count = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
+        # One vocabulary decides these counts. Summing statuses inline here let
+        # this stage disagree with the run verdict below it: withheld work fell
+        # between "done" and "failed" and was reported by neither, and a status
+        # nothing recognised was counted as an absence of failure.
+        results: list = []
+        try:
+            results = escalate_plan(
+                plan.tasks,
+                session_ref=session_ref,
+                mode=mode,
+                blocked_indices=blocked_reasons,
+            )
+            counts = tally(results)
+        except ValueError as exc:
+            _t5.end(
+                output_text=f"results cannot be counted: {exc}",
+                level="ERROR",
+                metadata={"stage": stage5_name, "error": "uncountable-results"},
+            )
+            return _fail_uncountable_results(
+                goal=goal,
+                intent=intent_result.intent.value,
+                results=results,
+                duration=time.time() - start,
+                run_id=run_id,
+                session_ref=session_ref,
+                stage=stage5_name,
+                hook=_hook,
+                error=exc,
+            )
+
         _t5.end(
-            output_text=f"{done_count}/{len(results)} done",
-            metadata={"done": done_count, "failed": failed_count, "total": len(results)},
+            output_text=f"{counts.done}/{counts.total} done",
+            metadata={
+                "done": counts.done,
+                "failed": counts.failed,
+                "skipped": counts.skipped,
+                "blocked": counts.blocked,
+                "total": counts.total,
+            },
         )
-    _hook.on_stage(stage5_name, f"{done_count}/{len(results)} done")
+    _hook.on_stage(stage5_name, f"{counts.done}/{counts.total} done")
     _ledger.record(run_id=run_id, agent=session_ref, stage=stage5_name)
 
     # ── Synthesize ────────────────────────────────────────────────────────────

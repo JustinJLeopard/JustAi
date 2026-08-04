@@ -359,13 +359,45 @@ def _invalid_dependency(position: int, task: Task) -> str | None:
 
 def _normalize_blocked(
     blocked_indices: Mapping[int, str] | Iterable[int] | None,
+    task_count: int,
 ) -> dict[int, str]:
-    """Accept either ``{index: reason}`` or a bare collection of indices."""
+    """Accept either ``{index: reason}`` or a bare collection of indices.
+
+    Every index must name a task in ``tasks``. One that does not means the
+    caller and this function disagree about which plan is being executed, and
+    the disagreement is not safe to absorb: quietly dropping the stray index
+    dispatches a task some checkpoint refused, which is the same false success
+    :func:`escalate_plan` takes the whole plan to prevent. There is no reading
+    of an out-of-plan index that is better than refusing it.
+
+    Args:
+        blocked_indices: Positions a checkpoint refused, optionally with reasons.
+        task_count: How many tasks the plan holds.
+
+    Raises:
+        ValueError: an index is not an ``int``, or names no task in the plan.
+    """
     if blocked_indices is None:
         return {}
-    if isinstance(blocked_indices, Mapping):
-        return dict(blocked_indices)
-    return dict.fromkeys(blocked_indices, "")
+
+    pairs = (
+        blocked_indices.items()
+        if isinstance(blocked_indices, Mapping)
+        else ((index, "") for index in blocked_indices)
+    )
+
+    blocked: dict[int, str] = {}
+    for index, reason in pairs:
+        # `type(index) is int` on purpose, as in _invalid_dependency: True is a
+        # bool, and letting it block task 1 is an accidental resolution, not a
+        # decision anybody made.
+        if type(index) is not int:
+            raise ValueError(f"blocked index {index!r} is not a task position")
+        if not 0 <= index < task_count:
+            plan = f"0..{task_count - 1}" if task_count else "the plan has no tasks"
+            raise ValueError(f"blocked index {index} names no task in this plan ({plan})")
+        blocked[index] = reason
+    return blocked
 
 
 def escalate_plan(
@@ -394,10 +426,14 @@ def escalate_plan(
         mode: Execution mode — "delegated", "local", or "swarm".
         blocked_indices: Positions a checkpoint refused, optionally mapped to
             the reason. Blocked tasks are not dispatched and do not satisfy a
-            dependency.
+            dependency. Every index must name a task in ``tasks``.
+
+    Raises:
+        ValueError: a blocked index names no task in ``tasks``. Nothing is
+            dispatched — the caller is describing a different plan.
     """
     runner = _EXECUTORS.get(mode, _execute_removed_backend)
-    blocked = _normalize_blocked(blocked_indices)
+    blocked = _normalize_blocked(blocked_indices, len(tasks))
     results: list[DelegationResult] = []
 
     for i, task in enumerate(tasks):

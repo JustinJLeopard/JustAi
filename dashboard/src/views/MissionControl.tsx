@@ -70,6 +70,49 @@ function ServiceRow({ name, ok, detail, ping }: { name: string; ok: boolean | nu
   )
 }
 
+// ── Readiness row ─────────────────────────────────────────────────────────────
+// /api/health reports planning readiness and execution readiness separately,
+// because they are not the same claim: model routing can be up while no
+// execution backend is integrated at all. Rendering only the service dots let
+// the Execute stage below read as a thing that runs.
+function ReadinessRow({
+  capability,
+  ready,
+  readyLabel,
+  notReadyLabel,
+  readyDetail,
+  notReadyDetail,
+}: {
+  capability: string
+  ready: boolean | null
+  readyLabel: string
+  notReadyLabel: string
+  readyDetail: string
+  notReadyDetail: string
+}) {
+  const known = ready !== null
+  const label = !known ? 'unknown' : ready ? readyLabel : notReadyLabel
+  const detail = !known ? 'health not reported yet' : ready ? readyDetail : notReadyDetail
+  const color = !known ? 'var(--amber-500)' : ready ? 'var(--emerald-400)' : 'var(--red-500)'
+
+  return (
+    <div
+      data-testid={`readiness-${capability}`}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '78px 84px 1fr',
+        gap: 'var(--sp-2)',
+        alignItems: 'baseline',
+        padding: '7px 0',
+      }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 300, color: '#cbd5e1' }}>{capability}</span>
+      <span style={{ fontSize: 11, fontWeight: 400, color, fontFamily: 'var(--font-mono)' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 300, color: 'var(--text-muted)' }}>{detail}</span>
+    </div>
+  )
+}
+
 // ── Run row ───────────────────────────────────────────────────────────────────
 type RunStatus = 'ok' | 'err' | 'run'
 
@@ -185,6 +228,11 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
   const dataSvc     = health?.services.find(s => s.name === 'control-plane data')
   const mcpSvc      = health?.services.find(s => s.name === 'claude-flow MCP')
   const langfuseSvc = health?.services.find(s => s.name === 'LangFuse')
+  const execSvc     = health?.services.find(s => s.name === 'safe-mini boundary')
+
+  // null until /api/health answers — "not reported yet" is not "unavailable".
+  const planningReady  = health ? health.planning_ready  : null
+  const executionReady = health ? health.execution_ready : null
 
   // ── Control-plane stages ──────────────────────────────────────────────────
   const controlPlaneStages: ControlPlaneStage[] = (() => {
@@ -193,7 +241,9 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
         { name: 'Intent',     status: 'waiting', detail: 'idle' },
         { name: 'Plan',       status: 'waiting', detail: 'idle' },
         { name: 'Review',     status: 'waiting', detail: 'idle' },
-        { name: 'Execute',    status: 'waiting', detail: 'idle' },
+        // Idle and unavailable are different states, and only one of them ends
+        // in a dispatched task.
+        { name: 'Execute',    status: 'waiting', detail: executionReady === false ? 'fails closed' : 'idle' },
         { name: 'Synthesize', status: 'waiting', detail: 'idle' },
       ]
     }
@@ -267,6 +317,34 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
           </button>
         </div>
       </div>
+
+      {/* ── Execution readiness banner ───────────────────────────────────── */}
+      {/* The panels below show a five-stage control plane ending in Execute.
+          While no runner is integrated that stage cannot run, and the operator
+          reading this page is the person who would otherwise assume it did. */}
+      {executionReady === false && (
+        <div
+          data-testid="execution-unavailable"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 'var(--sp-3)',
+            padding: 'var(--sp-3) var(--sp-4)',
+            borderRadius: 'var(--r-md)',
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.2)',
+          }}
+        >
+          <span style={{ fontSize: 13, color: 'var(--red-500)', lineHeight: 1.5 }}>⚠</span>
+          <span style={{ fontSize: 12, fontWeight: 300, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 500, color: 'var(--red-500)' }}>Execution unavailable</span>
+            {' — '}
+            {execSvc?.detail ?? 'no execution backend is integrated'}.{' '}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>justai run</span>
+            {' fails closed; this page reports planning and checkpointing only.'}
+          </span>
+        </div>
+      )}
 
       {/* ── Metrics Grid (5 columns) ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--sp-3)' }}>
@@ -501,10 +579,40 @@ export function MissionControl({ data, onNavigate }: MissionControlProps) {
             ping={mcpSvc?.ok ? 'ok' : '—'}
           />
           <ServiceRow
+            name="safe-mini boundary"
+            ok={execSvc?.ok ?? null}
+            detail={execSvc?.detail ?? 'justai.runner_protocol'}
+            ping={execSvc?.ok ? 'ok' : '—'}
+          />
+          <ServiceRow
             name="LangFuse"
             ok={langfuseSvc?.ok ?? null}
             detail={langfuseSvc?.detail ?? 'not configured'}
             ping="—"
+          />
+
+          <div style={{
+            fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)',
+            letterSpacing: '1.5px', textTransform: 'uppercase',
+            marginTop: 'var(--sp-4)', marginBottom: 'var(--sp-2)',
+          }}>
+            Readiness
+          </div>
+          <ReadinessRow
+            capability="planning"
+            ready={planningReady}
+            readyLabel="ready"
+            notReadyLabel="degraded"
+            readyDetail="model-backed planning available"
+            notReadyDetail="model routing unreachable; planning falls back to heuristics"
+          />
+          <ReadinessRow
+            capability="execution"
+            ready={executionReady}
+            readyLabel="ready"
+            notReadyLabel="unavailable"
+            readyDetail="an execution backend is integrated"
+            notReadyDetail="no concrete runner is integrated; runs fail closed"
           />
         </div>
 

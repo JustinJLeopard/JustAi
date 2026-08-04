@@ -126,7 +126,13 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 410 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 430 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+
+The suite is order-independent. Reversing collection order must produce the same result:
+
+```bash
+.venv/bin/python -m pytest -q $(ls -r tests/test_*.py)
+```
 
 ## Repo Map
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -168,17 +169,13 @@ def test_exit_zero_requires_a_complete_run_with_at_least_one_task():
 # ── Finding 3: checkpoint filtering breaks depends_on indices ────────────────
 
 
-def test_blocked_dependency_does_not_let_its_dependent_run(monkeypatch):
+def test_blocked_dependency_does_not_let_its_dependent_run():
     """Compacting the task list used to shift indices so a dependent ran anyway."""
     from justai.orchestrator import run
 
-    # `run(auto=True)` exports JUSTAI_AUTO_MODE for checkpoint.py and never
-    # restores it; monkeypatch scopes that leak to this test.
-    monkeypatch.setenv("JUSTAI_AUTO_MODE", "")
-
     plan = Plan(goal="g", tasks=[_task("Task 0"), _task("Task 1", depends_on=[0])], session_ref="t")
 
-    def gate(task, task_id=""):
+    def gate(task, task_id="", auto=None):
         # Task 0 is blocked at the checkpoint; Task 1 would be approved on its own.
         return (task.title != "Task 0", "blocked for test" if task.title == "Task 0" else "auto")
 
@@ -373,7 +370,183 @@ def test_dispatch_pipeline_no_longer_ships_a_worktree_test_runner():
     assert not hasattr(cfg, "work_dir")
 
 
+# ── Finding 6: a blocked index that names no task is silently dropped ────────
+
+
+@pytest.mark.parametrize(
+    ("blocked", "reason"),
+    [
+        ({-1: "vetoed"}, "negative"),
+        ({2: "vetoed"}, "one past the end"),
+        ({99: "vetoed"}, "far past the end"),
+        ({-1}, "negative, as a bare collection"),
+        ({2}, "past the end, as a bare collection"),
+    ],
+)
+def test_a_blocked_index_outside_the_plan_is_rejected(blocked, reason):
+    """An index naming no task means the caller and the plan disagree.
+
+    Dropping it is the same false success ``escalate_plan`` takes the whole
+    plan to prevent: the task a checkpoint refused gets dispatched anyway.
+    """
+    tasks = [_task("a"), _task("b")]
+
+    with pytest.raises(ValueError, match="blocked index"):
+        escalate_plan(tasks, session_ref="dep", mode="local", blocked_indices=blocked)
+
+
+@pytest.mark.parametrize(
+    ("blocked", "reason"),
+    [
+        ({True: "vetoed"}, "bool that would silently block task 1"),
+        ({"0": "vetoed"}, "string"),
+        ({None: "vetoed"}, "null"),
+        ({1.0: "vetoed"}, "float"),
+    ],
+)
+def test_a_blocked_index_that_is_not_a_task_position_is_rejected(blocked, reason):
+    tasks = [_task("a"), _task("b")]
+
+    with pytest.raises(ValueError, match="blocked index"):
+        escalate_plan(tasks, session_ref="dep", mode="local", blocked_indices=blocked)
+
+
+def test_a_blocked_index_against_an_empty_plan_is_rejected():
+    with pytest.raises(ValueError, match="blocked index"):
+        escalate_plan([], session_ref="dep", mode="local", blocked_indices={0})
+
+
+def test_every_in_range_blocked_index_is_still_honoured():
+    """Guarding the opposite error: rejecting strays must not drop real ones."""
+    tasks = [_task("a"), _task("b"), _task("c")]
+
+    results = escalate_plan(
+        tasks, session_ref="dep", mode="local", blocked_indices={0: "vetoed", 2: "vetoed"}
+    )
+
+    assert [r.status for r in results] == ["blocked", "error", "blocked"]
+
+
+# ── Finding 7: unusable results escape the orchestrator instead of failing it ─
+
+
+def test_an_unknown_result_status_fails_the_run_closed_instead_of_raising(capsys):
+    """The ValueError used to leave `run`, skipping the flush and the record.
+
+    Refusing to count an unrecognised status is correct. Losing the run's
+    traces and handing the operator a traceback instead of a verdict is not.
+    """
+    from justai.exit_codes import for_run_status
+    from justai.orchestrator import run
+
+    plan = Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    unusable = [_result("mission-accomplished", title="Task 0")]
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=unusable)) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert for_run_status(result.status) != 0, "an uncountable run must not exit 0"
+
+    out = capsys.readouterr().out
+    assert "mission-accomplished" in out, "the operator must be told which status was unusable"
+    assert "Task 0" in out, "and which task carried it"
+
+    stubs["flush_traces"].assert_called_once()
+    stubs["record_run"].assert_called_once()
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+
+
+def test_a_rejected_blocked_index_also_fails_the_run_closed():
+    """The same boundary covers escalate_plan's contract, which raises too."""
+    from justai.orchestrator import run
+
+    plan = Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    rejected = MagicMock(side_effect=ValueError("blocked index 7 does not name a task"))
+
+    with _orchestrated_run(plan, escalate_plan=rejected) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert result.results == [], "nothing was dispatched, so nothing may be reported as a result"
+    stubs["flush_traces"].assert_called_once()
+
+
+# ── Finding 8: the execute stage counted statuses with its own vocabulary ────
+
+
+def test_stage_five_trace_and_hook_counts_come_from_the_shared_tally():
+    """Withheld work must appear in the trace, not vanish between two buckets."""
+    from justai.orchestrator import run
+    from justai.results import tally
+
+    results = [_result("done"), _result("failed"), _result("skipped"), _result("blocked")]
+    plan = Plan(goal="g", tasks=[_task(f"Task {i}") for i in range(4)], session_ref="t")
+    traces = _TraceRecorder()
+
+    with _orchestrated_run(
+        plan,
+        trace_generation=traces,
+        escalate_plan=MagicMock(return_value=results),
+    ) as stubs:
+        run("goal", session_ref="t", auto=True, local=True)
+
+    counts = tally(results)
+    assert traces.end_kwargs("local")["metadata"] == {
+        "done": counts.done,
+        "failed": counts.failed,
+        "skipped": counts.skipped,
+        "blocked": counts.blocked,
+        "total": counts.total,
+    }
+    stubs["OrchestratorHook"].return_value.on_stage.assert_any_call(
+        "local", f"{counts.done}/{counts.total} done"
+    )
+
+
 # ── shared orchestrator harness ──────────────────────────────────────────────
+
+
+class _TraceRecorder:
+    """Stands in for ``trace_generation``, keeping one context per stage name."""
+
+    def __init__(self) -> None:
+        self.contexts: dict[str, MagicMock] = {}
+
+    def __call__(self, name: str, *args, **kwargs) -> MagicMock:
+        ctx = _trace_ctx()
+        self.contexts[name] = ctx
+        return ctx
+
+    def end_kwargs(self, name: str) -> dict:
+        return self.contexts[name].end.call_args.kwargs
+
+
+@contextmanager
+def _orchestrated_run(plan: Plan, **overrides):
+    """Stub every stage but the one under test; keep memory writes local."""
+    stubs: dict = {
+        "classify": MagicMock(return_value=_execution_intent()),
+        "decompose": MagicMock(return_value=plan),
+        "review": MagicMock(return_value=_approved_review()),
+        "evaluate": MagicMock(return_value=(True, "auto")),
+        "preflight": MagicMock(return_value=[]),
+        "print_preflight": MagicMock(return_value=True),
+        "flush_traces": MagicMock(),
+        "trace_generation": MagicMock(side_effect=lambda *a, **k: _trace_ctx()),
+        "trace_event": MagicMock(),
+        "record_run": MagicMock(),
+        "enrich_context": MagicMock(return_value=""),
+        "_memory": MagicMock(),
+        "_ledger": MagicMock(),
+        "OrchestratorHook": MagicMock(),
+    }
+    stubs.update(overrides)
+    with (
+        patch.multiple("justai.orchestrator", **stubs),
+        patch("justai.synthesizer._memory", MagicMock()),
+    ):
+        yield stubs
 
 
 def _trace_ctx() -> MagicMock:
