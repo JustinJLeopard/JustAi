@@ -100,10 +100,13 @@ class Child:
     def await_parked(self, timeout: float = ANNOUNCE_TIMEOUT) -> None:
         """Block until this run has recorded the pending gate it is waiting on.
 
-        The R2 branch announces the path first and writes ``pending`` to it
-        second. A parent that approves inside that window has its approval
-        overwritten by the pending record, and the test then fails as a lost
-        write rather than as the shared decision it is looking for.
+        Both runs are brought to the same point before either is approved, so
+        what the assertions below observe is one decision reaching two runs
+        rather than one run being further along than the other.
+
+        An approval written earlier than this survives — the pending record is
+        created, never written over (see ``test_gate_lifecycle.py``). Waiting
+        here is for the symmetry, not to dodge a lost write.
         """
         gate = self.gate_path(timeout=timeout)
         deadline = time.time() + timeout
@@ -177,8 +180,7 @@ def test_one_approval_releases_exactly_one_of_two_concurrent_runs(
     try:
         first_gate = first.gate_path()
         second_gate = second.gate_path()
-        # Both runs must be parked on their own pending record before any
-        # approval is written, or a late pending write clobbers it.
+        # Bring both runs to the same point before either is approved.
         first.await_parked()
         second.await_parked()
 

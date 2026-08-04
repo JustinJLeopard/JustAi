@@ -29,7 +29,13 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from justai.agent_dispatch import escalate_plan
-from justai.checkpoint import GateIdentity, cleanup_run, evaluate, run_gate_lock
+from justai.checkpoint import (
+    GateIdentity,
+    cleanup_run,
+    evaluate,
+    run_gate_lock,
+    sweep_gate_dirs,
+)
 from justai.discord import OrchestratorHook
 from justai.exit_codes import for_run_status
 from justai.health import preflight, print_preflight, readiness
@@ -401,6 +407,13 @@ def run(
     # approval is not this run's to delete. A run that dies before here leaves
     # its gates behind on purpose — that is what makes a resume possible.
     cleanup_run(run_id)
+
+    # Cleanup keeps this run's lock, because removing a lock other processes
+    # exclude on is how exclusion ends rather than how a run ends. The empty
+    # directory left behind is collected here once it is old enough, so the
+    # count under `gates/` tracks runs that are live or recent rather than
+    # every run ever started. A run still holding a decision is never swept.
+    sweep_gate_dirs()
 
     dispatchable = len(plan.tasks) - len(blocked_reasons)
 

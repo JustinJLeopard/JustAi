@@ -17,11 +17,18 @@ announce the same path, one approval releases both.
 
 from __future__ import annotations
 
+import os
 import sys
 
-from tests.gate_harness import orchestrator_stubs, single_task_plan
+from tests.gate_harness import _silent_notify, delaying_notify, orchestrator_stubs, single_task_plan
 
 GOAL = "gate identity reproduction"
+
+#: Seconds to hold the R2 notification window open before the run records its
+#: own pending gate. Set by a parent that needs to write an approval inside
+#: that window; the shipped POST has a ten-second timeout, so the window is
+#: real and this only makes it observable.
+NOTIFY_DELAY_VAR = "JUSTAI_TEST_NOTIFY_DELAY"
 
 #: Printed once the run is over, so the parent can tell "finished" from
 #: "still waiting at the gate" without inferring it from a timeout alone.
@@ -33,7 +40,9 @@ def main(argv: list[str] | None = None) -> int:
 
     extra = list(sys.argv[1:] if argv is None else argv)
     plan = single_task_plan("R2", goal=GOAL, title="Change a published interface")
-    with orchestrator_stubs(plan):
+    delay = os.environ.get(NOTIFY_DELAY_VAR, "").strip()
+    notify = delaying_notify(float(delay)) if delay else _silent_notify
+    with orchestrator_stubs(plan, notify=notify):
         code = cli_main(["run", GOAL, *extra])
     print(f"{DONE_MARKER}{code}", flush=True)
     return code

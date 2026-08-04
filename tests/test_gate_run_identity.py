@@ -257,18 +257,20 @@ def test_cleanup_removes_one_run_and_leaves_the_other_alone(gate_root: Path) -> 
     removed = cleanup_run(mine.run_id)
 
     assert removed == 1
-    assert not gate_dir(mine.run_id).exists()
+    assert not gate_path(mine).exists()
     assert gate_path(theirs).exists(), "cleaning one run deleted another run's approval"
     assert _read_gate(theirs) is not None
 
 
 def test_cleanup_removes_every_gate_of_its_own_run(gate_root: Path) -> None:
+    """Every record, and only the records — see ``test_gate_lifecycle.py`` for
+    why the lock and the directory outlive them."""
     run_id = new_run_id()
     for index in range(4):
         _write_gate(GateIdentity(run_id=run_id, index=index), "pending")
 
     assert cleanup_run(run_id) == 4
-    assert not gate_dir(run_id).exists()
+    assert not list(gate_dir(run_id).glob("plan-*.json"))
 
 
 def test_cleanup_cannot_be_asked_to_remove_anything_else(gate_root: Path) -> None:
@@ -456,7 +458,9 @@ def test_a_run_cleans_up_only_its_own_gates(gate_root: Path) -> None:
 
     finished = _run(session_ref="sprint-2")
 
-    assert not gate_dir(finished.run_id).exists(), "a finished run left its gates behind"
+    assert not list(gate_dir(finished.run_id).glob("plan-*.json")), (
+        "a finished run left its gates behind"
+    )
     assert gate_path(concurrent).exists(), "a finished run deleted another run's gate"
 
 

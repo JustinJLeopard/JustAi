@@ -90,6 +90,22 @@ other. `--run-id` is the deliberate exception — it resumes a run against the
 gates already on disk. Omit it and a fresh identity is minted, which is what an
 ordinary run wants.
 
+An approval may be written before the run reaches the gate — a resume, or the
+dashboard, which is handed the run id by `POST /api/run` while the run is still
+starting. A run never writes over a decision already on disk; it only records
+that it is waiting when nothing has decided yet.
+
+What is left under `gates/` afterwards:
+
+| Directory | Kept | Why |
+| --- | --- | --- |
+| A run that finished its gates | Until it is an hour old | It holds only `.lock`, and removing a lock other processes exclude on is how exclusion ends. There is nothing else in it. `JUSTAI_GATE_TOMBSTONE_TTL` sets the window. |
+| A run interrupted at a gate | Indefinitely | Its records are a pending approval nobody answered, and are what `--run-id` resumes against. Remove the directory when you are done with the run. |
+
+Old directories are collected at the end of each run. Nothing that still holds
+a gate record, is still running, or holds a file JustAi did not write is ever
+removed.
+
 ### Exit codes
 
 Exit 0 means verified completion: work was planned, it ran, and every task reported done. Nothing else earns it — an ambiguous goal is a legitimate answer, but nothing was planned and nothing ran, so returning 0 would tell a `&&` chain the work happened.
@@ -150,7 +166,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 494 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 517 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 The suite is order-independent. Reversing collection order must produce the same result:
 

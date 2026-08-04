@@ -97,7 +97,7 @@ def test_checkpoint_gate_file_write_and_read_roundtrip(tmp_path, monkeypatch):
     assert result["run_id"] == gate.run_id, "a record must say which run it decided"
 
     assert cleanup_run(gate.run_id) == 1
-    assert not gate_dir(gate.run_id).exists()
+    assert not list(gate_dir(gate.run_id).glob("plan-*.json"))
 
 
 def test_runtime_env_sets_expected_root_aliases():
