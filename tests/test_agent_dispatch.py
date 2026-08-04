@@ -18,11 +18,19 @@ def _make_task(title: str, desc: str = "") -> Task:
 
 
 class TestAgentDispatchPipeline:
+    """The pipeline is quarantined — see justai/agent_dispatch.py's module docstring.
+
+    Its phases only ever produced strings, and the removed iterate/escalate
+    loop closed over a `pytest` run against the launching checkout, which the
+    pipeline had not written to. These tests pin the quarantine; completion
+    behaviour is covered in tests/test_completion_integrity.py.
+    """
+
     def test_phase_sequence(self):
-        """Pipeline should have 5 phases in order."""
+        """Only the generation phases remain; iterate/escalate needed test results."""
         from justai.agent_dispatch import PHASES
 
-        assert PHASES == ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
+        assert PHASES == ["pseudocode", "write_tests", "write_code"]
 
     def test_iteration_config_defaults(self):
         from justai.agent_dispatch import AgentDispatchConfig
@@ -39,80 +47,23 @@ class TestAgentDispatchPipeline:
         assert r.phase == "write_tests"
         assert r.status == "done"
 
-    def test_run_pipeline_all_mini_succeeds(self):
-        """When mini succeeds at every phase, escalation never triggers."""
+    def test_run_refuses_before_spending_a_model_call(self):
+        """Generating three phases and then admitting nothing was written is waste."""
+        import pytest
+
         from justai.agent_dispatch import AgentDispatchConfig, AgentDispatchPipeline
-
-        cfg = AgentDispatchConfig(max_mini_iterations=2)
-
-        # Mock the LLM call to return success at each phase
-        mock_responses = {
-            "pseudocode": "def add(a, b): return a + b",
-            "write_tests": "def test_add(): assert add(1,2) == 3",
-            "write_code": "def add(a, b): return a + b",
-            "iterate": "All tests pass.",
-        }
 
         with patch("justai.agent_dispatch._llm_call") as mock_llm:
-            mock_llm.side_effect = lambda model, prompt, system="": mock_responses.get(
-                next((p for p in mock_responses if p in prompt), ""), "ok"
-            )
-            with patch("justai.agent_dispatch._run_tests", return_value=(True, "5 passed")):
-                pipeline = AgentDispatchPipeline(cfg)
-                result = pipeline.run("implement an add function", spec="add(a,b) returns a+b")
+            with pytest.raises(NotImplementedError, match="materiali"):
+                AgentDispatchPipeline(AgentDispatchConfig()).run("task", spec="spec")
 
-        assert result.escalated is False
-        assert result.total_iterations <= cfg.max_mini_iterations
-        assert len(result.phases) >= 3  # pseudocode, write_tests, write_code at minimum
+        mock_llm.assert_not_called()
 
-    def test_run_pipeline_mini_fails_escalates(self):
-        """When mini fails after max iterations, pipeline escalates."""
-        from justai.agent_dispatch import AgentDispatchConfig, AgentDispatchPipeline
+    def test_pipeline_result_type_is_gone(self):
+        """It carried `escalated` / `total_iterations` — verdicts about unwritten code."""
+        from justai import agent_dispatch
 
-        cfg = AgentDispatchConfig(max_mini_iterations=2)
-
-        call_count = 0
-
-        def mock_llm(model, prompt, system=""):
-            nonlocal call_count
-            call_count += 1
-            return "attempted but incomplete"
-
-        with patch("justai.agent_dispatch._llm_call", side_effect=mock_llm):
-            with patch("justai.agent_dispatch._run_tests", return_value=(False, "3 failed")):
-                pipeline = AgentDispatchPipeline(cfg)
-                result = pipeline.run("implement something complex", spec="complex spec")
-
-        assert result.escalated is True
-        assert result.total_iterations == cfg.max_mini_iterations
-
-    def test_run_pipeline_records_phase_history(self):
-        """Pipeline should record every phase attempt."""
-        from justai.agent_dispatch import AgentDispatchConfig, AgentDispatchPipeline
-
-        cfg = AgentDispatchConfig(max_mini_iterations=1)
-
-        with patch("justai.agent_dispatch._llm_call", return_value="code output"):
-            with patch("justai.agent_dispatch._run_tests", return_value=(True, "ok")):
-                pipeline = AgentDispatchPipeline(cfg)
-                result = pipeline.run("simple task", spec="spec")
-
-        assert len(result.phases) > 0
-        assert all(hasattr(p, "phase") and hasattr(p, "status") for p in result.phases)
-
-    def test_cost_tracking(self):
-        """Pipeline should track total model calls."""
-        from justai.agent_dispatch import AgentDispatchConfig, AgentDispatchPipeline
-
-        cfg = AgentDispatchConfig(max_mini_iterations=1)
-
-        with patch("justai.agent_dispatch._llm_call", return_value="output"):
-            with patch("justai.agent_dispatch._run_tests", return_value=(True, "pass")):
-                pipeline = AgentDispatchPipeline(cfg)
-                result = pipeline.run("task", spec="spec")
-
-        assert result.model_calls > 0
-        assert result.mini_calls > 0
+        assert not hasattr(agent_dispatch, "PipelineResult")
 
 
 # ── Escalation Strategy Tests ────────────────────────────────────────────────

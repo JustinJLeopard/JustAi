@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from justai.agent_dispatch import escalate_plan
 from justai.checkpoint import evaluate
 from justai.discord import OrchestratorHook
-from justai.health import preflight, print_preflight
+from justai.exit_codes import for_run_status
+from justai.health import preflight, print_preflight, readiness
 from justai.intent_gate import INTENT_MODEL, Intent, IntentResult, classify
 from justai.learning import enrich_context, record_run
 from justai.ledger import Ledger
@@ -137,6 +138,12 @@ def run(
 
     if not litellm_ok:
         print("  ⚠ LiteLLM unreachable — pipeline will use heuristic fallbacks")
+        print()
+
+    # Say up front what `justai status` and the API's /health already report,
+    # so the run does not look like it is heading for completion.
+    if not readiness(statuses).execution_ready:
+        print("  ⚠ No execution backend is integrated — dispatch will fail closed")
         print()
 
     # ── Session context: load prior run ───────────────────────────────────────
@@ -278,42 +285,42 @@ def run(
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
     print("\n[4/5] Evaluating checkpoints...")
     trace_event("checkpoint", metadata={"task_count": len(plan.tasks)}, session_id=session_ref)
-    approved_tasks = []
+    # Blocked tasks keep their position in the plan. Dropping them here used to
+    # renumber the survivors, which silently redirected every `depends_on`.
+    blocked_reasons: dict[int, str] = {}
     for i, task in enumerate(plan.tasks):
         task_id = f"{session_ref}-plan-{i}"
         proceed, reason = evaluate(task, task_id=task_id)
         if proceed:
             print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
-            approved_tasks.append(task)
         else:
             print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
+            blocked_reasons[i] = reason
 
-    if not approved_tasks:
-        return OrchestrationResult(
-            goal=goal,
-            intent=intent_result.intent.value,
-            task_count=len(plan.tasks),
-            results=[],
-            duration_seconds=time.time() - start,
-            status="blocked",
-        )
+    dispatchable = len(plan.tasks) - len(blocked_reasons)
 
     # ── Stage 5: Execute ─────────────────────────────────────────────────────
     stage5_name = "swarm" if swarm else ("local" if local else "external")
     with trace_generation(
         stage5_name,
-        input_text=f"{len(approved_tasks)} tasks",
+        input_text=f"{dispatchable} tasks",
         session_id=session_ref,
         tags=[stage5_name],
         metadata={
             "stage": stage5_name,
-            "task_count": len(approved_tasks),
+            "task_count": dispatchable,
+            "blocked": len(blocked_reasons),
             "mode": "swarm" if swarm else ("local" if local else "delegated"),
         },
     ) as _t5:
         mode = "swarm" if swarm else ("local" if local else "delegated")
-        print(f"\n[5/5] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
-        results = escalate_plan(approved_tasks, session_ref=session_ref, mode=mode)
+        print(f"\n[5/5] Executing {dispatchable} task(s) via {mode} (with escalation)...")
+        results = escalate_plan(
+            plan.tasks,
+            session_ref=session_ref,
+            mode=mode,
+            blocked_indices=blocked_reasons,
+        )
 
         done_count = sum(1 for r in results if r.status == "done")
         failed_count = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
@@ -413,4 +420,4 @@ if __name__ == "__main__":
         local=local_flag or LOCAL_EXEC,
         swarm=swarm_flag or SWARM_MODE,
     )
-    sys.exit(0 if result.status in ("complete", "ambiguous") else 1)
+    sys.exit(for_run_status(result.status))

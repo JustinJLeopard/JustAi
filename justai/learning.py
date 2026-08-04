@@ -14,12 +14,18 @@ from __future__ import annotations
 
 import logging
 
+from justai.results import RUN_COMPLETE, tally
 from justai.trajectory import TrajectoryStore
 
 logger = logging.getLogger(__name__)
 
 SIMILARITY_THRESHOLD = 0.6
 SEARCH_LIMIT = 3
+
+#: Trajectory outcome for each run verdict. Only a verified-complete run may be
+#: filed as "success" — this table is what keeps the stored trajectory from
+#: disagreeing with the run summary the operator was shown.
+_OUTCOME_FOR_RUN_STATUS = {RUN_COMPLETE: "success"}
 
 # Module-level store instance — reused across calls
 _store = TrajectoryStore()
@@ -49,24 +55,24 @@ def record_run(
 ) -> bool:
     """Store run results as a trajectory for future context enrichment.
 
-    Returns True if stored, False on failure. Never raises.
+    A run with no results is not stored at all. There is no trajectory in it —
+    no step was taken — and filing one would seed the planner's context with a
+    goal that appears to have been handled.
+
+    Returns True if stored, False on failure or on nothing worth storing.
+    Never raises: an unrecognised result status is refused here rather than
+    stored under a status this layer guessed at.
     """
     try:
-        steps = [r.title for r in results]
-        done = sum(1 for r in results if r.status == "done")
-        failed = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
-
-        if failed == 0:
-            outcome = "success"
-        elif done > 0:
-            outcome = "partial"
-        else:
-            outcome = "failed"
+        counts = tally(results)
+        if counts.total == 0:
+            logger.debug("Nothing to record: the run produced no results.")
+            return False
 
         return _store.store(
             goal=goal,
-            steps=steps,
-            outcome=outcome,
+            steps=[r.title for r in results],
+            outcome=_OUTCOME_FOR_RUN_STATUS.get(counts.run_status, counts.run_status),
             duration=duration,
         )
     except Exception as e:

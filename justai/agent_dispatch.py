@@ -12,42 +12,46 @@ types and safe-mini's Chunk/Budget. The actual run loop will move to
 safe-mini's SafeMiniRunner. See justai/runner_protocol.py for the
 forward-looking dispatch contract.
 
-The standalone ``AgentDispatchPipeline`` experiment below models a
-small-model-first generation ladder:
+The standalone ``AgentDispatchPipeline`` experiment below is QUARANTINED. It
+models a small-model-first generation ladder — a capable model drafts
+pseudocode, then a mini model writes tests and code from it:
 
   1. PSEUDOCODE — Capable model (codex) generates pseudocode from spec
   2. WRITE_TESTS — Mini writes tests per function (with IDs)
   3. WRITE_CODE — Mini writes code to pass tests
-  4. ITERATE — Mini runs tests → fixes failures → runs tests (up to N iterations)
-  5. ESCALATE — If mini is stuck after N iterations, a capable model takes over
 
-This tests whether front-loading lower-cost agents increases speed, quality,
-and success rate compared to the standard single-agent pipeline.
+Every phase returns a *string*. The pipeline has no step that writes those
+strings to a file, so no generated line of code has ever existed anywhere a
+runtime could load it. It previously closed the ladder by shelling out to
+``pytest`` in the current working directory and treating a green run as proof
+that the generated code worked — but that run exercised the checkout it was
+launched from, which the pipeline had not touched. A pass was guaranteed and
+meaningless, and a repo with passing tests made any generated code look
+correct.
 
-Usage:
-    from justai.agent_dispatch import AgentDispatchPipeline, AgentDispatchConfig
-    cfg = AgentDispatchConfig(max_mini_iterations=3)
-    pipeline = AgentDispatchPipeline(cfg)
-    result = pipeline.run("implement feature X", spec="detailed spec...")
+That test-running loop is gone, and :meth:`AgentDispatchPipeline.run` now
+refuses. Restoring it means adding the materialization step it never had:
+write the generated files to an isolated worktree and run the tests there.
+Until then this class is an inert record of the experiment's shape.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
 import time
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from typing import NoReturn
 
-from justai.results import DelegationResult
+from justai.results import DONE_STATUS, DelegationResult
 from justai.runner_protocol import (
     AgentRunner,  # noqa: F401  # stub; full integration post-safe-mini
 )
 from justai.scope_planner import Task
 
-PHASES = ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
+PHASES = ["pseudocode", "write_tests", "write_code"]
 
 LITELLM_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 MINI_MODEL = os.environ.get("JUSTAI_MINI_MODEL", "gpt-5.3-codex")
@@ -60,8 +64,6 @@ class AgentDispatchConfig:
     mini_model: str = "gpt-5.3-codex"
     escalation_model: str = "claude-opus-4-6"
     pseudocode_model: str = "gpt-5.3-codex"
-    test_command: str = "python3 -m pytest tests/ -v --tb=short"
-    work_dir: str = ""
 
 
 @dataclass
@@ -72,20 +74,6 @@ class PhaseResult:
     iterations: int = 1
     model: str = ""
     duration_seconds: float = 0.0
-
-
-@dataclass
-class PipelineResult:
-    goal: str
-    spec: str
-    phases: list[PhaseResult]
-    escalated: bool
-    total_iterations: int
-    model_calls: int
-    mini_calls: int
-    escalation_calls: int
-    duration_seconds: float
-    final_output: str = ""
 
 
 def _llm_call(model: str, prompt: str, system: str = "") -> str:
@@ -114,26 +102,13 @@ def _llm_call(model: str, prompt: str, system: str = "") -> str:
     return data["choices"][0]["message"]["content"]
 
 
-def _run_tests(test_cmd: str, work_dir: str = "") -> tuple[bool, str]:
-    """Run test command and return (passed, output)."""
-    try:
-        result = subprocess.run(
-            ["bash", "-c", test_cmd],
-            capture_output=True,
-            text=True,
-            cwd=work_dir or None,
-            timeout=60,
-        )
-        output = result.stdout[-500:] + result.stderr[-500:]
-        return result.returncode == 0, output
-    except subprocess.TimeoutExpired:
-        return False, "test command timed out"
-    except Exception as e:
-        return False, str(e)[:200]
-
-
 class AgentDispatchPipeline:
-    """Run the small-model-first agent dispatch workflow."""
+    """Quarantined small-model-first generation ladder — see the module docstring.
+
+    The generation phases are preserved verbatim for whoever wires the missing
+    materialization step. :meth:`run` refuses, because the ladder as a whole
+    reported an outcome about code it never wrote.
+    """
 
     def __init__(self, config: AgentDispatchConfig | None = None):
         self.config = config or AgentDispatchConfig()
@@ -215,116 +190,28 @@ class AgentDispatchPipeline:
             duration_seconds=time.time() - start,
         )
 
-    def _phase_iterate(self, code: str, tests: str, test_output: str) -> PhaseResult:
-        """Phase 4: Mini fixes failures."""
-        start = time.time()
-        prompt = (
-            f"The following tests are failing. Fix the code.\n\n"
-            f"Code:\n{code}\n\nTests:\n{tests}\n\n"
-            f"Test output:\n{test_output}\n\n"
-            f"Output the fixed code only."
-        )
-        output = self._call_mini(
-            prompt, system="You fix Python code to pass tests. Output fixed code only."
-        )
-        return PhaseResult(
-            phase="iterate",
-            status="done",
-            output=output,
-            model=self.config.mini_model,
-            duration_seconds=time.time() - start,
-        )
+    def run(self, goal: str, spec: str) -> NoReturn:
+        """Refuse to run: the ladder has no step that materializes its output.
 
-    def _phase_escalate(
-        self, goal: str, spec: str, code: str, tests: str, test_output: str
-    ) -> PhaseResult:
-        """Phase 5: Capable model takes over."""
-        start = time.time()
-        prompt = (
-            f"A junior agent attempted this task but couldn't get tests passing.\n\n"
-            f"Goal: {goal}\nSpec:\n{spec}\n\n"
-            f"Their code:\n{code}\n\nTests:\n{tests}\n\n"
-            f"Last test output:\n{test_output}\n\n"
-            f"Fix the code completely. Output the corrected implementation."
-        )
-        output = self._call_escalation(
-            prompt, system="You are a senior engineer fixing code that a junior couldn't get right."
-        )
-        return PhaseResult(
-            phase="escalate",
-            status="done",
-            output=output,
-            model=self.config.escalation_model,
-            duration_seconds=time.time() - start,
-        )
+        Raising here rather than at the end is deliberate. Generating three
+        phases of code and *then* admitting none of it was written would spend
+        real model calls to produce a result the caller cannot act on.
 
-    def run(self, goal: str, spec: str) -> PipelineResult:
-        """Execute the full mini-first pipeline."""
-        start = time.time()
-        phases: list[PhaseResult] = []
-
-        # Phase 1: Pseudocode
-        pseudo_result = self._phase_pseudocode(goal, spec)
-        phases.append(pseudo_result)
-        pseudocode = pseudo_result.output
-
-        # Phase 2: Write tests
-        test_result = self._phase_write_tests(pseudocode, spec)
-        phases.append(test_result)
-        tests = test_result.output
-
-        # Phase 3: Write code
-        code_result = self._phase_write_code(pseudocode, tests)
-        phases.append(code_result)
-        code = code_result.output
-
-        # Phase 4: Iterate — run tests, fix, repeat
-        iteration = 0
-        escalated = False
-        test_output = ""
-
-        for iteration in range(1, self.config.max_mini_iterations + 1):
-            passed, test_output = _run_tests(self.config.test_command, self.config.work_dir)
-
-            if passed:
-                phases.append(
-                    PhaseResult(
-                        phase="iterate",
-                        status="done",
-                        output=f"Tests pass on iteration {iteration}",
-                        iterations=iteration,
-                    )
-                )
-                break
-
-            # Mini attempts fix
-            fix_result = self._phase_iterate(code, tests, test_output)
-            phases.append(fix_result)
-            code = fix_result.output
-        else:
-            # Mini exhausted iterations — escalate
-            escalated = True
-            esc_result = self._phase_escalate(goal, spec, code, tests, test_output)
-            phases.append(esc_result)
-            code = esc_result.output
-
-        return PipelineResult(
-            goal=goal,
-            spec=spec,
-            phases=phases,
-            escalated=escalated,
-            total_iterations=iteration,
-            model_calls=self._model_calls,
-            mini_calls=self._mini_calls,
-            escalation_calls=self._escalation_calls,
-            duration_seconds=time.time() - start,
-            final_output=code,
+        Raises:
+            NotImplementedError: always.
+        """
+        raise NotImplementedError(
+            "AgentDispatchPipeline is quarantined: it holds generated code as "
+            "strings and never materializes it to disk, so no test run can say "
+            "anything about that code. Wire a materialization step — write the "
+            "generated files into an isolated worktree and run the tests there "
+            "— before restoring this ladder."
         )
 
 
 # ── Escalation Strategy ──────────────────────────────────────────────────────
-# Wraps task runners with try-cheap-then-escalate logic.
-# The AgentDispatchPipeline above is preserved as a standalone LLM pipeline utility.
+# Wraps task runners with try-cheap-then-escalate logic. This is the path the
+# orchestrator actually uses; the quarantined pipeline above is not wired to it.
 
 
 def escalate_task(
@@ -436,48 +323,139 @@ _EXECUTORS = {
 }
 
 
+def _invalid_dependency(position: int, task: Task) -> str | None:
+    """Describe the first dependency that cannot name an already-decided task.
+
+    ``depends_on`` holds positions in the plan, so a dependency is only
+    meaningful if it points strictly backwards: ``0 <= dep < position``. Every
+    other value — negative, past the end, its own position, or a later task —
+    names something that has no outcome by the time this task would run.
+
+    The planner fills ``depends_on`` from model-authored JSON, so the contents
+    are not guaranteed to be integers, or even to be a list. Anything this
+    function cannot resolve to a backward position is reported rather than
+    coerced.
+
+    Returns:
+        A reason string, or None when every dependency resolves.
+    """
+    deps = task.depends_on
+    if not isinstance(deps, list):
+        return f"dependency list is {type(deps).__name__}, not a list of task positions"
+
+    for dep in deps:
+        # `type(dep) is int` on purpose: JSON `true` is a bool, and a bool
+        # silently indexing task 0 or 1 is exactly the kind of accidental
+        # resolution this check exists to refuse.
+        if type(dep) is not int:
+            return f"dependency {dep!r} is not a task position"
+        if not 0 <= dep < position:
+            return (
+                f"dependency [{dep}] must name an earlier task "
+                f"(0..{position - 1}) to have an outcome by now"
+            )
+    return None
+
+
+def _normalize_blocked(
+    blocked_indices: Mapping[int, str] | Iterable[int] | None,
+) -> dict[int, str]:
+    """Accept either ``{index: reason}`` or a bare collection of indices."""
+    if blocked_indices is None:
+        return {}
+    if isinstance(blocked_indices, Mapping):
+        return dict(blocked_indices)
+    return dict.fromkeys(blocked_indices, "")
+
+
 def escalate_plan(
     tasks: list[Task],
     session_ref: str = "",
     mode: str = "delegated",
+    blocked_indices: Mapping[int, str] | Iterable[int] | None = None,
 ) -> list[DelegationResult]:
-    """Execute a task plan with per-task escalation.
+    """Execute a task plan with per-task escalation, one result per planned task.
 
     A model-dispatching task tries the cheap model first and escalates to the
     expensive model on failure. Unavailable-backend modes report once and are
-    not escalated, since no model is invoked. Tasks run in dependency order; if
-    a dependency does not complete, dependent tasks are skipped.
+    not escalated, since no model is invoked.
+
+    Every task in ``tasks`` gets exactly one result at its own position, and
+    positions never move. That is what makes ``depends_on`` mean anything: the
+    caller must pass the whole plan and name the tasks a checkpoint blocked,
+    rather than filtering them out. Handing over a compacted list used to
+    renumber the survivors, so a task could inherit the outcome of whichever
+    task landed on its dependency's old index and run on a dependency that
+    never completed.
 
     Args:
-        tasks: Ordered list of tasks from the planner.
+        tasks: The full ordered plan. Do not pre-filter it.
         session_ref: Session identifier.
         mode: Execution mode — "delegated", "local", or "swarm".
+        blocked_indices: Positions a checkpoint refused, optionally mapped to
+            the reason. Blocked tasks are not dispatched and do not satisfy a
+            dependency.
     """
     runner = _EXECUTORS.get(mode, _execute_removed_backend)
-    results: list[DelegationResult | None] = [None] * len(tasks)
+    blocked = _normalize_blocked(blocked_indices)
+    results: list[DelegationResult] = []
 
     for i, task in enumerate(tasks):
-        # Check dependencies
-        skip = False
-        for dep_idx in task.depends_on:
-            dep_result = results[dep_idx] if dep_idx < len(results) else None
-            if dep_result is not None and dep_result.status != "done":
-                print(
-                    f"[escalation] skipping task [{i}] '{task.title}' — dependency [{dep_idx}] failed"
-                )
-                results[i] = DelegationResult(
-                    task_id="skipped",
-                    title=task.title,
-                    status="skipped",
-                    result=f"Skipped — dependency [{dep_idx}] did not complete",
-                    duration_seconds=0,
-                )
-                skip = True
-                break
+        results.append(_result_for(i, task, results, blocked, runner, session_ref))
 
-        if not skip:
-            result = escalate_task(task, session_ref=session_ref, runner=runner)
-            results[i] = result
-            print(f"[escalation] task [{i}] {result.status}: {result.result[:80]}")
+    return results
 
-    return [r for r in results if r is not None]
+
+def _result_for(
+    position: int,
+    task: Task,
+    decided: list[DelegationResult],
+    blocked: dict[int, str],
+    runner: Callable[..., DelegationResult],
+    session_ref: str,
+) -> DelegationResult:
+    """Decide one task's outcome. ``decided`` holds results for positions 0..position-1."""
+    bad_dep = _invalid_dependency(position, task)
+    if bad_dep is not None:
+        # Fail closed. An unresolvable dependency is a defect in the plan, and
+        # dispatching anyway would run a task whose precondition is unknown.
+        print(f"[escalation] task [{position}] '{task.title}' — invalid dependency: {bad_dep}")
+        return DelegationResult(
+            task_id=f"invalid-dependency-{position}",
+            title=task.title,
+            status="error",
+            result=(
+                f"Invalid dependency: {bad_dep}. This task's precondition cannot "
+                f"be checked, so it was not dispatched."
+            ),
+            duration_seconds=0.0,
+        )
+
+    if position in blocked:
+        reason = blocked[position] or "blocked at the risk checkpoint"
+        print(f"[escalation] task [{position}] blocked: {reason}")
+        return DelegationResult(
+            task_id=f"blocked-{position}",
+            title=task.title,
+            status="blocked",
+            result=f"Not dispatched — {reason}",
+            duration_seconds=0.0,
+        )
+
+    for dep in task.depends_on:
+        if decided[dep].status != DONE_STATUS:
+            print(
+                f"[escalation] skipping task [{position}] '{task.title}' — "
+                f"dependency [{dep}] did not complete"
+            )
+            return DelegationResult(
+                task_id=f"skipped-{position}",
+                title=task.title,
+                status="skipped",
+                result=f"Skipped — dependency [{dep}] did not complete",
+                duration_seconds=0.0,
+            )
+
+    result = escalate_task(task, session_ref=session_ref, runner=runner)
+    print(f"[escalation] task [{position}] {result.status}: {result.result[:80]}")
+    return result

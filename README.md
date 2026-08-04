@@ -61,10 +61,24 @@ python3 -m justai <command>
 Current behavior:
 
 - `justai plan` produces a task plan and falls back to heuristic planning when the model-routing service is unavailable.
-- `justai status` reports control-plane dependency health.
+- `justai status` reports control-plane dependency health, broken out into planning readiness and execution readiness. It exits 0 only when every probe is up — the same derivation the API's `/health` endpoint reports as `all_ok`.
 - `justai history` reads prior run summaries when local memory is configured.
 - `justai run --auto --local "goal"` currently returns an explicit unavailable-backend error. It does not execute planner-authored shell strings or report an unperformed edit as complete.
 - `justai run --auto "goal"` enters a delegated mode that is intentionally disabled in this branch and returns an explicit error.
+
+### Exit codes
+
+Exit 0 means verified completion: work was planned, it ran, and every task reported done. Nothing else earns it — an ambiguous goal is a legitimate answer, but nothing was planned and nothing ran, so returning 0 would tell a `&&` chain the work happened.
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| 0 | `OK` | Verified complete. |
+| 1 | `FAILED` | The run did not complete (partial, blocked, or failed). |
+| 2 | — | Reserved: `argparse`'s usage-error code, never assigned by JustAi. |
+| 3 | `CLARIFICATION_REQUIRED` | The goal was ambiguous; no plan was run. |
+| 4 | `NOT_READY` | A readiness probe reported the control plane unready. |
+
+See [`justai/exit_codes.py`](justai/exit_codes.py) for the mapping.
 
 ## Pipeline
 
@@ -112,7 +126,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 385 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 410 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 ## Repo Map
 
@@ -127,8 +141,9 @@ justai/
   memory.py          # local memory client
   trajectory.py      # run trajectory recording and lookup
   ledger.py          # run accounting
-  health.py          # service probes
-  results.py         # delegation/result dataclasses
+  health.py          # service probes and planning/execution readiness
+  results.py         # result dataclasses, status vocabulary, run verdict
+  exit_codes.py      # documented process exit codes
   api.py             # dashboard/API support
 ```
 
