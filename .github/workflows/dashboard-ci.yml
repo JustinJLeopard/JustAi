@@ -1,40 +1,46 @@
 name: Dashboard CI
 
-# dashboard/ is the only npm project in this repo, so scope runs to it.
-# The workflow file itself is included in the filters: a change to CI must be
-# validated by the CI it describes, and dashboard/package.json and
-# dashboard/package-lock.json are already covered by the dashboard/** glob.
+# No `paths:` filter on pull_request, deliberately.
+#
+# A path-filtered workflow is skipped entirely on PRs that miss the filter, and
+# a skipped workflow never reports a status. Once this check is marked required
+# in a ruleset, every PR that doesn't touch dashboard/ would sit forever on
+# "Expected — Waiting for status to be reported" and could not be merged. The
+# alternative (a third-party changed-files action, or a paths-filter plus a
+# dummy "success" job) adds a dependency and a branch of logic whose only job is
+# to defeat the filter it just added.
+#
+# The honest trade is cost: this installs, builds, and runs 40 tests on every
+# PR. For a project this size that is a couple of minutes of a free runner —
+# cheaper than the machinery required to skip it correctly.
 on:
   pull_request:
-    paths:
-      - 'dashboard/**'
-      - '.github/workflows/dashboard-ci.yml'
   push:
+    # main is the integration branch; demo-build is the branch the public Vercel
+    # demo deploys from. Both are branches whose broken state is visible, so
+    # both get a post-merge signal.
     branches:
       - main
-    paths:
-      - 'dashboard/**'
-      - '.github/workflows/dashboard-ci.yml'
+      - demo-build
 
 # Least privilege: this job only reads the tree. It never writes to the repo,
 # publishes anything, or comments on pull requests.
 permissions:
   contents: read
 
-# Only the newest run for a ref matters; supersede in-flight ones.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseding an in-flight run is right for a PR: only the newest push to a
+  # branch under review needs an answer. It is wrong for push, where each run is
+  # the record for one commit that already landed on main or demo-build —
+  # cancelling those leaves a merged commit with no CI result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test:
     name: build + test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      # Pinned rather than floating so a CI result is reproducible. This is the
-      # version the change was validated against locally.
-      NODE_VERSION: '24.16.0'
     defaults:
       run:
         working-directory: dashboard
@@ -50,7 +56,19 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          # Keep this literal in sync with `engines.node` in
+          # dashboard/package.json — same Node major, declared in both places.
+          #
+          # It is written out rather than read via `node-version-file:
+          # package.json` because the setup-node README lists package.json as an
+          # accepted file without documenting which field it reads, and this
+          # workflow should not depend on undocumented parsing.
+          #
+          # `24.x` rather than an exact patch because Vercel only offers major
+          # versions and "automatically rolls out minor and patch updates" — the
+          # deploy that this build is a proxy for always runs the latest 24.x.
+          # Pinning a patch here would test a toolchain Vercel never promises.
+          node-version: '24.x'
           cache: npm
           # Relative to the workspace root, not the job working-directory.
           cache-dependency-path: dashboard/package-lock.json

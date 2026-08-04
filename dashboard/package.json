@@ -4,6 +4,9 @@
   "private": true,
   "license": "MIT",
   "description": "JustAi — real-time orchestration dashboard",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "vite --port 3001",
     "build": "tsc && vite build",
