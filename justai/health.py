@@ -75,12 +75,17 @@ def check_litellm() -> ServiceStatus:
 
 
 def check_safe_mini_boundary() -> ServiceStatus:
-    """Check the planned safe-mini boundary is represented by the local stub."""
+    """Report whether a concrete safe-mini runner is integrated."""
     try:
         from justai.runner_protocol import AgentRunner
 
         _ = AgentRunner
-        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "stub available")
+        return ServiceStatus(
+            "safe-mini boundary",
+            "justai.runner_protocol",
+            False,
+            "protocol present; concrete runner not integrated",
+        )
     except Exception as e:
         return ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, str(e)[:120])
 

@@ -64,12 +64,13 @@ class ServiceHealthTests(unittest.TestCase):
         self.assertTrue(status.ok)
         self.assertIn("http 401", status.detail)
 
-    def test_safe_mini_boundary_stub_available(self):
+    def test_safe_mini_protocol_stub_is_not_a_healthy_runner(self):
         from justai.health import check_safe_mini_boundary
 
         status = check_safe_mini_boundary()
-        self.assertTrue(status.ok)
+        self.assertFalse(status.ok)
         self.assertEqual(status.name, "safe-mini boundary")
+        self.assertIn("not integrated", status.detail)
 
     def test_memory_requires_health_ok_signature(self):
         from justai.health import check_memory

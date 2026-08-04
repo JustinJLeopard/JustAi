@@ -135,7 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto", action="store_true", help="Auto-approve R1 checkpoints (no 60s wait)"
     )
     p_run.add_argument(
-        "--local", action="store_true", help="Execute tasks locally instead of delegating to agent"
+        "--local",
+        action="store_true",
+        help="Request local execution (currently fails closed until safe-mini is wired)",
     )
     p_run.add_argument("--session", default="", help="Session reference for tracing")
     p_run.set_defaults(func=cmd_run)

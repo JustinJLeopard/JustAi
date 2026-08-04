@@ -1,8 +1,10 @@
 """
-JustAi - Agent Dispatch (current concrete impl)
-===============================================
-Today this module IS the dispatch implementation: it calls escalate_plan/
-escalate_task with the existing mini-swe-agent flow.
+JustAi - Agent Dispatch (transitional control plane)
+=====================================================
+The CLI dispatch surface currently fails closed because neither the removed
+delegated backend nor a safe local editing runner is wired. ``escalate_plan``
+still preserves dependency ordering and result synthesis, but it must not
+promote planner-authored verification commands into task completion.
 
 POST-SAFE-MINI MIGRATION: this module's role narrows to "JustAi's
 specific configuration + adaptation layer" between JustAi's Plan/Task
@@ -10,8 +12,8 @@ types and safe-mini's Chunk/Budget. The actual run loop will move to
 safe-mini's SafeMiniRunner. See justai/runner_protocol.py for the
 forward-looking dispatch contract.
 
-Current workflow routes task execution through a small-model-first dispatch
-ladder:
+The standalone ``AgentDispatchPipeline`` experiment below models a
+small-model-first generation ladder:
 
   1. PSEUDOCODE — Capable model (codex) generates pseudocode from spec
   2. WRITE_TESTS — Mini writes tests per function (with IDs)
@@ -379,61 +381,34 @@ def escalate_task(
     return escalation_result
 
 
-def _verify_task(task: Task) -> tuple[bool, str]:
-    """Run the task's success criteria and return (passed, output)."""
-    criteria = task.success_criteria
-    if not criteria or criteria.strip() in (
-        "echo 'verify manually'",
-        "echo 'task completed -- verify manually'",
-    ):
-        return True, "no automated verification"
-
-    try:
-        result = subprocess.run(
-            ["bash", "-c", criteria],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            return True, result.stdout[:500]
-        return False, f"exit {result.returncode}: {result.stderr[:300]}"
-    except subprocess.TimeoutExpired:
-        return False, "verification command timed out"
-    except Exception as exc:
-        return False, str(exc)[:200]
-
-
-def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
-    """Run a single task's verification criteria locally."""
-    start = time.time()
-    passed, output = _verify_task(task)
-    status = "done" if passed else "failed"
-    return DelegationResult(
-        task_id=f"local-{session_ref or 'task'}",
-        title=task.title,
-        status=status,
-        result=output[:200]
-        if passed
-        else f"Task requires manual execution: {task.description[:100]}",
-        duration_seconds=time.time() - start,
-    )
-
-
 def _execute_removed_backend(task: Task, session_ref: str = "") -> DelegationResult:
     """Return an explicit error for backend modes removed in Phase 4 cleanup."""
     return DelegationResult(
         task_id=f"removed-{session_ref or 'task'}",
         title=task.title,
         status="error",
-        result="External delegation backend was removed; use local mode.",
+        result="External delegation backend was removed; use `justai plan`.",
+        duration_seconds=0.0,
+    )
+
+
+def _execute_local_unavailable(task: Task, session_ref: str = "") -> DelegationResult:
+    """Fail closed until a real, acceptance-bound local executor is wired."""
+    return DelegationResult(
+        task_id=f"local-unavailable-{session_ref or 'task'}",
+        title=task.title,
+        status="error",
+        result=(
+            "Local execution backend is unavailable; use `justai plan` until "
+            "safe-mini integration is installed and verified."
+        ),
         duration_seconds=0.0,
     )
 
 
 _EXECUTORS = {
     "delegated": _execute_removed_backend,
-    "local": _execute_single_local,
+    "local": _execute_local_unavailable,
     "swarm": _execute_removed_backend,
 }
 

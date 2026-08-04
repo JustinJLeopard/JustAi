@@ -12,7 +12,7 @@ JustAi is a project-orchestration control-plane for breaking engineering goals i
 JustAi is public as the control-plane layer of a broader agent-infrastructure system. The current split is intentional: keep orchestration, execution safety, evaluation, and experiments auditable as separate surfaces instead of hiding them in one opaque agent repo.
 
 - Current code is the JustAi control-plane layer.
-- The execution substrate is being separated into `safe-mini`.
+- The execution substrate exists separately as `safe-mini`, but this repository does not yet pin or invoke it.
 - The experiment/calibration driver is being separated into `local-resident`.
 - Some CLI paths still expose transitional behavior while the split finishes.
 
@@ -29,7 +29,7 @@ JustAi is public as the control-plane layer of a broader agent-infrastructure sy
 
 ## Architecture
 
-JustAi scopes a user goal into bounded tasks, reviews the plan, applies risk checkpoints, runs the currently available local verification path, records run history, and synthesizes the result.
+JustAi scopes a user goal into bounded tasks, reviews the plan, and applies risk checkpoints. Its execution backends are currently unavailable: the removed delegated path and the unwired local safe-mini path both fail closed instead of claiming task completion.
 
 The intended three-repo shape is:
 
@@ -63,7 +63,7 @@ Current behavior:
 - `justai plan` produces a task plan and falls back to heuristic planning when the model-routing service is unavailable.
 - `justai status` reports control-plane dependency health.
 - `justai history` reads prior run summaries when local memory is configured.
-- `justai run --auto --local "goal"` runs the orchestrator and executes each approved task's verification command locally.
+- `justai run --auto --local "goal"` currently returns an explicit unavailable-backend error. It does not execute planner-authored shell strings or report an unperformed edit as complete.
 - `justai run --auto "goal"` enters a delegated mode that is intentionally disabled in this branch and returns an explicit error.
 
 ## Pipeline
@@ -74,7 +74,7 @@ Current behavior:
 | Scope | `scope_planner.py` | Decompose the goal into bounded tasks with success criteria. |
 | Review | `reviewer.py` | Check whether the plan is coherent enough to run. |
 | Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates; `--auto` skips the R1 wait. |
-| Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Run local verification commands or return removed-backend errors, then summarize results. |
+| Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Fail closed while execution backends are unavailable, then summarize the non-success result. |
 
 ## Install
 
@@ -100,10 +100,9 @@ python -m pytest -q
 ```bash
 source .venv/bin/activate
 justai plan "describe the repo change you want"
-justai run --auto --local "describe the repo change you want"
 ```
 
-The local run path executes checkpointed verification commands for planned tasks. It is not a full autonomous code-editing backend in this branch.
+The current branch is a planning and checkpointing control-plane skeleton, not a productive coding runner. Do not use `run` as a completion oracle until an exact-pinned safe-mini runner and goal-bound artifact acceptance are integrated and verified.
 
 ## Testing
 
@@ -113,7 +112,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 380 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 381 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 ## Repo Map
 

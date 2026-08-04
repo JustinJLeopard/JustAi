@@ -8,6 +8,10 @@
 ### Changed
 - README reframed around the current JustAi control-plane scope and the planned `safe-mini` / `local-resident` split.
 - Public documentation trimmed to remove stale internal planning artifacts and obsolete release notes.
+- `justai run --local` now fails closed with an explicit unavailable-backend error instead of running planner-authored verification commands, and `check_safe_mini_boundary` reports the protocol stub as not-integrated rather than healthy.
+
+### Fixed
+- Local execution mode no longer reports an unperformed mutation as `done`; passing a planner-authored success criterion is no longer treated as task completion.
 
 ## [v0.4.0] - 2026-04-30
 

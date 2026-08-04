@@ -22,7 +22,7 @@ JustAi control plane
   - synthesize results and memory
         |
         v
-safe-mini substrate (planned separate repo)
+safe-mini substrate (separate repo; not yet wired here)
   - mini-style bash-action loop
   - worktree isolation
   - env scrubbing
@@ -53,7 +53,7 @@ The long-term job of this layer is to predict both budgets:
 
 ### 2. Substrate
 
-Substrate lives in safe-mini once that repo is stood up.
+Substrate lives in the separate safe-mini repository. JustAi does not yet import or invoke it.
 
 The substrate is the load-bearing runtime around a mini-swe-agent-style loop:
 
@@ -92,7 +92,7 @@ Planned ship sequence:
 
 - Phase A: consumers pin `safe-mini @ git+https://github.com/JustinJLeopard/safe-mini.git@...`.
 - Phase B: safe-mini publishes to PyPI and consumers use a version pin.
-- Current state: the safe-mini repo does not exist yet. Stand-up is post-JustAi-closure work.
+- Current state: the safe-mini repo exists and has its own validation evidence, but JustAi has no pinned dependency or concrete runner integration. The local and delegated execution modes therefore fail closed.
 
 ## Current Repo Layout
 
@@ -125,7 +125,7 @@ justai/
 Important boundaries:
 
 - `scope_planner.py` owns task decomposition and task data shapes for the current repo.
-- `agent_dispatch.py` is transitional. Local mode runs verification commands; removed backends return explicit errors.
+- `agent_dispatch.py` is transitional. Local, delegated, and swarm modes return explicit unavailable-backend errors; planner-authored success criteria are not executed as task completion.
 - `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates.
 - `results.py`, `trajectory.py`, and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
 - `memory.py` is integration glue with the surrounding development memory system.
@@ -166,12 +166,12 @@ justai run --auto --local "goal"
   -> reviewer.review_plan
   -> checkpoint.evaluate
   -> agent_dispatch.escalate_plan(mode="local")
-  -> verification command per task
-  -> synthesizer.synthesize
+  -> explicit unavailable-backend results
+  -> synthesizer.synthesize(status="failed")
   -> trajectory / ledger / memory best-effort writes
 ```
 
-Default delegated mode is intentionally not a live backend right now. It returns an explicit removed-backend error and tells the caller to use local mode.
+No execution mode is a live backend right now. Local mode stays exposed only as a transitional compatibility surface and fails closed until exact-pinned safe-mini execution plus goal-bound artifact acceptance are integrated.
 
 ## Current Boundary
 
@@ -185,7 +185,7 @@ Historical sprint-era designs now live under `docs/archive/` when they are still
 
 ## Migration Plan
 
-When safe-mini is stood up, move or re-author these pieces there:
+When JustAi integrates safe-mini, remove or replace the remaining local placeholders and bind these pieces to the substrate's public API:
 
 - runner loop and action protocol
 - executor policy types
