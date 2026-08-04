@@ -342,6 +342,14 @@ def escalate_task(
     Returns:
         DelegationResult — from first attempt if successful, from escalation otherwise.
     """
+    if not _dispatches_to_model(runner):
+        # No backend is wired. This runner reports unavailability without
+        # invoking a model or touching the workspace, so there is no first
+        # attempt that could have failed and nothing to escalate to. Answer
+        # from a single call: a retry would repeat the same error while the
+        # escalation notice would narrate model work that never happened.
+        return runner(task, session_ref=session_ref)
+
     original_model = os.environ.get("JUSTAI_ACTIVE_MODEL", "")
 
     # First attempt: cheap model
@@ -406,6 +414,21 @@ def _execute_local_unavailable(task: Task, session_ref: str = "") -> DelegationR
     )
 
 
+#: Runners that return an unavailable-backend result without invoking a model
+#: or touching the workspace. ``escalate_task`` must not run its retry ladder
+#: over these: the second call cannot behave differently, and the escalation
+#: notice would claim model work that never happened. A concrete runner is
+#: deliberately absent from this set so the ladder still applies to real work.
+_NON_DISPATCHING_RUNNERS: frozenset[Callable[..., DelegationResult]] = frozenset(
+    {_execute_removed_backend, _execute_local_unavailable}
+)
+
+
+def _dispatches_to_model(runner: Callable[..., DelegationResult]) -> bool:
+    """Whether a runner invokes a model, and can therefore be meaningfully retried."""
+    return runner not in _NON_DISPATCHING_RUNNERS
+
+
 _EXECUTORS = {
     "delegated": _execute_removed_backend,
     "local": _execute_local_unavailable,
@@ -420,9 +443,10 @@ def escalate_plan(
 ) -> list[DelegationResult]:
     """Execute a task plan with per-task escalation.
 
-    Each task tries cheap model first, escalates to expensive model on failure.
-    Tasks run in dependency order; if a dependency fails (even after escalation),
-    dependent tasks are skipped.
+    A model-dispatching task tries the cheap model first and escalates to the
+    expensive model on failure. Unavailable-backend modes report once and are
+    not escalated, since no model is invoked. Tasks run in dependency order; if
+    a dependency does not complete, dependent tasks are skipped.
 
     Args:
         tasks: Ordered list of tasks from the planner.
@@ -445,7 +469,7 @@ def escalate_plan(
                     task_id="skipped",
                     title=task.title,
                     status="skipped",
-                    result=f"Skipped — dependency [{dep_idx}] did not complete after escalation",
+                    result=f"Skipped — dependency [{dep_idx}] did not complete",
                     duration_seconds=0,
                 )
                 skip = True

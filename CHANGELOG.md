@@ -12,6 +12,8 @@
 
 ### Fixed
 - Local execution mode no longer reports an unperformed mutation as `done`; passing a planner-authored success criterion is no longer treated as task completion.
+- Unavailable-backend modes no longer print a fictitious `failed on <model>, escalating to <model>` notice or dispatch a second time; with no backend wired, no model is invoked and nothing is retried.
+- README opening description and the packaged project description no longer advertise a productive local / mini-swe-agent execution backend.
 
 ## [v0.4.0] - 2026-04-30
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "justai"
 version = "1.0.0"
-description = "Self-hostable AI development orchestrator for mini-swe-agent"
+description = "Self-hostable control-plane that plans and checkpoints coding tasks; execution backend not yet wired"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}

@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-JustAi is a project-orchestration control-plane for breaking engineering goals into small, reviewable tasks and running them through checkpointed local workflows.
+JustAi is a project-orchestration control-plane: it breaks engineering goals into small, reviewable tasks, reviews the resulting plan, and applies risk checkpoints. It does not currently execute those tasks — no execution backend is wired, so `run` fails closed rather than reporting work it did not perform.
 
 [Live demo](https://justai-demo.vercel.app) · [Case study](https://www.delegateandorchestrate.com/work/justai) · [Portfolio](https://www.delegateandorchestrate.com) · [Safe execution substrate](https://github.com/JustinJLeopard/safe-mini)
 
@@ -112,7 +112,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 381 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 385 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 ## Repo Map
 
