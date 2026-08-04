@@ -15,6 +15,8 @@
 - `justai run --local` now fails closed with an explicit unavailable-backend error instead of running planner-authored verification commands, and `check_safe_mini_boundary` reports the protocol stub as not-integrated rather than healthy.
 - `justai run` prints an execution-readiness warning during preflight, so a run that will fail closed says so before planning.
 - The run summary and the stored run record now count blocked tasks alongside skipped ones.
+- **Public signature change:** `checkpoint.evaluate(task, task_id="unknown", auto=None)` takes auto mode as an argument. `auto=None` still reads `JUSTAI_AUTO_MODE`, so a direct call and a shell that exports the variable both keep working; nothing in the package writes it any more. Auto mode belongs to a run, not to the interpreter.
+- The execute stage takes its counts and trace metadata from `results.tally` instead of summing statuses inline. Withheld work fell between the stage's own "done" and "failed" buckets and was reported by neither the trace nor the hook, and a status nothing recognised was counted there as an absence of failure.
 - Mission Control renders planning and execution readiness, including an explicit execution-unavailable state while no backend is integrated.
 - The standalone `AgentDispatchPipeline` experiment is quarantined: its `run` raises `NotImplementedError`, and the iterate/escalate phases plus `PipelineResult`, `_run_tests`, `AgentDispatchConfig.test_command`, and `AgentDispatchConfig.work_dir` are removed.
 
@@ -30,6 +32,7 @@
 - `synthesize` and `learning.record_run` no longer derive success independently, and no longer call a run with zero results complete. An unrecognised result status now raises rather than falling through to a non-failure bucket; the learning layer refuses to store such a run.
 - Auto mode is scoped to one run. An auto-approved request no longer disables the R1 operator veto for later runs in the same process.
 - Malformed executor results now fail the run nonzero while preserving the error hook, ledger entry, trajectory-record attempt, and trace flush instead of escaping through reporting code.
+- Two malformations that are not a bad string field are refused at the same tally boundary: a `duration_seconds` that is not a number, and an executor return value that is not a sequence of results at all. Both used to escape as `TypeError` with nothing flushed and nothing recorded — the first from the synthesizer, which runs past the execute stage's failure boundary, and the second from the failure handler itself while trying to iterate what it had been handed.
 - `AgentDispatchPipeline` no longer runs the launching checkout's test suite and attributes the result to code it generated as strings and never wrote to disk.
 
 ## [v0.4.0] - 2026-04-30

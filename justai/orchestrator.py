@@ -117,14 +117,20 @@ def _fail_uncountable_results(
     the run record, so the operator got a traceback in place of a verdict and
     the run left no artefact behind.
 
+    Everything below treats ``results`` as untrusted, including its type. An
+    executor that returned no sequence at all reaches here too, and iterating
+    or measuring it would raise a second exception inside the very handler that
+    exists to record the first one.
+
     The verdict is ``failed``: no result set was countable, so nothing here was
     verified, and :func:`justai.exit_codes.for_run_status` maps that to nonzero.
     ``record_run`` is still called and refuses an unusable status on its own —
     the trajectory store must not file a run it cannot classify either.
     """
+    produced = list(results) if isinstance(results, (list, tuple)) else []
     print()
     print(f"  ✗ Run failed at [{stage}]: {error}")
-    for index, r in enumerate(results):
+    for index, r in enumerate(produced):
         task_id = getattr(r, "task_id", None)
         title = getattr(r, "title", None)
         status = getattr(r, "status", None)
@@ -132,20 +138,22 @@ def _fail_uncountable_results(
         safe_title = title[:38] if isinstance(title, str) else "<invalid title>"
         safe_status = status if isinstance(status, str) else f"<invalid {type(status).__name__}>"
         print(f"      unusable [{safe_task_id}] {safe_title} → status {safe_status!r}")
-    print(f"    {len(results)} result(s) produced; the set is not countable. Nothing was verified.")
+    print(
+        f"    {len(produced)} result(s) produced; the set is not countable. Nothing was verified."
+    )
     print("    Fix the executor that emitted this, or the caller that named the blocked tasks.")
     print()
 
     hook.on_error("Run results could not be counted", stage=stage, root_cause=str(error))
     _ledger.record(run_id=run_id, agent=session_ref, stage=stage, duration_s=round(duration, 2))
-    record_run(goal, results, duration)
+    record_run(goal, produced, duration)
     flush_traces()
 
     return OrchestrationResult(
         goal=goal,
         intent=intent,
-        task_count=len(results),
-        results=results,
+        task_count=len(produced),
+        results=produced,
         duration_seconds=duration,
         status=RUN_FAILED,
     )
