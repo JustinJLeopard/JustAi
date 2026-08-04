@@ -83,17 +83,21 @@ def test_reviewer_merges_feedback_and_suggestions():
     assert "Split it" in result.feedback
 
 
-def test_checkpoint_gate_file_write_and_read_roundtrip():
-    from justai.checkpoint import _gate_file, _read_gate, _write_gate
+def test_checkpoint_gate_file_write_and_read_roundtrip(tmp_path, monkeypatch):
+    from justai.checkpoint import GateIdentity, _read_gate, _write_gate, cleanup_run, gate_dir
+    from justai.run_identity import new_run_id
 
-    task_id = "test-roundtrip"
-    _write_gate(task_id, "approved", "looks good")
-    try:
-        result = _read_gate(task_id)
-        assert result["status"] == "approved"
-        assert result["reason"] == "looks good"
-    finally:
-        _gate_file(task_id).unlink(missing_ok=True)
+    monkeypatch.setattr("justai.checkpoint.GATE_SIGNAL_DIR", tmp_path / "gates")
+    gate = GateIdentity(run_id=new_run_id(), index=0, session_ref="roundtrip")
+    _write_gate(gate, "approved", "looks good")
+
+    result = _read_gate(gate)
+    assert result["status"] == "approved"
+    assert result["reason"] == "looks good"
+    assert result["run_id"] == gate.run_id, "a record must say which run it decided"
+
+    assert cleanup_run(gate.run_id) == 1
+    assert not gate_dir(gate.run_id).exists()
 
 
 def test_runtime_env_sets_expected_root_aliases():

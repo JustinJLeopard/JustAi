@@ -29,7 +29,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from justai.agent_dispatch import escalate_plan
-from justai.checkpoint import evaluate
+from justai.checkpoint import GateIdentity, cleanup_run, evaluate, run_gate_lock
 from justai.discord import OrchestratorHook
 from justai.exit_codes import for_run_status
 from justai.health import preflight, print_preflight, readiness
@@ -39,6 +39,7 @@ from justai.ledger import Ledger
 from justai.memory import Memory
 from justai.results import RUN_FAILED, tally
 from justai.reviewer import REVIEWER_MODEL, ReviewResult, review
+from justai.run_identity import new_run_id, parse_run_id
 from justai.scope_planner import PLANNER_MODEL, Plan, decompose, format_plan
 from justai.synthesizer import format_summary, synthesize
 from justai.tracing import flush_traces, trace_event, trace_generation
@@ -59,6 +60,9 @@ class OrchestrationResult:
     duration_seconds: float
     status: str  # "complete" | "partial" | "blocked" | "ambiguous"
     escalations: int = 0
+    #: This run's identity — what its gates were scoped to. Returned so a
+    #: caller can name the exact run afterwards, in a log or a resume.
+    run_id: str = ""
 
 
 # Shared memory client — talks to MCP HTTP at :3100 (~5ms vs ~300ms CLI)
@@ -156,16 +160,20 @@ def _fail_uncountable_results(
         results=produced,
         duration_seconds=duration,
         status=RUN_FAILED,
+        run_id=run_id,
     )
 
 
-def _print_header(goal: str, auto: bool = False) -> None:
+def _print_header(goal: str, auto: bool = False, run_id: str = "", session_ref: str = "") -> None:
     print()
     print("╔══════════════════════════════════════════════════════╗")
     mode = " [AUTO]" if auto else ""
     print(f"║  JustAi Orchestrator{mode:<36}║")
     print("╚══════════════════════════════════════════════════════╝")
     print(f"  Goal: {goal[:70]}")
+    # Named up front because it is what an operator needs before the run
+    # reaches a gate: which run is asking, and which one an approval releases.
+    print(f"  Run:  {run_id}  (session: {session_ref or 'unlabelled'})")
     print()
 
 
@@ -175,23 +183,37 @@ def run(
     auto: bool = AUTO_MODE,
     local: bool = LOCAL_EXEC,
     swarm: bool = SWARM_MODE,
+    run_id: str | None = None,
 ) -> OrchestrationResult:
     """
     Full orchestration pipeline for a given goal.
 
     Args:
         goal: The task to accomplish.
-        session_ref: Session identifier for tracing and memory.
+        session_ref: Human label for tracing and memory. Reused on purpose and
+            often empty; it names nothing and scopes nothing.
         auto: If True, R1 checkpoints auto-approve immediately (no 60s wait).
             The decision is passed to each checkpoint rather than exported to
             the environment: it belongs to this run, and a process-global copy
             of it disabled the R1 operator veto for every later run in the same
             interpreter — including every subsequent request to the API server.
         local: If True, execute tasks locally instead of delegating to agent.
+        run_id: This run's identity, minted fresh when omitted — which is what
+            an ordinary CLI or API run does. Pass one only deliberately: to
+            resume a run whose gates are already on disk, or to mint the
+            identity in the caller so an operator can be told where the gates
+            will be before the run reaches them (the API server does this). It
+            must be a UUID; a label, a timestamp or a goal is refused, because
+            two runs can produce the same one and then one approval releases
+            both.
+
+    Raises:
+        InvalidRunId: ``run_id`` was supplied and is not a UUID. Nothing runs —
+            a run whose gates cannot be scoped must not reach a gate.
     """
     start = time.time()
-    run_id = f"{session_ref}-{int(start)}"
-    _print_header(goal, auto=auto)
+    run_id = new_run_id() if run_id is None else parse_run_id(run_id)
+    _print_header(goal, auto=auto, run_id=run_id, session_ref=session_ref)
 
     # Discord notifications (no-op if webhook not configured)
     _hook = OrchestratorHook(run_id=run_id)
@@ -251,6 +273,7 @@ def run(
             results=[],
             duration_seconds=time.time() - start,
             status="ambiguous",
+            run_id=run_id,
         )
 
     # ── Stage 2: Plan Decomposition ───────────────────────────────────────────
@@ -336,6 +359,7 @@ def run(
                 results=[],
                 duration_seconds=time.time() - start,
                 status="blocked",
+                run_id=run_id,
             )
 
         _t3.end(
@@ -347,19 +371,36 @@ def run(
     print("      Plan approved ✓")
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
-    print("\n[4/5] Evaluating checkpoints...")
-    trace_event("checkpoint", metadata={"task_count": len(plan.tasks)}, session_id=session_ref)
+    print(f"\n[4/5] Evaluating checkpoints... (gates for run {run_id})")
+    trace_event(
+        "checkpoint",
+        metadata={"task_count": len(plan.tasks), "run_id": run_id},
+        session_id=session_ref,
+    )
     # Blocked tasks keep their position in the plan. Dropping them here used to
     # renumber the survivors, which silently redirected every `depends_on`.
     blocked_reasons: dict[int, str] = {}
-    for i, task in enumerate(plan.tasks):
-        task_id = f"{session_ref}-plan-{i}"
-        proceed, reason = evaluate(task, task_id=task_id, auto=auto)
-        if proceed:
-            print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
-        else:
-            print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
-            blocked_reasons[i] = reason
+    # Every gate below is scoped to this run's id, so a concurrent run that
+    # happens to share the session label — the default, since `justai run`
+    # leaves it empty — cannot be released by an approval written for this one.
+    # The lock is held for the whole stage: only a second process resuming this
+    # same run contends for it, and that is exactly the pair that must not
+    # drive one set of gate files at once.
+    with run_gate_lock(run_id):
+        for i, task in enumerate(plan.tasks):
+            gate = GateIdentity(run_id=run_id, index=i, session_ref=session_ref)
+            proceed, reason = evaluate(task, gate, auto=auto)
+            if proceed:
+                print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
+            else:
+                print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
+                blocked_reasons[i] = reason
+
+    # Every gate has been decided, so this run's records have done their work.
+    # Scoped to this run id and to nothing else: a parallel run's pending
+    # approval is not this run's to delete. A run that dies before here leaves
+    # its gates behind on purpose — that is what makes a resume possible.
+    cleanup_run(run_id)
 
     dispatchable = len(plan.tasks) - len(blocked_reasons)
 
@@ -480,6 +521,7 @@ def run(
         duration_seconds=duration,
         status=summary.status,
         escalations=escalation_count,
+        run_id=run_id,
     )
 
 

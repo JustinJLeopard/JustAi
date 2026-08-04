@@ -8,6 +8,9 @@
 - `justai/results.py` now owns the canonical result-status vocabulary and the single run verdict that the synthesizer, the learning layer, and the CLI exit code all read.
 - `health.readiness()` reports planning readiness and execution readiness separately; `/health` exposes both alongside `all_ok`.
 - `escalate_plan` accepts `blocked_indices`, so checkpoint-blocked tasks stay in the plan at their own position instead of being filtered out.
+- `justai/run_identity.py` mints and validates a run id: a UUID, and deliberately not derived from the session label, the clock, the process, or the goal, because each of those collides between two runs started together. It is never read from the environment, for the same reason auto mode is not.
+- `justai run --run-id ID` resumes a run against the approval gates already on disk. Omitting it mints a fresh identity, which is what an ordinary run does.
+- `OrchestrationResult.run_id` reports the identity a run's gates were scoped to, and `POST /api/run` returns `run_id` alongside `session_ref` before the run reaches a gate, so a dashboard operator can name the run that is asking while it is still asking.
 
 ### Changed
 - README reframed around the current JustAi control-plane scope and the planned `safe-mini` / `local-resident` split.
@@ -15,7 +18,12 @@
 - `justai run --local` now fails closed with an explicit unavailable-backend error instead of running planner-authored verification commands, and `check_safe_mini_boundary` reports the protocol stub as not-integrated rather than healthy.
 - `justai run` prints an execution-readiness warning during preflight, so a run that will fail closed says so before planning.
 - The run summary and the stored run record now count blocked tasks alongside skipped ones.
-- **Public signature change:** `checkpoint.evaluate(task, task_id="unknown", auto=None)` takes auto mode as an argument. `auto=None` still reads `JUSTAI_AUTO_MODE`, so a direct call and a shell that exports the variable both keep working; nothing in the package writes it any more. Auto mode belongs to a run, not to the interpreter.
+- **Public signature change:** `checkpoint.evaluate` takes auto mode as an argument. `auto=None` still reads `JUSTAI_AUTO_MODE`, so a direct call and a shell that exports the variable both keep working; nothing in the package writes it any more. Auto mode belongs to a run, not to the interpreter.
+- **Public signature change:** `checkpoint.evaluate(task, gate, auto=None)` takes a required `GateIdentity` — a run id and a plan index — in place of the free-form `task_id` string. A gate is a decision about one task in one run, and a string two runs can agree on is not an identity. `_write_gate`, `_read_gate`, and the new `gate_path` / `gate_dir` / `cleanup_run` / `run_gate_lock` take the same identity.
+- **Gate file layout:** approval gates moved from `gates/gate_<session_ref>-plan-<index>.json` to `gates/<run_id>/plan-<index>.json`. Gates in the old layout are not read at all — a file that names no run decides nothing, in either direction. Nothing migrates them; a run interrupted across the upgrade is re-approved under its new identity.
+- Gate records are written atomically and carry the run id, plan index, session label, and task title. A record that contradicts its own location — another run's id, another plan index — is read as no decision rather than as an approval.
+- `session_ref` is documented and treated throughout as a human label for tracing and memory. It names nothing and scopes nothing.
+- `JUSTAI_GATE_POLL_SECONDS` overrides how often a waiting gate re-reads its file. It changes how quickly a decision is noticed, never what is decided.
 - The execute stage takes its counts and trace metadata from `results.tally` instead of summing statuses inline. Withheld work fell between the stage's own "done" and "failed" buckets and was reported by neither the trace nor the hook, and a status nothing recognised was counted there as an absence of failure.
 - Mission Control renders planning and execution readiness, including an explicit execution-unavailable state while no backend is integrated.
 - The standalone `AgentDispatchPipeline` experiment is quarantined: its `run` raises `NotImplementedError`, and the iterate/escalate phases plus `PipelineResult`, `_run_tests`, `AgentDispatchConfig.test_command`, and `AgentDispatchConfig.work_dir` are removed.
@@ -31,6 +39,8 @@
 - Invalid or out-of-range checkpoint-blocked positions are rejected instead of being dropped and allowing a vetoed task to dispatch.
 - `synthesize` and `learning.record_run` no longer derive success independently, and no longer call a run with zero results complete. An unrecognised result status now raises rather than falling through to a non-failure bucket; the learning layer refuses to store such a run.
 - Auto mode is scoped to one run. An auto-approved request no longer disables the R1 operator veto for later runs in the same process.
+- An approval releases one run. The gate an R2 task waited on was named after `session_ref`, which `justai run` leaves empty unless `--session` is passed and which the dashboard reused per second; two ordinary concurrent runs therefore agreed on a filename and waited on the same file, and one operator approval cleared both — including the run the operator never looked at. The R1 veto collided the same way, in the other direction.
+- Gate cleanup can only name one run. It took no argument that could express a wider target, so a finished run no longer deletes a concurrent run's pending approval.
 - Malformed executor results now fail the run nonzero while preserving the error hook, ledger entry, trajectory-record attempt, and trace flush instead of escaping through reporting code.
 - Two malformations that are not a bad string field are refused at the same tally boundary: a `duration_seconds` that is not a number, and an executor return value that is not a sequence of results at all. Both used to escape as `TypeError` with nothing flushed and nothing recorded — the first from the synthesizer, which runs past the execute stage's failure boundary, and the second from the failure handler itself while trying to iterate what it had been handed.
 - `AgentDispatchPipeline` no longer runs the launching checkout's test suite and attributes the result to code it generated as strings and never wrote to disk.

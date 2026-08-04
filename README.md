@@ -44,7 +44,7 @@ The intended three-repo shape is:
 Current CLI surface:
 
 ```bash
-justai run [--auto] [--local] [--session SESSION] "goal"
+justai run [--auto] [--local] [--session SESSION] [--run-id ID] "goal"
 justai plan [--session SESSION] "goal"
 justai status
 justai history [--limit N]
@@ -65,6 +65,30 @@ Current behavior:
 - `justai history` reads prior run summaries when local memory is configured.
 - `justai run --auto --local "goal"` currently returns an explicit unavailable-backend error. It does not execute planner-authored shell strings or report an unperformed edit as complete.
 - `justai run --auto "goal"` enters a delegated mode that is intentionally disabled in this branch and returns an explicit error.
+
+### Approval gates
+
+Every run mints a run id — a UUID — and prints it before it reaches a gate. Its
+R1 and R2 gates live under that id:
+
+```text
+$JUSTAI_RUNTIME_ROOT/gates/<run_id>/plan-<index>.json
+```
+
+The checkpoint prints the exact path to write to. An operator decides one task
+in one run:
+
+```bash
+echo '{"status":"approved"}' > .../gates/<run_id>/plan-0.json   # release an R2 task
+echo '{"status":"vetoed"}'   > .../gates/<run_id>/plan-0.json   # stop an R1 task
+```
+
+`--session` is a human label for tracing and memory. It is reused on purpose
+and is usually empty, so it names nothing: two concurrent runs sharing a label
+still have separate gates, and an approval written for one does not release the
+other. `--run-id` is the deliberate exception — it resumes a run against the
+gates already on disk. Omit it and a fresh identity is minted, which is what an
+ordinary run wants.
 
 ### Exit codes
 
@@ -87,7 +111,7 @@ See [`justai/exit_codes.py`](justai/exit_codes.py) for the mapping.
 | Intent | `intent_gate.py` | Classify the goal and ask for clarification when it is ambiguous. |
 | Scope | `scope_planner.py` | Decompose the goal into bounded tasks with success criteria. |
 | Review | `reviewer.py` | Check whether the plan is coherent enough to run. |
-| Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates; `--auto` skips the R1 wait. |
+| Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates, scoped to one run by `run_identity.py`; `--auto` skips the R1 wait. |
 | Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Fail closed while execution backends are unavailable, then summarize the non-success result. |
 
 ## Install
@@ -126,7 +150,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 444 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 494 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 The suite is order-independent. Reversing collection order must produce the same result:
 
@@ -142,7 +166,8 @@ justai/
   orchestrator.py    # intent -> plan -> review -> checkpoint -> execute/synthesize
   scope_planner.py   # goal decomposition and task models
   agent_dispatch.py  # transitional dispatch ladder and removed-backend errors
-  checkpoint.py      # R0-R3 risk gates
+  checkpoint.py      # R0-R3 risk gates, scoped to one run
+  run_identity.py    # the run id a gate belongs to
   reviewer.py        # plan quality gate
   memory.py          # local memory client
   trajectory.py      # run trajectory recording and lookup

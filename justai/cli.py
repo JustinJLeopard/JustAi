@@ -28,6 +28,7 @@ from justai.exit_codes import FAILED, NOT_READY, OK, for_run_status
 def cmd_run(args: argparse.Namespace) -> int:
     """Run the full orchestrator pipeline."""
     from justai.orchestrator import run
+    from justai.run_identity import InvalidRunId
 
     goal = " ".join(args.goal)
     if not goal:
@@ -35,9 +36,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         print('Usage: justai run "your goal here"')
         return FAILED
 
-    result = run(
-        goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False)
-    )
+    # Omitted is the ordinary case, and it means "mint a fresh identity" — an
+    # unnamed run gets its own gates, never the gates of whatever else is
+    # running. `--run-id` is the deliberate exception, for resuming a run whose
+    # gates are already on disk.
+    try:
+        result = run(
+            goal,
+            session_ref=args.session,
+            auto=args.auto,
+            local=getattr(args, "local", False),
+            run_id=getattr(args, "run_id", "") or None,
+        )
+    except InvalidRunId as exc:
+        print(f"Error: {exc}")
+        print("  --run-id takes the run id printed by the run you are resuming.")
+        return FAILED
+
     # An ambiguous goal exits nonzero. Nothing was planned and nothing ran, so
     # 0 would tell a script the work happened. See justai/exit_codes.py.
     return for_run_status(result.status)
@@ -148,7 +163,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Request local execution (currently fails closed until safe-mini is wired)",
     )
-    p_run.add_argument("--session", default="", help="Session reference for tracing")
+    p_run.add_argument(
+        "--session", default="", help="Human label for tracing and memory (not an identity)"
+    )
+    p_run.add_argument(
+        "--run-id",
+        default="",
+        help=(
+            "Resume a run: reuse the run id it printed, and its approval gates. "
+            "Omit this and a fresh identity is minted, which is what you want."
+        ),
+    )
     p_run.set_defaults(func=cmd_run)
 
     # plan

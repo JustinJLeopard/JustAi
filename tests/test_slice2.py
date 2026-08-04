@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
 import unittest
 from datetime import UTC
@@ -70,7 +71,9 @@ class TestPipelineTracing(unittest.TestCase):
     def test_trace_event_checkpoint_preserved(self):
         src = pathlib.Path(__file__).resolve().parents[1] / "justai" / "orchestrator.py"
         code = src.read_text()
-        assert 'trace_event("checkpoint"' in code
+        # Tolerant of how the call is wrapped: what must survive is that the
+        # checkpoint stage still emits its trace event, not its formatting.
+        assert re.search(r'trace_event\(\s*"checkpoint"', code)
 
 
 # ── Query Layer Tests ───────────────────────────────────────────────────────

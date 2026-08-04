@@ -145,7 +145,11 @@ class TestCLICommands(unittest.TestCase):
         args = argparse.Namespace(goal=["test", "goal"], auto=True, session="test-8")
         with patch("justai.orchestrator.run", return_value=mock_result) as mock_run:
             result = cmd_run(args)
-        mock_run.assert_called_once_with("test goal", session_ref="test-8", auto=True, local=False)
+        # run_id=None is the ordinary case: no --run-id, so the orchestrator
+        # mints a fresh identity rather than reusing another run's gates.
+        mock_run.assert_called_once_with(
+            "test goal", session_ref="test-8", auto=True, local=False, run_id=None
+        )
         self.assertEqual(result, 0)
 
     def test_cmd_plan_calls_decompose(self):
