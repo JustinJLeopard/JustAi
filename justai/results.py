@@ -101,15 +101,34 @@ def classify_status(status: object) -> str:
 
 
 def tally(results: list) -> ResultTally:
-    """Count well-formed results, rejecting shapes the run cannot report safely."""
+    """Count well-formed results, rejecting shapes the run cannot report safely.
+
+    The result set itself is checked before anything in it. An executor that
+    returned no sequence at all used to reach the iteration below and raise
+    ``TypeError``, which is not the refusal the execute stage catches — so the
+    run ended in a traceback with its traces unflushed and no record filed,
+    which is the loss this whole boundary exists to prevent.
+
+    ``duration_seconds`` is optional, because the synthesizer records it only
+    when it is there, but it must be a number when present: that surface rounds
+    it, and it runs past the point where the run could still end cleanly.
+    """
+    if not isinstance(results, (list, tuple)):
+        raise ValueError(f"results must be a sequence of results, got {type(results).__name__}")
+
     for index, r in enumerate(results):
         for field in ("task_id", "title", "status", "result"):
             value = getattr(r, field, None)
             if not isinstance(value, str):
                 raise ValueError(
-                    f"result [{index}] field {field!r} must be a string, "
-                    f"got {type(value).__name__}"
+                    f"result [{index}] field {field!r} must be a string, got {type(value).__name__}"
                 )
+        duration = getattr(r, "duration_seconds", 0.0)
+        if not isinstance(duration, (int, float)):
+            raise ValueError(
+                f"result [{index}] field 'duration_seconds' must be a number, "
+                f"got {type(duration).__name__}"
+            )
         classify_status(r.status)
 
     return ResultTally(

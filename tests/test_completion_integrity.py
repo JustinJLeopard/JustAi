@@ -524,6 +524,86 @@ def test_a_malformed_result_still_preserves_the_failed_run(malformed):
     stubs["flush_traces"].assert_called_once()
 
 
+# ── Finding 7b: two malformations that are not a bad string field ────────────
+#
+# The string-field contract above closes every case where a reporting surface
+# reads `task_id`, `title`, `status`, or `result`. Two ways an executor can be
+# wrong get past it and still lose the evidence — measured, both raising
+# TypeError with flush=0 and record=0: a `duration_seconds` the synthesizer
+# cannot round (and the synthesizer runs past the execute stage's boundary),
+# and a return value that is not a sequence of results at all.
+
+
+def test_tally_rejects_a_non_numeric_duration():
+    from justai.results import tally
+
+    with pytest.raises(ValueError, match="'duration_seconds' must be a number"):
+        tally(
+            [
+                SimpleNamespace(
+                    task_id="t", title="Task 0", status="done", result="ok", duration_seconds="fast"
+                )
+            ]
+        )
+
+
+def test_tally_rejects_a_result_set_that_is_not_a_sequence():
+    from justai.results import tally
+
+    with pytest.raises(ValueError, match="must be a sequence of results"):
+        tally(None)
+
+
+def test_a_result_without_a_duration_is_still_countable():
+    """Guarding the opposite error: only what a surface reads may be required."""
+    from justai.results import tally
+
+    counts = tally([SimpleNamespace(task_id="t", title="Task 0", status="done", result="ok")])
+
+    assert counts.done == 1
+
+
+def test_a_non_numeric_duration_preserves_the_failed_run():
+    """Every string field is fine here; the synthesizer is what cannot read it."""
+    from justai.exit_codes import for_run_status
+    from justai.orchestrator import run
+
+    plan = Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    malformed = SimpleNamespace(
+        task_id="t", title="Task 0", status="done", result="ok", duration_seconds="fast"
+    )
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=[malformed])) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert for_run_status(result.status) != 0
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
+    stubs["flush_traces"].assert_called_once()
+
+
+@pytest.mark.parametrize("returned", [None, {"0": "done"}, "done"])
+def test_an_executor_that_returns_no_sequence_preserves_the_failed_run(returned):
+    """The handler must survive a result set it cannot iterate or measure."""
+    from justai.exit_codes import for_run_status
+    from justai.orchestrator import run
+
+    plan = Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=returned)) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert for_run_status(result.status) != 0
+    assert result.results == [], "nothing countable was produced, so nothing may be reported"
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
+    stubs["flush_traces"].assert_called_once()
+
+
 # ── Finding 8: the execute stage counted statuses with its own vocabulary ────
 
 
