@@ -162,14 +162,17 @@ class TestReadme(unittest.TestCase):
     def test_documents_auto_flag(self):
         self.assertIn("--auto", self.content)
 
-    def test_documents_pipeline_stages(self):
-        self.assertIn("## Pipeline Stages", self.content)
+    def test_documents_pipeline(self):
+        self.assertIn("## Pipeline", self.content)
+        self.assertIn("Control-plane", self.content)
 
-    def test_documents_dashboard(self):
-        self.assertIn("## Dashboard", self.content)
+    def test_documents_public_proof_path(self):
+        self.assertIn("## Public Proof Path", self.content)
+        self.assertIn("JustAi demo", self.content)
 
-    def test_version_in_readme(self):
-        self.assertIn("v1.0.0", self.content)
+    def test_documents_version_command(self):
+        self.assertIn("justai version", self.content)
+        self.assertIn("justai --version", self.content)
 
 
 class TestE2ESmokeLocal(unittest.TestCase):

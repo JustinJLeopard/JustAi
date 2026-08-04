@@ -36,8 +36,13 @@ class TestComponents:
     def test_metric_card_exists(self):
         assert (DASH / "components" / "MetricCard.tsx").exists()
 
-    def test_pipeline_exists(self):
-        assert (DASH / "components" / "Pipeline.tsx").exists()
+    def test_control_plane_stages_exists(self):
+        """The dashboard uses the post-reframe control-plane component."""
+        component = DASH / "components" / "ControlPlaneStages.tsx"
+        mission_control = (DASH / "views" / "MissionControl.tsx").read_text()
+
+        assert component.exists()
+        assert "ControlPlaneStages" in mission_control
 
 
 class TestViews:

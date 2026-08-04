@@ -84,9 +84,10 @@ class DocumentationTests(unittest.TestCase):
     def test_readme_exists(self):
         self.assertTrue((JUSTAI_ROOT / "README.md").exists())
 
-    def test_readme_has_install_section(self):
+    def test_readme_documents_editable_install(self):
         content = (JUSTAI_ROOT / "README.md").read_text()
-        self.assertIn("install.sh", content)
+        self.assertIn("## Install", content)
+        self.assertIn("pip install -e .", content)
 
     def test_readme_has_quick_start(self):
         content = (JUSTAI_ROOT / "README.md").read_text()
@@ -108,10 +109,12 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("mini-swe-agent", content)
         self.assertIn("Princeton", content)
 
-    def test_attribution_credits_ruflo(self):
+    def test_attribution_describes_current_research_foundation(self):
         content = (JUSTAI_ROOT / "docs" / "ATTRIBUTION.md").read_text()
-        self.assertIn("Ruflo", content)
-        self.assertIn("rUv", content)
+        self.assertIn("## Research Foundation", content)
+        self.assertIn("control-plane split", content)
+        self.assertNotIn("Ruflo", content)
+        self.assertNotIn("rUv", content)
 
     def test_evidence_doc_exists(self):
         self.assertTrue((JUSTAI_ROOT / "docs" / "EVIDENCE.md").exists())
