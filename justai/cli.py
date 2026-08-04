@@ -27,6 +27,7 @@ from justai.exit_codes import FAILED, NOT_READY, OK, for_run_status
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run the full orchestrator pipeline."""
+    from justai.checkpoint import RunAlreadyActive
     from justai.orchestrator import run
     from justai.run_identity import InvalidRunId
 
@@ -51,6 +52,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     except InvalidRunId as exc:
         print(f"Error: {exc}")
         print("  --run-id takes the run id printed by the run you are resuming.")
+        return FAILED
+    except RunAlreadyActive as exc:
+        # Nonzero, and nothing ran. A resume that waited for the run it is
+        # resuming would execute the same tasks against the same approval as
+        # soon as the first process let go — one decision, two executions.
+        print(f"Error: {exc}")
+        print("  A run is driven by one process. Nothing was started here.")
         return FAILED
 
     # An ambiguous goal exits nonzero. Nothing was planned and nothing ran, so

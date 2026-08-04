@@ -33,7 +33,8 @@ from justai.checkpoint import (
     GateIdentity,
     cleanup_run,
     evaluate,
-    run_gate_lock,
+    own_run,
+    prune_abandoned_runs,
     sweep_gate_dirs,
 )
 from justai.discord import OrchestratorHook
@@ -216,9 +217,60 @@ def run(
     Raises:
         InvalidRunId: ``run_id`` was supplied and is not a UUID. Nothing runs —
             a run whose gates cannot be scoped must not reach a gate.
+        RunAlreadyActive: another process is already driving this run id.
+            Nothing runs. A resume that waited would execute the same run
+            against the same approval as soon as the first process finished.
+    """
+    run_id = new_run_id() if run_id is None else parse_run_id(run_id)
+
+    # One process drives one run, for the whole of it. The claim covers reading
+    # the approval, the dispatch that acts on it, and the cleanup that removes
+    # it, because a second process between any two of those reads a decision
+    # this run has already been given — and executes it again.
+    with own_run(run_id) as owner:
+        try:
+            return _run_stages(
+                goal,
+                session_ref=session_ref,
+                auto=auto,
+                local=local,
+                swarm=swarm,
+                run_id=run_id,
+            )
+        finally:
+            # Terminal, and inside the claim: this run's decisions have done
+            # their work, and nothing else may be reading them. Scoped to this
+            # run id and to nothing else — a parallel run's pending approval is
+            # not this run's to delete. A run that *dies* before here leaves
+            # its gates behind on purpose; that is what makes a resume
+            # possible, and `prune_abandoned_runs` is what bounds how long.
+            cleanup_run(run_id, owner=owner)
+
+            # Cleanup keeps this run's lock, because removing a lock other
+            # processes exclude on is how exclusion ends rather than how a run
+            # ends. The empty directory left behind is collected here once it
+            # is old enough, and a gate nobody answered once nobody could still
+            # be coming back for it. A run that is live, still holds a decision
+            # worth resuming, or holds a file JustAi did not write is left.
+            sweep_gate_dirs()
+            prune_abandoned_runs()
+
+
+def _run_stages(
+    goal: str,
+    *,
+    session_ref: str,
+    auto: bool,
+    local: bool,
+    swarm: bool,
+    run_id: str,
+) -> OrchestrationResult:
+    """The pipeline itself, with this run already claimed by this process.
+
+    Split from :func:`run` so the claim, and the cleanup that has to happen
+    inside it, wrap every way this returns — including the early ones.
     """
     start = time.time()
-    run_id = new_run_id() if run_id is None else parse_run_id(run_id)
     _print_header(goal, auto=auto, run_id=run_id, session_ref=session_ref)
 
     # Discord notifications (no-op if webhook not configured)
@@ -389,31 +441,18 @@ def run(
     # Every gate below is scoped to this run's id, so a concurrent run that
     # happens to share the session label — the default, since `justai run`
     # leaves it empty — cannot be released by an approval written for this one.
-    # The lock is held for the whole stage: only a second process resuming this
-    # same run contends for it, and that is exactly the pair that must not
-    # drive one set of gate files at once.
-    with run_gate_lock(run_id):
-        for i, task in enumerate(plan.tasks):
-            gate = GateIdentity(run_id=run_id, index=i, session_ref=session_ref)
-            proceed, reason = evaluate(task, gate, auto=auto)
-            if proceed:
-                print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
-            else:
-                print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
-                blocked_reasons[i] = reason
-
-    # Every gate has been decided, so this run's records have done their work.
-    # Scoped to this run id and to nothing else: a parallel run's pending
-    # approval is not this run's to delete. A run that dies before here leaves
-    # its gates behind on purpose — that is what makes a resume possible.
-    cleanup_run(run_id)
-
-    # Cleanup keeps this run's lock, because removing a lock other processes
-    # exclude on is how exclusion ends rather than how a run ends. The empty
-    # directory left behind is collected here once it is old enough, so the
-    # count under `gates/` tracks runs that are live or recent rather than
-    # every run ever started. A run still holding a decision is never swept.
-    sweep_gate_dirs()
+    # The run's own lock is already held for the whole run by `own_run`, and it
+    # stays held past this stage: an approval read here is acted on in stage 5,
+    # and a second process reading it in between is the same decision executed
+    # twice.
+    for i, task in enumerate(plan.tasks):
+        gate = GateIdentity(run_id=run_id, index=i, session_ref=session_ref)
+        proceed, reason = evaluate(task, gate, auto=auto)
+        if proceed:
+            print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
+        else:
+            print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
+            blocked_reasons[i] = reason
 
     dispatchable = len(plan.tasks) - len(blocked_reasons)
 

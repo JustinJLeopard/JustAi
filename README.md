@@ -90,6 +90,12 @@ other. `--run-id` is the deliberate exception — it resumes a run against the
 gates already on disk. Omit it and a fresh identity is minted, which is what an
 ordinary run wants.
 
+One process drives one run. A `--run-id` naming a run that is still going —
+including one parked at an R2 gate for as long as the operator takes — is
+refused with `run already active`, and exits nonzero having started nothing.
+Waiting instead would execute the same tasks against the same approval as soon
+as the first process finished: one decision, two executions.
+
 An approval may be written before the run reaches the gate — a resume, or the
 dashboard, which is handed the run id by `POST /api/run` while the run is still
 starting. A run never writes over a decision already on disk; it only records
@@ -100,11 +106,15 @@ What is left under `gates/` afterwards:
 | Directory | Kept | Why |
 | --- | --- | --- |
 | A run that finished its gates | Until it is an hour old | It holds only `.lock`, and removing a lock other processes exclude on is how exclusion ends. There is nothing else in it. `JUSTAI_GATE_TOMBSTONE_TTL` sets the window. |
-| A run interrupted at a gate | Indefinitely | Its records are a pending approval nobody answered, and are what `--run-id` resumes against. Remove the directory when you are done with the run. |
+| A run interrupted at a gate | While its records are under seven days old, and while it is one of the 128 most recently decided | Its records are a pending approval nobody answered, and are what `--run-id` resumes against, so the window is measured in days: an operator taking a weekend over an R2 gate is ordinary. It is a window rather than "forever" because a run *killed* at a gate leaves exactly the same records and nobody is coming back for them. `JUSTAI_GATE_ABANDON_TTL` and `JUSTAI_GATE_MAX_RUNS` set the two bounds. |
+| A run's directory holding a file JustAi did not write | Indefinitely | Deleting something nobody asked about is not cleanup. Remove it yourself when you are done with it. |
 
-Old directories are collected at the end of each run. Nothing that still holds
-a gate record, is still running, or holds a file JustAi did not write is ever
-removed.
+Old directories are collected at the end of each run. Nothing that is still
+running, still holds a decision recent enough to resume, or holds a file JustAi
+did not write is ever removed — and nothing is ever removed for its name alone:
+a directory on its way out is renamed to `.trash-<run_id>-<fresh uuid>` and
+labelled, and only a directory whose name, label and contents all agree is
+deleted.
 
 ### Exit codes
 

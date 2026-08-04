@@ -167,15 +167,17 @@ Current transitional flow:
 ```text
 justai run --auto --local "goal"
   -> run_identity.new_run_id            (unless --run-id resumes an existing one)
-  -> intent_gate.classify
-  -> scope_planner.decompose
-  -> reviewer.review_plan
-  -> checkpoint.evaluate(task, GateIdentity(run_id, index))
-  -> checkpoint.cleanup_run(run_id)
-  -> agent_dispatch.escalate_plan(mode="local", blocked_indices=<checkpoint blocks>)
-  -> explicit unavailable-backend results
-  -> synthesizer.synthesize(status="failed")
-  -> trajectory / ledger / memory best-effort writes
+  -> checkpoint.own_run(run_id)         (refuses a run another process is driving)
+     -> intent_gate.classify
+     -> scope_planner.decompose
+     -> reviewer.review_plan
+     -> checkpoint.evaluate(task, GateIdentity(run_id, index))
+     -> agent_dispatch.escalate_plan(mode="local", blocked_indices=<checkpoint blocks>)
+     -> explicit unavailable-backend results
+     -> synthesizer.synthesize(status="failed")
+     -> trajectory / ledger / memory best-effort writes
+     -> checkpoint.cleanup_run(run_id, owner)   (terminal, inside the claim)
+     -> checkpoint.sweep_gate_dirs() / prune_abandoned_runs()
   -> exit_codes.for_run_status("failed") -> exit 1
 ```
 

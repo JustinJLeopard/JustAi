@@ -1,0 +1,95 @@
+name: Python CI
+
+# The Python package had no CI at all. Every green check on a pull request came
+# from CodeQL (static analysis), Dashboard CI (Node), or a Vercel preview
+# build — none of which execute a line of this package. A PR could delete the
+# checkpoint's fail-closed behaviour and still show an all-green rollup.
+#
+# No `paths:` filter, for the same reason Dashboard CI has none: a
+# path-filtered workflow is skipped entirely on PRs that miss the filter, and a
+# skipped workflow never reports a status, so a required check would leave
+# those PRs waiting forever on a status nobody will report.
+on:
+  pull_request:
+  push:
+    # main is the integration branch; demo-build is what the public demo
+    # deploys from. Both are branches whose broken state is visible.
+    branches:
+      - main
+      - demo-build
+
+# Least privilege: this job only reads the tree. It never writes to the repo,
+# publishes anything, or comments on pull requests. `pull_request` (not
+# `pull_request_target`) means a fork's code runs without repository secrets.
+permissions:
+  contents: read
+
+concurrency:
+  # Same shape as Dashboard CI: PRs supersede their own in-flight run, pushes
+  # never cancel each other, so no landed commit is left without a CI record.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: pytest + ruff (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # One version failing must not hide the other's result.
+      fail-fast: false
+      matrix:
+        # 3.12 is what `requires-python` promises; 3.13 is what development
+        # actually runs on. A green check has to mean both.
+        python-version: ['3.12', '3.13']
+    steps:
+      # Actions are pinned to the commit SHA behind the tag in the comment, so
+      # a retagged release cannot silently change what runs here.
+      - name: Checkout the revision under review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # On `pull_request`, the default checkout is `refs/pull/N/merge` — a
+          # commit GitHub synthesises by merging the head into the base. It is
+          # not a revision that exists in the PR, and it changes whenever the
+          # base branch moves, so a green check against it does not name the
+          # commit anyone reviewed. Pinning to the head SHA makes the result
+          # belong to one revision. `github.sha` is already the right commit on
+          # push, where there is no PR head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # No later step needs the token; don't leave it in .git/config.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # The package plus its declared dev tools, so what CI runs is what
+      # `pyproject.toml` says the project is — not a hand-listed subset that
+      # drifts from it.
+      - name: Install the package and its dev tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check justai tests
+
+      # Named separately from the full suite because this is the behaviour the
+      # rest of the checkpoint depends on and the part no other job covers:
+      # real interpreters contending for one run's gates. It fails first and
+      # says so, instead of being one dot in a 500-test run.
+      - name: Gate and concurrency suite
+        run: |
+          pytest -q \
+            tests/test_gate_run_identity.py \
+            tests/test_gate_identity_collision.py \
+            tests/test_gate_lifecycle.py \
+            tests/test_gate_run_ownership.py \
+            tests/test_gate_retention.py \
+            tests/test_auto_mode_isolation.py
+
+      - name: Full test suite
+        run: pytest -q
