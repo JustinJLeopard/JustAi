@@ -29,11 +29,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Pull requests share one group per PR ref, so a new push to the head
+  # supersedes the run under review. Pushes get their own group per commit SHA,
+  # so two post-merge runs never share a group at all.
+  #
+  # The per-SHA split — not `cancel-in-progress` — is what actually protects
+  # push runs. `cancel-in-progress: false` only spares a run that is already
+  # *in progress*; a second run in the same group sits `pending`, and "any
+  # existing pending job or workflow in the same concurrency group will be
+  # canceled" when a third joins it. Three quick merges to main under one
+  # ref-keyed group would therefore have cancelled the middle commit's run —
+  # the exact gap this policy exists to close. Distinct groups per commit
+  # remove the queue, so nothing is ever pending behind anything.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   # Superseding an in-flight run is right for a PR: only the newest push to a
   # branch under review needs an answer. It is wrong for push, where each run is
   # the record for one commit that already landed on main or demo-build —
-  # cancelling those leaves a merged commit with no CI result.
+  # cancelling those leaves a merged commit with no CI result. This expression
+  # is false for every push event, so it never cancels one.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -56,21 +69,30 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Keep this literal in sync with `engines.node` in
-          # dashboard/package.json — same Node major, declared in both places.
+          # dashboard/package.json is the single place the Node major is
+          # declared. setup-node v7 resolves a package.json passed here in a
+          # documented order — `volta.node`, then `devEngines.runtime`, then
+          # `engines.node`, then following `volta.extends`
+          # (setup-node docs/advanced-usage.md, "Node version file"). This
+          # package.json sets only `engines.node`, which is also the field
+          # Vercel reads, so CI and the deploy resolve the same declaration.
           #
-          # It is written out rather than read via `node-version-file:
-          # package.json` because the setup-node README lists package.json as an
-          # accepted file without documenting which field it reads, and this
-          # workflow should not depend on undocumented parsing.
+          # There is deliberately no `node-version:` alongside this. When both
+          # inputs are set, setup-node uses `node-version` and ignores the file
+          # (it only logs a warning), so adding a literal back would silently
+          # re-create the drift this removes.
           #
-          # `24.x` rather than an exact patch because Vercel only offers major
-          # versions and "automatically rolls out minor and patch updates" — the
-          # deploy that this build is a proxy for always runs the latest 24.x.
-          # Pinning a patch here would test a toolchain Vercel never promises.
-          node-version: '24.x'
+          # `engines.node` is `24.x` rather than an exact patch because Vercel
+          # offers only major versions and "automatically rolls out minor and
+          # patch updates" — the deploy this build stands in for always runs
+          # the latest 24.x. Pinning a patch would test a toolchain Vercel
+          # never promises.
+          #
+          # Path is relative to the workspace root, not the job
+          # working-directory: setup-node joins it onto GITHUB_WORKSPACE.
+          node-version-file: dashboard/package.json
           cache: npm
-          # Relative to the workspace root, not the job working-directory.
+          # Also relative to the workspace root.
           cache-dependency-path: dashboard/package-lock.json
 
       # npm ci refuses to run when package.json and package-lock.json disagree,

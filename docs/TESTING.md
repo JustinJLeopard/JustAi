@@ -41,20 +41,40 @@ pull request, and on pushes to `main` and `demo-build`.
 
 ### Node version
 
-The Node major is declared in two places and they must be changed together:
+The Node major is declared **once**, in `dashboard/package.json`:
 
-| Where | Value | Read by |
-| --- | --- | --- |
-| `dashboard/package.json` → `engines.node` | `24.x` | Vercel, at deploy time |
-| `.github/workflows/dashboard-ci.yml` → `node-version` | `24.x` | actions/setup-node, in CI |
+```json
+"engines": {
+  "node": "24.x"
+}
+```
 
-Both are majors, not exact patches, because [Vercel offers only major
+Both consumers read that one field:
+
+| Consumer | How it reads it |
+| --- | --- |
+| Vercel, at deploy time | reads `engines.node` from `dashboard/package.json` |
+| `actions/setup-node`, in CI | `node-version-file: dashboard/package.json` in `.github/workflows/dashboard-ci.yml` |
+
+To change the Node major, edit `engines.node` and nothing else. (`npm` mirrors
+`engines` into the root entry of `package-lock.json`; regenerate it with
+`npm install --package-lock-only` so `npm ci` stays happy.)
+
+setup-node resolves a `package.json` given to `node-version-file` in a
+documented order — `volta.node`, then `devEngines.runtime`, then
+`engines.node`, then whatever `volta.extends` points at. This project sets only
+`engines.node`, so that is the field that wins. Note the precedence between the
+two *inputs*: if a workflow sets `node-version` **and** `node-version-file`,
+setup-node uses `node-version` and ignores the file, warning but not failing.
+That is why the workflow sets no `node-version` — a literal there would
+silently win and let the two declarations drift apart again.
+
+`24.x` is a major rather than an exact patch because [Vercel offers only major
 versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)
 and rolls out minor/patch updates itself. A deploy always runs the latest
-`24.x`, so CI pinning one patch would test a toolchain the deploy never
-promises. The CI value is written out literally rather than read from
-`package.json` via `node-version-file`, because setup-node documents
-`package.json` as an accepted file without documenting which field it reads.
+`24.x`, so pinning one patch would test a toolchain the deploy never promises.
+CI resolving `24.x` to a newer patch than the last local run is expected, not
+drift.
 
 ### What this CI does and does not prove
 
