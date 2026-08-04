@@ -37,7 +37,7 @@ from justai.intent_gate import INTENT_MODEL, Intent, IntentResult, classify
 from justai.learning import enrich_context, record_run
 from justai.ledger import Ledger
 from justai.memory import Memory
-from justai.results import KNOWN_STATUSES, RUN_FAILED, tally
+from justai.results import RUN_FAILED, tally
 from justai.reviewer import REVIEWER_MODEL, ReviewResult, review
 from justai.scope_planner import PLANNER_MODEL, Plan, decompose, format_plan
 from justai.synthesizer import format_summary, synthesize
@@ -122,12 +122,17 @@ def _fail_uncountable_results(
     ``record_run`` is still called and refuses an unusable status on its own —
     the trajectory store must not file a run it cannot classify either.
     """
-    offenders = [r for r in results if getattr(r, "status", None) not in KNOWN_STATUSES]
     print()
     print(f"  ✗ Run failed at [{stage}]: {error}")
-    for r in offenders:
-        print(f"      unusable [{r.task_id}] {r.title[:38]} → status {r.status!r}")
-    print(f"    {len(results)} result(s) produced, none countable. Nothing was verified.")
+    for index, r in enumerate(results):
+        task_id = getattr(r, "task_id", None)
+        title = getattr(r, "title", None)
+        status = getattr(r, "status", None)
+        safe_task_id = task_id if isinstance(task_id, str) else f"result-{index}"
+        safe_title = title[:38] if isinstance(title, str) else "<invalid title>"
+        safe_status = status if isinstance(status, str) else f"<invalid {type(status).__name__}>"
+        print(f"      unusable [{safe_task_id}] {safe_title} → status {safe_status!r}")
+    print(f"    {len(results)} result(s) produced; the set is not countable. Nothing was verified.")
     print("    Fix the executor that emitted this, or the caller that named the blocked tasks.")
     print()
 

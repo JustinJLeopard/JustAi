@@ -79,7 +79,7 @@ class ResultTally:
         return RUN_FAILED
 
 
-def classify_status(status: str) -> str:
+def classify_status(status: object) -> str:
     """Map a raw result status to ``done`` | ``failed`` | ``withheld``.
 
     Raises:
@@ -89,6 +89,8 @@ def classify_status(status: str) -> str:
             invents a failure, and counting it as anything else lets an
             unrecognised string reach a success path.
     """
+    if not isinstance(status, str):
+        raise ValueError(f"result status must be a string, got {type(status).__name__}")
     if status == DONE_STATUS:
         return "done"
     if status in FAILURE_STATUSES:
@@ -99,8 +101,15 @@ def classify_status(status: str) -> str:
 
 
 def tally(results: list) -> ResultTally:
-    """Count results by outcome, rejecting any status outside the vocabulary."""
-    for r in results:
+    """Count well-formed results, rejecting shapes the run cannot report safely."""
+    for index, r in enumerate(results):
+        for field in ("task_id", "title", "status", "result"):
+            value = getattr(r, field, None)
+            if not isinstance(value, str):
+                raise ValueError(
+                    f"result [{index}] field {field!r} must be a string, "
+                    f"got {type(value).__name__}"
+                )
         classify_status(r.status)
 
     return ResultTally(

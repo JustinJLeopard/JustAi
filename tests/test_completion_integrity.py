@@ -12,6 +12,7 @@ import argparse
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -469,6 +470,57 @@ def test_a_rejected_blocked_index_also_fails_the_run_closed():
 
     assert result.status == "failed"
     assert result.results == [], "nothing was dispatched, so nothing may be reported as a result"
+    stubs["flush_traces"].assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        pytest.param(
+            SimpleNamespace(title="Task 0", status="done", result="ok"),
+            id="missing-task-id",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", status="done", result="ok"),
+            id="missing-title",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", title="Task 0", result="ok"),
+            id="missing-status",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", title="Task 0", status="done"),
+            id="missing-result",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", title=7, status="done", result="ok"),
+            id="non-string-title",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", title="Task 0", status=["done"], result="ok"),
+            id="non-string-status",
+        ),
+        pytest.param(
+            SimpleNamespace(task_id="t", title="Task 0", status="done", result=7),
+            id="non-string-result",
+        ),
+    ],
+)
+def test_a_malformed_result_still_preserves_the_failed_run(malformed):
+    """A bad executor object must not skip the failure record or trace flush."""
+    from justai.exit_codes import for_run_status
+    from justai.orchestrator import run
+
+    plan = Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=[malformed])) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert for_run_status(result.status) != 0
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
     stubs["flush_traces"].assert_called_once()
 
 
