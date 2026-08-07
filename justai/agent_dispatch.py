@@ -386,11 +386,11 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         "echo 'verify manually'",
         "echo 'task completed -- verify manually'",
     ):
-        return True, "no automated verification"
+        return None, "no automated verification (task not confirmed done)"
 
     try:
         result = subprocess.run(
-            ["bash", "-c", criteria],
+            ["bash", "-o", "pipefail", "-c", criteria],
             capture_output=True,
             text=True,
             timeout=30,
@@ -408,14 +408,23 @@ def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult
     """Run a single task's verification criteria locally."""
     start = time.time()
     passed, output = _verify_task(task)
-    status = "done" if passed else "failed"
+    if passed is True:
+        status = "done"
+    elif passed is None:
+        status = "unverified"
+    else:
+        status = "failed"
     return DelegationResult(
         task_id=f"local-{session_ref or 'task'}",
         title=task.title,
         status=status,
-        result=output[:200]
-        if passed
-        else f"Task requires manual execution: {task.description[:100]}",
+        result=(
+            output[:200]
+            if passed is True
+            else "Unverified — no automated success check ran; local mode verifies, it does not execute the task"
+            if passed is None
+            else f"Verify failed: {output[:150]}"
+        ),
         duration_seconds=time.time() - start,
     )
 

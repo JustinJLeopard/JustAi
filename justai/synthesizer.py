@@ -49,9 +49,12 @@ def synthesize(
     skipped = sum(1 for r in results if r.status == "skipped")
     total = len(results)
 
-    if failed == 0 and skipped == 0:
+    unverified = sum(1 for r in results if r.status == "unverified")
+    # Honest: "complete" ONLY when every task is genuinely done (a failing/
+    # unverified task can no longer masquerade as a complete run).
+    if total > 0 and done == total:
         status = "complete"
-    elif done > 0:
+    elif done > 0 or unverified > 0:
         status = "partial"
     else:
         status = "failed"
