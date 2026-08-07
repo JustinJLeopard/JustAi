@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import urllib.request
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -229,19 +231,77 @@ def _heuristic_plan(goal: str, session_ref: str = "") -> Plan:
     return Plan(goal=goal, tasks=tasks, session_ref=session_ref)
 
 
+_PATH_RE = re.compile(r"(~?/[^\s'\"`]+|\./[^\s'\"`]+)")
+# Sentinel that _verify_task treats as "no automated verification" (-> unverified).
+_UNVERIFIED_SENTINEL = "echo 'task completed -- verify manually'"
+
+
+def _extract_path(goal: str) -> str | None:
+    """Best-effort path extraction: prefer real paths (with a slash)."""
+    m = _PATH_RE.search(goal)
+    if m:
+        return m.group(1).rstrip(".,;:)")
+    # Fallback: a bare filename with an alphabetic extension (e.g. config.py).
+    m = re.search(r"\b([\w./-]+\.[A-Za-z][\w]{0,7})\b", goal)
+    return m.group(1) if m else None
+
+
+def _extract_exact_text(goal: str) -> str | None:
+    """Extract required file contents only when the goal is explicit about it."""
+    for marker in (
+        "containing exactly", "contains exactly", "with the exact text",
+        "with exact text", "the exact text", "exact contents of",
+    ):
+        idx = goal.lower().find(marker)
+        if idx != -1:
+            rest = goal[idx + len(marker):].strip().strip(".").strip()
+            if len(rest) >= 2 and rest[0] in "\"'" and rest[-1] == rest[0]:
+                rest = rest[1:-1]
+            return rest or None
+    # Quoted contents after a "containing/with text" phrase.
+    m = re.search(
+        r"(?:containing|with(?: the)? (?:text|contents?|line))\s+[\"']([^\"']+)[\"']",
+        goal, re.IGNORECASE,
+    )
+    return m.group(1) if m else None
+
+
 def _infer_verify_command(goal: str) -> str:
-    """Infer a verification command from the goal text."""
-    words = goal.lower()
-    # If goal mentions an endpoint, try curling it
-    if "/api/" in words or "endpoint" in words:
+    """Infer a verification command from the goal text.
+
+    Principled, general heuristics -- no goal is special-cased:
+      - endpoint/route goals    -> curl a health URL
+      - file-creation goals     -> check the file exists (and its exact
+                                   contents, when the goal states them)
+      - genuine test goals      -> pytest (whole-word "test", not "latest"
+                                   or "a-test-b", plus a testing verb)
+      - a named .py file        -> syntax-check that file
+      - otherwise               -> stay honestly unverified
+    """
+    if re.search(r"\bendpoint\b|\broute\b|\bapi\s+endpoint\b", goal, re.IGNORECASE):
         return "curl -sf http://localhost:8080/health || echo 'verify endpoint manually'"
-    # If goal mentions tests
-    if "test" in words:
+
+    path = _extract_path(goal)
+    creation = re.search(r"\b(creat|writ|mak|generat|sav|produc|add|append)\w*\b", goal, re.IGNORECASE)
+    if path and "/" in path and creation:
+        quoted = shlex.quote(path)
+        text = _extract_exact_text(goal)
+        if text is not None:
+            return f"test -f {quoted} && grep -qxF {shlex.quote(text)} {quoted}"
+        return f"test -f {quoted}"
+
+    # Genuine test task: whole-word test(s)/testing (NOT "latest" / "a-test-b")
+    # AND a testing verb -- fixes the old `"test" in goal` substring bug.
+    if re.search(r"(?:^|\s)tests?(?:[\s.,!?]|$)|\btesting\b", goal, re.IGNORECASE) and re.search(
+        r"\b(add|writ|run|fix|unit|integration|pytest|coverage|failing|passing|ensure|verif)\w*\b",
+        goal, re.IGNORECASE,
+    ):
         return "python3 -m pytest -x --tb=short 2>&1 | tail -5"
-    # If goal mentions a specific file
-    if ".py" in words:
-        return "python3 -c 'import ast; print(1)'"
-    return "echo 'task completed — verify manually'"
+
+    if path and path.endswith(".py"):
+        return f"python3 -m py_compile {shlex.quote(path)}"
+
+    return _UNVERIFIED_SENTINEL
 
 
 LLM_RETRY_ATTEMPTS = 2
