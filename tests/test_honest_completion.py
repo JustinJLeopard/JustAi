@@ -32,14 +32,27 @@ def test_passing_verify_is_done():
     assert _verify_task(_task("true"))[0] is True
 
 
-def test_local_executor_three_states():
+def test_local_executor_three_states(monkeypatch):
+    # Local mode now EXECUTES (model-driven) then verifies. Stub execution to a
+    # harmless successful command so the 3-state mapping is driven by the check.
+    import json
+
+    from justai import agent_dispatch
+
+    monkeypatch.setattr(agent_dispatch, "_llm_call", lambda *a, **k: json.dumps({"command": "true"}))
     assert _execute_single_local(_task("true")).status == "done"
     assert _execute_single_local(_task("")).status == "unverified"
     assert _execute_single_local(_task("false")).status == "failed"
 
 
-def test_goal_artifact_absent_is_not_done():
-    # The exact defect: file-creation goal whose artifact does not exist must fail.
+def test_goal_artifact_absent_is_not_done(monkeypatch):
+    # The exact defect: a file-creation goal whose artifact does not exist must
+    # not be "done" -- even when a command ran, if the check can't confirm it.
+    import json
+
+    from justai import agent_dispatch
+
+    monkeypatch.setattr(agent_dispatch, "_llm_call", lambda *a, **k: json.dumps({"command": "true"}))
     r = _execute_single_local(_task("test -f /tmp/__justai_nonexistent_artifact__"))
     assert r.status == "failed"
 
