@@ -102,10 +102,14 @@ def _llm_call(model: str, prompt: str, system: str = "") -> str:
         }
     ).encode()
 
+    headers = {"Content-Type": "application/json"}
+    _key = os.environ.get("JUSTAI_LLM_KEY") or os.environ.get("LITELLM_KEY", "")
+    if _key:
+        headers["Authorization"] = f"Bearer {_key}"
     req = urllib.request.Request(
         f"{LITELLM_URL}/chat/completions",
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
@@ -404,27 +408,154 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         return False, str(exc)[:200]
 
 
+LOCAL_EXEC_TIMEOUT = int(os.environ.get("JUSTAI_LOCAL_EXEC_TIMEOUT", "60"))
+
+_ACTION_SYSTEM = (
+    "You execute ONE JustAi task on a Linux bash shell. Respond with JSON only, "
+    "no prose and no markdown fences. Use one of these shapes (real JSON uses "
+    "double quotes): {'command': '<one bash command; && and pipes allowed>'} "
+    "or {'skip_reason': '<why no shell command should run>'} when the task needs "
+    "no shell action or would be unsafe. The command runs under bash -o pipefail."
+)
+
+# A floor, not a sandbox: refuse a few unambiguously catastrophic commands so a
+# bad model action cannot wipe the machine. Real isolation belongs in safe-mini.
+_CATASTROPHIC_TARGETS = {
+    "/", "/*", "~", "$home", "/etc", "/bin", "/sbin", "/usr", "/var", "/boot",
+    "/lib", "/lib64", "/home", "/root", "/sys", "/proc", "/dev",
+}
+
+
+def _is_catastrophic(command: str) -> bool:
+    low = " ".join(command.lower().split())
+    if ":(){:|:&};:" in low.replace(" ", ""):
+        return True
+    hard = ("mkfs", " of=/dev/sd", "> /dev/sd", "reboot", "poweroff", "halt")
+    if any(h in low for h in hard):
+        return True
+    toks = low.split()
+    if toks and toks[0] == "sudo":
+        toks = toks[1:]
+    if toks and toks[0] in ("shutdown",):
+        return True
+    if toks and toks[0] == "rm":
+        flags = "".join(t.replace("-", "") for t in toks[1:] if t.startswith("-"))
+        args = [t for t in toks[1:] if not t.startswith("-")]
+        if "r" in flags and "f" in flags:
+            for arg in args:
+                if arg in _CATASTROPHIC_TARGETS or arg.rstrip("/") in _CATASTROPHIC_TARGETS:
+                    return True
+    if "chmod" in toks and "000" in toks and any(t in ("-r", "-rf", "-fr") for t in toks):
+        if any(arg in _CATASTROPHIC_TARGETS for arg in toks):
+            return True
+    return False
+
+
+def _parse_action(raw: str) -> dict:
+    """Extract the action dict from a model response, tolerating fences/prose."""
+    text = (raw or "").strip()
+    if "```" in text:
+        parts = text.split("```")
+        for block in parts[1:len(parts):2]:
+            stripped = block.lstrip()
+            low = stripped.lower()
+            if low.startswith("json"):
+                stripped = stripped[4:]
+            elif low.startswith(("bash", "sh", "shell")):
+                newline = stripped.find(chr(10))
+                return {"command": stripped[newline + 1:].strip() if newline != -1 else ""}
+            try:
+                obj = json.loads(stripped.strip())
+                if isinstance(obj, dict):
+                    return obj
+            except Exception:
+                continue
+    try:
+        obj = json.loads(text[text.index("{"):text.rindex("}") + 1])
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+    if text and chr(10) not in text and len(text) < 400:
+        return {"command": text}
+    return {"skip_reason": "unparseable model action"}
+
+
+def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple[bool, str]:
+    """Run one bash command with a timeout; return (ok, receipts)."""
+    try:
+        result = subprocess.run(
+            ["bash", "-o", "pipefail", "-c", command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        out = (result.stdout[-800:] + result.stderr[-400:]).strip()
+        return result.returncode == 0, out or f"(exit {result.returncode})"
+    except subprocess.TimeoutExpired:
+        return False, "execution timed out"
+    except Exception as exc:
+        return False, str(exc)[:200]
+
+
+def _perform_task_action(task: Task) -> tuple[str, str]:
+    """Execute the task via the active model's shell action.
+
+    Returns (outcome, detail); outcome is one of
+    executed | no_backend | refused | blocked | error.
+    """
+    model = os.environ.get("JUSTAI_ACTIVE_MODEL") or MINI_MODEL
+    prompt = (
+        "Task: " + task.title + chr(10) + chr(10) + task.description
+        + chr(10) + chr(10) + "Produce the shell command."
+    )
+    try:
+        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM)
+    except Exception as exc:
+        return "no_backend", f"execution model unavailable: {str(exc)[:160]}"
+    action = _parse_action(raw)
+    if action.get("skip_reason"):
+        return "refused", str(action["skip_reason"])[:200]
+    command = str(action.get("command", "")).strip()
+    if not command:
+        return "error", "model returned no command"
+    if _is_catastrophic(command):
+        return "blocked", f"refused catastrophic command: {command[:120]}"
+    ok, out = _run_local_command(command)
+    return ("executed" if ok else "error"), "$ " + command[:160] + chr(10) + out[:400]
+
+
 def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
-    """Run a single task's verification criteria locally."""
+    """Execute a task's action locally (model-driven), then verify it.
+
+    Honest 3-state: a task is ``done`` only when it BOTH executed and its
+    success check passed. Execution without an automated check is
+    ``unverified``; anything else (no backend, refusal, blocked command,
+    non-zero exit, or a failed check) is ``failed`` -- never a silent success.
+    """
     start = time.time()
-    passed, output = _verify_task(task)
-    if passed is True:
+    outcome, exec_detail = _perform_task_action(task)
+    executed = outcome == "executed"
+    passed, verify_output = _verify_task(task)
+
+    if executed and passed is True:
         status = "done"
-    elif passed is None:
+        detail = verify_output[:200]
+    elif executed and passed is None:
         status = "unverified"
+        detail = f"executed but no automated success check ran: {exec_detail[:150]}"
+    elif executed and passed is False:
+        status = "failed"
+        detail = f"executed, but verify failed: {verify_output[:150]}"
     else:
         status = "failed"
+        detail = f"not executed ({outcome}): {exec_detail[:170]}"
+
     return DelegationResult(
         task_id=f"local-{session_ref or 'task'}",
         title=task.title,
         status=status,
-        result=(
-            output[:200]
-            if passed is True
-            else "Unverified — no automated success check ran; local mode verifies, it does not execute the task"
-            if passed is None
-            else f"Verify failed: {output[:150]}"
-        ),
+        result=detail,
         duration_seconds=time.time() - start,
     )
 
