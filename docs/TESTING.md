@@ -10,6 +10,41 @@ cd ~/projects/JustAi
 .venv/bin/mypy justai
 ```
 
+## Python CI
+
+`.github/workflows/python-ci.yml` runs the package's own suite on every pull
+request, and on pushes to `main` and `demo-build`, against Python 3.12 (the
+minimum `pyproject.toml` promises) and 3.13:
+
+```bash
+ruff check justai tests
+pytest -q tests/test_gate_*.py     # gate and concurrency suite, named explicitly
+pytest -q                          # the whole suite
+```
+
+It checks out `github.event.pull_request.head.sha`. A pull request's default
+checkout is `refs/pull/N/merge` — a commit GitHub synthesises by merging the
+head into the current base — so a green check against it names a revision that
+exists in nobody's branch and changes whenever the base moves. Pinning the head
+SHA makes the result belong to one revision.
+
+The gate suite is named separately from the full run because it is the part
+that drives real interpreters against one run's approval gates: it fails first,
+and it fails by name, instead of being one dot in a 550-test run.
+
+### What this CI does and does not prove
+
+It proves that, on a clean checkout with a Linux runner and CPython 3.12/3.13,
+`ruff check` is clean and the whole suite passes offline.
+
+It does not prove:
+
+- **that the check is enforced.** The workflow reports a status; making it
+  required is a repository ruleset change, outside this repo's files.
+- **that any execution backend works.** No backend is integrated; the suite
+  covers the control plane's own decisions, including the ones that fail
+  closed because there is nothing to dispatch to.
+
 ## Test Scope
 
 The current suite covers the control plane:
@@ -96,8 +131,8 @@ It does not prove:
 - **that the Vercel build itself passes.** CI runs `npm ci` on a GitHub runner;
   it does not invoke Vercel. The two are aligned by declaring the same Node
   major and the same install command, not by CI executing the deploy.
-- **anything about the Python control plane.** That suite is separate and is not
-  run by this workflow.
+- **anything about the Python control plane.** That suite is separate, and is
+  run by `python-ci.yml` above rather than by this workflow.
 
 ## Design Principles
 

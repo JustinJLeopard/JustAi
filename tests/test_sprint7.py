@@ -12,6 +12,19 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
+def _a_gate(label: str):
+    """A gate identity for one task in one run.
+
+    Each call mints a fresh run id, so these checks never share a gate with
+    each other or with a run happening alongside them. The label is only what
+    an operator would read.
+    """
+    from justai.checkpoint import GateIdentity
+    from justai.run_identity import new_run_id
+
+    return GateIdentity(run_id=new_run_id(), index=0, session_ref=label)
+
+
 class TestAutoMode(unittest.TestCase):
     """Test --auto flag skips R1 checkpoint wait."""
 
@@ -49,7 +62,7 @@ class TestAutoMode(unittest.TestCase):
         )
         with patch.dict(os.environ, {"JUSTAI_AUTO_MODE": "1"}):
             start = time.time()
-            proceed, reason = evaluate(task, task_id="test-auto-1")
+            proceed, reason = evaluate(task, _a_gate("auto-1"))
             elapsed = time.time() - start
 
         self.assertTrue(proceed)
@@ -68,7 +81,7 @@ class TestAutoMode(unittest.TestCase):
             risk=RiskLevel.R0,
             success_criteria="echo ok",
         )
-        proceed, reason = evaluate(task, task_id="test-r0-1")
+        proceed, reason = evaluate(task, _a_gate("r0-1"))
         self.assertTrue(proceed)
         self.assertIn("R0", reason)
 
@@ -85,7 +98,7 @@ class TestAutoMode(unittest.TestCase):
             success_criteria="echo ok",
         )
         with patch.dict(os.environ, {"JUSTAI_AUTO_MODE": "1"}):
-            proceed, reason = evaluate(task, task_id="test-r3-1")
+            proceed, reason = evaluate(task, _a_gate("r3-1"))
         self.assertFalse(proceed)
         self.assertIn("blocked", reason)
 

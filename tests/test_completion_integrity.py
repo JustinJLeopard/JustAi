@@ -176,7 +176,7 @@ def test_blocked_dependency_does_not_let_its_dependent_run():
 
     plan = Plan(goal="g", tasks=[_task("Task 0"), _task("Task 1", depends_on=[0])], session_ref="t")
 
-    def gate(task, task_id="", auto=None):
+    def gate(task, identity=None, auto=None):
         # Task 0 is blocked at the checkpoint; Task 1 would be approved on its own.
         return (task.title != "Task 0", "blocked for test" if task.title == "Task 0" else "auto")
 

@@ -107,6 +107,7 @@ justai/
   scope_planner.py
   agent_dispatch.py
   checkpoint.py
+  run_identity.py
   reviewer.py
   intent_gate.py
   synthesizer.py
@@ -127,6 +128,8 @@ Important boundaries:
 - `scope_planner.py` owns task decomposition and task data shapes for the current repo.
 - `agent_dispatch.py` is transitional. Local, delegated, and swarm modes return explicit unavailable-backend errors; planner-authored success criteria are not executed as task completion. `escalate_plan` returns one result per planned task at its original position, so `depends_on` indices stay meaningful; a dependency that cannot name an earlier task fails the task closed instead of dispatching it. The standalone `AgentDispatchPipeline` experiment is quarantined and its `run` raises — it held generated code as strings and never materialized it, so its test run described the launching checkout rather than anything it produced.
 - `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates. A blocked task keeps its position in the plan and is passed to dispatch as blocked, rather than being filtered out.
+- `run_identity.py` owns what tells one run from another. A run id is a UUID and is not derived from the session label, the clock, the process, or the goal — each of those collides between two runs started together — and it is never read from the environment, which would hand one run's identity to every later run in a long-lived interpreter such as the API server.
+- An approval gate belongs to one run: `checkpoint.py` scopes it to a `GateIdentity` of run id plus plan index and stores it at `gates/<run_id>/plan-<index>.json`. Everything about that path is load-bearing. A record that contradicts its own location is read as no decision rather than as an approval; the old `gates/gate_<session_ref>-plan-<index>.json` layout is not consulted at all, in either direction; and cleanup takes a run id and nothing else, so a finished run cannot delete a concurrent run's pending approval. `session_ref` remains a human label for tracing and memory — it is reused on purpose, it is usually empty, and it scopes nothing.
 - `results.py` owns the canonical status vocabulary and the single run verdict. `synthesizer.py` and `learning.py` both read it, so the run summary and the stored trajectory cannot disagree about what succeeded. Only a nonempty result set in which every task reported `done` is `complete`; an unrecognised status raises instead of falling through to a non-failure bucket.
 - `exit_codes.py` documents the process exit codes. 0 means verified complete; an ambiguous goal exits `CLARIFICATION_REQUIRED`, and `justai status` exits `NOT_READY` on the same derivation the API reports as `all_ok`.
 - `trajectory.py` and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
@@ -163,14 +166,18 @@ Current transitional flow:
 
 ```text
 justai run --auto --local "goal"
-  -> intent_gate.classify
-  -> scope_planner.decompose
-  -> reviewer.review_plan
-  -> checkpoint.evaluate
-  -> agent_dispatch.escalate_plan(mode="local", blocked_indices=<checkpoint blocks>)
-  -> explicit unavailable-backend results
-  -> synthesizer.synthesize(status="failed")
-  -> trajectory / ledger / memory best-effort writes
+  -> run_identity.new_run_id            (unless --run-id resumes an existing one)
+  -> checkpoint.own_run(run_id)         (refuses a run another process is driving)
+     -> intent_gate.classify
+     -> scope_planner.decompose
+     -> reviewer.review_plan
+     -> checkpoint.evaluate(task, GateIdentity(run_id, index))
+     -> agent_dispatch.escalate_plan(mode="local", blocked_indices=<checkpoint blocks>)
+     -> explicit unavailable-backend results
+     -> synthesizer.synthesize(status="failed")
+     -> trajectory / ledger / memory best-effort writes
+     -> checkpoint.cleanup_run(run_id, owner)   (terminal, inside the claim)
+     -> checkpoint.sweep_gate_dirs() / prune_abandoned_runs()
   -> exit_codes.for_run_status("failed") -> exit 1
 ```
 

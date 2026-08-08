@@ -10,12 +10,18 @@ operator writes to stop a task before it starts.
 Every test here asks the same question from a different position in the order:
 does a run that was never asked to skip the R1 wait still honour a veto that is
 already on disk?
+
+Each run is given its identity explicitly. A veto names one run — that is what
+keeps it from reaching a run it was not about — so a test that plants one
+before the run starts has to say which run it is planting it for. See
+:mod:`justai.run_identity`.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,13 +29,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from justai.checkpoint import evaluate
+from justai.checkpoint import GateIdentity, evaluate, gate_path
 from justai.orchestrator import OrchestrationResult, run
+from justai.run_identity import new_run_id
 from justai.scope_planner import AgentType, Plan, RiskLevel, Task
 
 #: Long enough that the R1 veto poll runs at least once, short enough that a
 #: regression which stops reading the gate fails the test instead of hanging.
 VETO_POLL_TIMEOUT_SECONDS = 5
+
+#: Bound on waiting for a worker thread. Long enough not to be flaky, short
+#: enough to fail rather than hang the suite.
+WORKER_TIMEOUT_SECONDS = 30.0
 
 
 def _r1_task(title: str = "Modify an existing file") -> Task:
@@ -47,11 +58,15 @@ def _one_task_plan() -> Plan:
     return Plan(goal="keep the veto honest", tasks=[_r1_task()], session_ref="veto")
 
 
-def _write_veto(gate_dir: Path, task_id: str, reason: str = "operator said stop") -> None:
-    """Write the veto an operator would write to stop an R1 task."""
-    gate_dir.mkdir(parents=True, exist_ok=True)
-    (gate_dir / f"gate_{task_id}.json").write_text(
-        json.dumps({"task_id": task_id, "status": "vetoed", "reason": reason, "ts": time.time()})
+def _veto(run_id: str, index: int = 0, reason: str = "operator said stop") -> None:
+    """Write the veto an operator would write to stop one run's R1 task.
+
+    Written through :func:`justai.checkpoint.gate_path` and nothing else, so
+    this lands on the same file the checkpoint's own instructions tell the
+    operator to write, and carries only the payload they are told to write.
+    """
+    gate_path(GateIdentity(run_id=run_id, index=index)).write_text(
+        json.dumps({"status": "vetoed", "reason": reason, "ts": time.time()})
     )
 
 
@@ -61,6 +76,8 @@ def vetoed_checkpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     gate_dir = tmp_path / "gates"
     monkeypatch.setattr("justai.checkpoint.GATE_SIGNAL_DIR", gate_dir)
     monkeypatch.setattr("justai.checkpoint.R1_TIMEOUT_SECONDS", VETO_POLL_TIMEOUT_SECONDS)
+    # How fast a decision is noticed, never what is decided.
+    monkeypatch.setattr("justai.checkpoint.R1_POLL_SECONDS", 0.02)
     # Keep the decision local: a configured relay token would post to Discord.
     monkeypatch.setattr("justai.checkpoint._discord_notify", lambda message: False)
     return gate_dir
@@ -92,18 +109,25 @@ def _orchestrator_stubs(plan: Plan):
         yield
 
 
-def _run_plan(*, auto: bool, session_ref: str, plan: Plan) -> OrchestrationResult:
+def _run_plan(*, auto: bool, session_ref: str, plan: Plan, run_id: str) -> OrchestrationResult:
     with _orchestrator_stubs(plan):
-        return run("keep the veto honest", session_ref=session_ref, auto=auto, local=True)
+        return run(
+            "keep the veto honest",
+            session_ref=session_ref,
+            auto=auto,
+            local=True,
+            run_id=run_id,
+        )
 
 
 def test_an_auto_run_does_not_disable_the_veto_for_a_later_run(vetoed_checkpoint: Path) -> None:
     plan = _one_task_plan()
-    for session_ref in ("auto-run", "manual-run"):
-        _write_veto(vetoed_checkpoint, f"{session_ref}-plan-0")
+    auto_run, manual_run = new_run_id(), new_run_id()
+    _veto(auto_run)
+    _veto(manual_run)
 
-    auto_result = _run_plan(auto=True, session_ref="auto-run", plan=plan)
-    manual_result = _run_plan(auto=False, session_ref="manual-run", plan=plan)
+    auto_result = _run_plan(auto=True, session_ref="auto-run", plan=plan, run_id=auto_run)
+    manual_result = _run_plan(auto=False, session_ref="manual-run", plan=plan, run_id=manual_run)
 
     # Documented contract: auto mode skips the R1 wait, so it never consults the
     # veto. That is precisely why it must not decide for anybody else.
@@ -128,10 +152,10 @@ def test_each_run_decides_its_own_gate_in_either_order(
     plan = _one_task_plan()
 
     for position, auto in enumerate(order):
-        session_ref = f"order-{position}"
-        _write_veto(vetoed_checkpoint, f"{session_ref}-plan-0")
+        run_id = new_run_id()
+        _veto(run_id)
 
-        result = _run_plan(auto=auto, session_ref=session_ref, plan=plan)
+        result = _run_plan(auto=auto, session_ref=f"order-{position}", plan=plan, run_id=run_id)
 
         blocked = result.results[0].status == "blocked"
         assert blocked is (not auto), (
@@ -144,9 +168,10 @@ def test_an_auto_run_does_not_export_its_mode_into_the_process(
 ) -> None:
     monkeypatch.delenv("JUSTAI_AUTO_MODE", raising=False)
     plan = _one_task_plan()
-    _write_veto(vetoed_checkpoint, "env-plan-0")
+    run_id = new_run_id()
+    _veto(run_id)
 
-    _run_plan(auto=True, session_ref="env", plan=plan)
+    _run_plan(auto=True, session_ref="env", plan=plan, run_id=run_id)
 
     assert "JUSTAI_AUTO_MODE" not in os.environ, (
         "auto is a per-run decision; leaving it in the environment hands it to every later caller"
@@ -158,18 +183,42 @@ def test_a_later_direct_checkpoint_call_is_not_auto_approved_by_an_earlier_run(
 ) -> None:
     monkeypatch.delenv("JUSTAI_AUTO_MODE", raising=False)
     plan = _one_task_plan()
-    _write_veto(vetoed_checkpoint, "direct-plan-0")
+    earlier = new_run_id()
+    _veto(earlier)
 
-    _run_plan(auto=True, session_ref="direct", plan=plan)
+    _run_plan(auto=True, session_ref="direct", plan=plan, run_id=earlier)
 
-    _write_veto(vetoed_checkpoint, "after-the-auto-run")
-    proceed, reason = evaluate(_r1_task(), task_id="after-the-auto-run")
+    later = GateIdentity(run_id=new_run_id(), index=0, session_ref="after-the-auto-run")
+    _veto(later.run_id)
+    proceed, reason = evaluate(_r1_task(), later)
 
     assert proceed is False, "a direct checkpoint call inherited an earlier run's auto decision"
     assert "vetoed" in reason.lower()
 
 
-def _await_api_run(timeout: float = 30.0) -> dict:
+@contextmanager
+def _paused_before_the_gate(plan: Plan):
+    """Hold each run before its checkpoint so a veto can be planted for it.
+
+    ``_start_run`` mints the run id and starts the worker in the same call, so
+    a veto written after it returns races the gate it is meant to precede.
+    Pausing the stage before the checkpoint removes the race: the veto is on
+    disk, named for that exact run, before the run reaches its gate — which is
+    the state every other test here sets up directly.
+
+    Yields the event that releases the paused run.
+    """
+    reached = threading.Event()
+
+    def _decompose(*_args, **_kwargs) -> Plan:
+        reached.wait(timeout=WORKER_TIMEOUT_SECONDS)
+        return plan
+
+    with patch("justai.orchestrator.decompose", side_effect=_decompose):
+        yield reached
+
+
+def _await_api_run(timeout: float = WORKER_TIMEOUT_SECONDS) -> dict:
     """Block until the API's single active run leaves the running state."""
     from justai import api
 
@@ -191,6 +240,11 @@ def test_two_api_requests_do_not_inherit_the_first_requests_auto_decision(
     The server is long-lived and shares one interpreter across requests, so it
     is where a process-global mode leaks furthest: an operator who ran one
     ``auto`` job from the dashboard lost the veto for every job after it.
+
+    Each veto is written for the run id the request reports back, which is the
+    reason that identity is minted in the caller and returned before the run
+    reaches a gate: a dashboard operator has to be able to name the run that is
+    asking while it is still asking.
     """
     from justai import api
 
@@ -198,14 +252,18 @@ def test_two_api_requests_do_not_inherit_the_first_requests_auto_decision(
     monkeypatch.setattr(api, "_active_run", None)
 
     plan = _one_task_plan()
-    for session_ref in ("request-1", "request-2"):
-        _write_veto(vetoed_checkpoint, f"{session_ref}-plan-0")
+    outcomes: list[dict] = []
 
-    with _orchestrator_stubs(plan):
-        assert api._start_run("goal", auto=True, session="request-1").get("started") is True
-        first = _await_api_run()
-        assert api._start_run("goal", auto=False, session="request-2").get("started") is True
-        second = _await_api_run()
+    with _orchestrator_stubs(plan), _paused_before_the_gate(plan) as reach_gate:
+        for auto, session_ref in ((True, "request-1"), (False, "request-2")):
+            reach_gate.clear()
+            started = api._start_run("goal", auto=auto, session=session_ref)
+            assert started.get("started") is True
+            _veto(started["run_id"])
+            reach_gate.set()
+            outcomes.append(_await_api_run())
+
+    first, second = outcomes
 
     # The auto request skipped the R1 wait and reached the fail-closed backend.
     assert first["status"] == "failed"

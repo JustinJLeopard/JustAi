@@ -105,14 +105,34 @@ def _get_config() -> dict:
 
 
 def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
+    """Start one orchestration run and report the identity its gates use.
+
+    The identity is minted here rather than inside ``run`` for one reason: the
+    caller has to be told where the gates will be *before* the run reaches one.
+    A dashboard operator approving an R2 task needs the run id while the run is
+    still blocked on it, and a value returned after the run finishes is no use
+    for that.
+
+    It replaces ``dashboard-<epoch-second>``, which was a label wearing an
+    identity's job — two runs started in the same second produced the same
+    string, and it was then handed to ``session_ref``, where it named the gate
+    files. The label and the identity are now separate values: the label is
+    what the operator reads, the run id is what a gate belongs to.
+    """
     global _active_run
+
+    from justai.run_identity import new_run_id
+
+    run_id = new_run_id()
+    label = session or f"dashboard-{int(time.time())}"
+
     with _run_lock:
         if _active_run and _active_run.get("status") == "running":
             return {"error": "A run is already in progress", "run": _active_run}
 
-        run_id = f"dashboard-{int(time.time())}"
         _active_run = {
             "id": run_id,
+            "session_ref": label,
             "goal": goal,
             "status": "running",
             "started_at": time.time(),
@@ -123,10 +143,11 @@ def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
         try:
             from justai.orchestrator import run
 
-            result = run(goal, session_ref=session or run_id, auto=auto)
+            result = run(goal, session_ref=label, auto=auto, run_id=run_id)
             with _run_lock:
                 _active_run = {
                     "id": run_id,
+                    "session_ref": label,
                     "goal": goal,
                     "status": result.status,
                     "task_count": result.task_count,
@@ -137,6 +158,7 @@ def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
             with _run_lock:
                 _active_run = {
                     "id": run_id,
+                    "session_ref": label,
                     "goal": goal,
                     "status": "error",
                     "error": str(e)[:200],
@@ -145,7 +167,7 @@ def _start_run(goal: str, auto: bool = False, session: str = "") -> dict:
 
     t = threading.Thread(target=_run_thread, daemon=True)
     t.start()
-    return {"started": True, "run_id": run_id}
+    return {"started": True, "run_id": run_id, "session_ref": label}
 
 
 def _get_observability(section: str, days: int = 7) -> dict | list:

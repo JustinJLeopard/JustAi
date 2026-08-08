@@ -44,7 +44,7 @@ The intended three-repo shape is:
 Current CLI surface:
 
 ```bash
-justai run [--auto] [--local] [--session SESSION] "goal"
+justai run [--auto] [--local] [--session SESSION] [--run-id ID] "goal"
 justai plan [--session SESSION] "goal"
 justai status
 justai history [--limit N]
@@ -65,6 +65,56 @@ Current behavior:
 - `justai history` reads prior run summaries when local memory is configured.
 - `justai run --auto --local "goal"` currently returns an explicit unavailable-backend error. It does not execute planner-authored shell strings or report an unperformed edit as complete.
 - `justai run --auto "goal"` enters a delegated mode that is intentionally disabled in this branch and returns an explicit error.
+
+### Approval gates
+
+Every run mints a run id — a UUID — and prints it before it reaches a gate. Its
+R1 and R2 gates live under that id:
+
+```text
+$JUSTAI_RUNTIME_ROOT/gates/<run_id>/plan-<index>.json
+```
+
+The checkpoint prints the exact path to write to. An operator decides one task
+in one run:
+
+```bash
+echo '{"status":"approved"}' > .../gates/<run_id>/plan-0.json   # release an R2 task
+echo '{"status":"vetoed"}'   > .../gates/<run_id>/plan-0.json   # stop an R1 task
+```
+
+`--session` is a human label for tracing and memory. It is reused on purpose
+and is usually empty, so it names nothing: two concurrent runs sharing a label
+still have separate gates, and an approval written for one does not release the
+other. `--run-id` is the deliberate exception — it resumes a run against the
+gates already on disk. Omit it and a fresh identity is minted, which is what an
+ordinary run wants.
+
+One process drives one run. A `--run-id` naming a run that is still going —
+including one parked at an R2 gate for as long as the operator takes — is
+refused with `run already active`, and exits nonzero having started nothing.
+Waiting instead would execute the same tasks against the same approval as soon
+as the first process finished: one decision, two executions.
+
+An approval may be written before the run reaches the gate — a resume, or the
+dashboard, which is handed the run id by `POST /api/run` while the run is still
+starting. A run never writes over a decision already on disk; it only records
+that it is waiting when nothing has decided yet.
+
+What is left under `gates/` afterwards:
+
+| Directory | Kept | Why |
+| --- | --- | --- |
+| A run that finished its gates | Until it is an hour old | It holds only `.lock`, and removing a lock other processes exclude on is how exclusion ends. There is nothing else in it. `JUSTAI_GATE_TOMBSTONE_TTL` sets the window. |
+| A run interrupted at a gate | While its records are under seven days old, and while it is one of the 128 most recently decided | Its records are a pending approval nobody answered, and are what `--run-id` resumes against, so the window is measured in days: an operator taking a weekend over an R2 gate is ordinary. It is a window rather than "forever" because a run *killed* at a gate leaves exactly the same records and nobody is coming back for them. `JUSTAI_GATE_ABANDON_TTL` and `JUSTAI_GATE_MAX_RUNS` set the two bounds. |
+| A run's directory holding a file JustAi did not write | Indefinitely | Deleting something nobody asked about is not cleanup. Remove it yourself when you are done with it. |
+
+Old directories are collected at the end of each run. Nothing that is still
+running, still holds a decision recent enough to resume, or holds a file JustAi
+did not write is ever removed — and nothing is ever removed for its name alone:
+a directory on its way out is renamed to `.trash-<run_id>-<fresh uuid>` and
+labelled, and only a directory whose name, label and contents all agree is
+deleted.
 
 ### Exit codes
 
@@ -87,7 +137,7 @@ See [`justai/exit_codes.py`](justai/exit_codes.py) for the mapping.
 | Intent | `intent_gate.py` | Classify the goal and ask for clarification when it is ambiguous. |
 | Scope | `scope_planner.py` | Decompose the goal into bounded tasks with success criteria. |
 | Review | `reviewer.py` | Check whether the plan is coherent enough to run. |
-| Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates; `--auto` skips the R1 wait. |
+| Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates, scoped to one run by `run_identity.py`; `--auto` skips the R1 wait. |
 | Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Fail closed while execution backends are unavailable, then summarize the non-success result. |
 
 ## Install
@@ -126,7 +176,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 444 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 517 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 The suite is order-independent. Reversing collection order must produce the same result:
 
@@ -142,7 +192,8 @@ justai/
   orchestrator.py    # intent -> plan -> review -> checkpoint -> execute/synthesize
   scope_planner.py   # goal decomposition and task models
   agent_dispatch.py  # transitional dispatch ladder and removed-backend errors
-  checkpoint.py      # R0-R3 risk gates
+  checkpoint.py      # R0-R3 risk gates, scoped to one run
+  run_identity.py    # the run id a gate belongs to
   reviewer.py        # plan quality gate
   memory.py          # local memory client
   trajectory.py      # run trajectory recording and lookup

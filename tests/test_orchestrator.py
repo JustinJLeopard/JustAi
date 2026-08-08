@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -329,6 +330,28 @@ class ReviewerTests(unittest.TestCase):
 
 
 class CheckpointTests(unittest.TestCase):
+    def setUp(self):
+        """Give every check its own gate directory.
+
+        These used to write into the shared runtime root, so a checkpoint test
+        and a real run on the same machine dropped files in one place. A
+        per-test directory costs nothing and makes the isolation explicit.
+        """
+        import justai.checkpoint as cp
+
+        self._gate_root = tempfile.TemporaryDirectory(prefix="justai-gates-")
+        self.addCleanup(self._gate_root.cleanup)
+        patcher = patch.object(cp, "GATE_SIGNAL_DIR", Path(self._gate_root.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _a_gate(self, label: str):
+        """A gate identity for one task in one run, with a fresh run id."""
+        from justai.checkpoint import GateIdentity
+        from justai.run_identity import new_run_id
+
+        return GateIdentity(run_id=new_run_id(), index=0, session_ref=label)
+
     def _make_task(self, risk_str: str, title: str = "Test task"):
         from justai.scope_planner import AgentType, RiskLevel, Task
 
@@ -345,7 +368,7 @@ class CheckpointTests(unittest.TestCase):
         from justai.checkpoint import evaluate
 
         task = self._make_task("R0")
-        proceed, reason = evaluate(task, task_id="test-r0")
+        proceed, reason = evaluate(task, self._a_gate("r0"))
         self.assertTrue(proceed)
         self.assertIn("R0", reason)
 
@@ -354,7 +377,7 @@ class CheckpointTests(unittest.TestCase):
 
         with patch("justai.checkpoint._discord_notify", return_value=False):
             task = self._make_task("R3")
-            proceed, reason = evaluate(task, task_id="test-r3")
+            proceed, reason = evaluate(task, self._a_gate("r3"))
         self.assertFalse(proceed)
         self.assertIn("blocked", reason.lower())
 
@@ -367,7 +390,7 @@ class CheckpointTests(unittest.TestCase):
         try:
             with patch("justai.checkpoint._discord_notify", return_value=False):
                 task = self._make_task("R1")
-                proceed, reason = evaluate(task, task_id="test-r1-timeout")
+                proceed, reason = evaluate(task, self._a_gate("r1-timeout"))
             self.assertTrue(proceed)
             self.assertIn("auto-approved", reason)
         finally:
@@ -378,29 +401,30 @@ class CheckpointTests(unittest.TestCase):
         import time
 
         import justai.checkpoint as cp
-        from justai.checkpoint import _gate_file, _write_gate, evaluate
+        from justai.checkpoint import cleanup_run, evaluate, gate_path
 
         original_timeout = cp.R1_TIMEOUT_SECONDS
         cp.R1_TIMEOUT_SECONDS = 5
 
-        task_id = "test-r1-veto"
+        gate = self._a_gate("r1-veto")
 
         def veto_after_delay():
+            # Written the way the operator is told to write it, to the path the
+            # checkpoint announced — not through an internal helper.
             time.sleep(0.3)
-            _write_gate(task_id, "vetoed", "test veto")
+            gate_path(gate).write_text(json.dumps({"status": "vetoed", "reason": "test veto"}))
 
         try:
             with patch("justai.checkpoint._discord_notify", return_value=False):
                 t = threading.Thread(target=veto_after_delay, daemon=True)
                 t.start()
                 task = self._make_task("R1")
-                proceed, reason = evaluate(task, task_id=task_id)
+                proceed, reason = evaluate(task, gate)
             self.assertFalse(proceed)
             self.assertIn("vetoed", reason.lower())
         finally:
             cp.R1_TIMEOUT_SECONDS = original_timeout
-            gate = _gate_file(task_id)
-            gate.unlink(missing_ok=True)
+            cleanup_run(gate.run_id)
 
 
 if __name__ == "__main__":
