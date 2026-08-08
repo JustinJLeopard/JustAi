@@ -53,6 +53,20 @@ def _review(approved: bool = True):
     return ReviewResult(approved=approved, feedback=[] if approved else ["Task too large"])
 
 
+def _fidelity(verdict: str = "met", fidelity: float = 100.0):
+    from justai.intent_fidelity import FidelityResult, FidelityVerdict
+
+    v = FidelityVerdict(verdict)
+    return FidelityResult(
+        fidelity=fidelity,
+        verdict=v,
+        a_or_better=v in (FidelityVerdict.MET, FidelityVerdict.EXCEEDED),
+        grade="A" if fidelity >= 90 else "F",
+        rationale="test fidelity",
+        source="test",
+    )
+
+
 def _result(status: str = "done", title: str = "Task 0") -> DelegationResult:
     return DelegationResult(
         task_id="1",
@@ -79,6 +93,7 @@ def _patch_pipeline(*, intent=None, plan=None, review=None, results=None):
         trace_generation=MagicMock(return_value=_trace_ctx()),
         trace_event=MagicMock(),
         escalate_plan=MagicMock(return_value=results or [_result()]),
+        score_fidelity=MagicMock(return_value=_fidelity()),
     )
 
 
@@ -116,6 +131,9 @@ def test_run_returns_complete_when_all_tasks_succeed():
 
     assert result.status == "complete"
     assert result.task_count == 1
+    assert result.intent_fidelity == 100.0
+    assert result.a_or_better is True
+    assert result.fidelity_verdict == "met"
 
 
 def test_run_returns_partial_when_some_tasks_fail():
