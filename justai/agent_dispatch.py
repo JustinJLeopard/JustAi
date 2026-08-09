@@ -35,6 +35,7 @@ import json
 import os
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -86,6 +87,25 @@ class PipelineResult:
     final_output: str = ""
 
 
+def _is_loopback_url(url: str) -> bool:
+    """True only for loopback hosts (127.0.0.0/8, localhost, ::1)."""
+    host = (urllib.parse.urlsplit(url).hostname or "").strip("[]")
+    return host == "localhost" or host == "::1" or host.startswith("127.")
+
+
+def _execution_endpoint() -> str:
+    """Endpoint for model-driven LOCAL EXECUTION. Always loopback: the
+    executor override if set (already loopback-validated), else the configured
+    LITELLM_URL only when it is loopback, else a loopback default. Never
+    follows an off-box ambient LITELLM_BASE_URL."""
+    ex = _executor_base_url()
+    if ex:
+        return ex
+    if _is_loopback_url(LITELLM_URL):
+        return LITELLM_URL
+    return "http://127.0.0.1:4000/v1"
+
+
 def _executor_base_url() -> str | None:
     """Executor endpoint override — default-OFF.
 
@@ -96,7 +116,14 @@ def _executor_base_url() -> str | None:
     Endpoint is selected by call site, never inferred from model text.
     """
     url = os.environ.get("JUSTAI_EXECUTOR_BASE_URL", "").strip().rstrip("/").removesuffix("/v1")
-    return url or None
+    if not url:
+        return None
+    # Execution endpoints are unconditionally loopback. An off-box executor URL
+    # is refused (fail-closed) — a remote executor is a separately configured,
+    # separately accepted feature, never an ambient environment escape hatch.
+    if not _is_loopback_url(url):
+        return None
+    return url
 
 
 def _llm_call(model: str, prompt: str, system: str = "", base_url: str | None = None) -> str:
@@ -346,6 +373,34 @@ class AgentDispatchPipeline:
 # The AgentDispatchPipeline above is preserved as a standalone LLM pipeline utility.
 
 
+def _restore_env(name: str, had: bool, value: str) -> None:
+    """Restore an env var to its EXACT prior state: delete if it was absent,
+    restore its value if it was present. Prevents leaking present-but-empty
+    variables into later code that treats presence as meaningful."""
+    if had:
+        os.environ[name] = value
+    else:
+        os.environ.pop(name, None)
+
+
+def _failure_class(result: DelegationResult) -> str:
+    """Coarse, nonsecret failure class for cloud escalation context.
+
+    NEVER returns command bytes, stdout/stderr, or a verify-output tail — only
+    an opaque class enum derived from the local status string.
+    """
+    text = (result.result or "").lower()
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "not executed" in text:
+        return "not-executed"
+    if "verify failed" in text:
+        return "verification-failed"
+    if "exit" in text:
+        return "nonzero-exit"
+    return "failed"
+
+
 def escalate_task(
     task: Task,
     session_ref: str,
@@ -361,6 +416,8 @@ def escalate_task(
     Returns:
         DelegationResult — from first attempt if successful, from escalation otherwise.
     """
+    had_model = "JUSTAI_ACTIVE_MODEL" in os.environ
+    had_role = "JUSTAI_EXEC_ROLE" in os.environ
     original_model = os.environ.get("JUSTAI_ACTIVE_MODEL", "")
     original_role = os.environ.get("JUSTAI_EXEC_ROLE", "")
 
@@ -370,8 +427,8 @@ def escalate_task(
         os.environ["JUSTAI_EXEC_ROLE"] = "mini"
         result = runner(task, session_ref=session_ref)
     finally:
-        os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
-        os.environ["JUSTAI_EXEC_ROLE"] = original_role
+        _restore_env("JUSTAI_ACTIVE_MODEL", had_model, original_model)
+        _restore_env("JUSTAI_EXEC_ROLE", had_role, original_role)
 
     if result.status == "done":
         return result
@@ -384,7 +441,8 @@ def escalate_task(
         title=task.title,
         description=(
             f"{task.description}\n\n"
-            f"NOTE: A previous attempt failed with: {result.result[:300]}\n"
+            f"NOTE: A previous attempt did not succeed "
+            f"(status={result.status}, class={_failure_class(result)}). "
             f"Take a different approach."
         ),
         agent=task.agent,
@@ -399,8 +457,8 @@ def escalate_task(
         os.environ["JUSTAI_EXEC_ROLE"] = "primary"
         escalation_result = runner(escalated_task, session_ref=session_ref)
     finally:
-        os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
-        os.environ["JUSTAI_EXEC_ROLE"] = original_role
+        _restore_env("JUSTAI_ACTIVE_MODEL", had_model, original_model)
+        _restore_env("JUSTAI_EXEC_ROLE", had_role, original_role)
 
     return escalation_result
 
@@ -467,40 +525,64 @@ def _is_catastrophic(command: str) -> bool:
             for arg in args:
                 if arg in _CATASTROPHIC_TARGETS or arg.rstrip("/") in _CATASTROPHIC_TARGETS:
                     return True
-    if "chmod" in toks and "000" in toks and any(t in ("-r", "-rf", "-fr") for t in toks):
-        if any(arg in _CATASTROPHIC_TARGETS for arg in toks):
-            return True
+    # Destructive permission/ownership strips against a protected root are
+    # catastrophic with OR WITHOUT a recursive flag (`chmod 000 /` locks the
+    # system just as `chmod -R 000 /` does). Match on the command verb + a
+    # protected-root argument, not on the presence of -R.
+    if toks and toks[0] in ("chmod", "chown", "chgrp"):
+        args = [t for t in toks[1:] if not t.startswith("-")]
+        # drop the mode/owner operand (first non-flag token) — targets follow
+        for arg in args[1:]:
+            if arg in _CATASTROPHIC_TARGETS or arg.rstrip("/") in _CATASTROPHIC_TARGETS:
+                return True
     return False
 
 
 def _parse_action(raw: str) -> dict:
-    """Extract the action dict from a model response, tolerating fences/prose."""
+    """Extract the action dict from a model response.
+
+    The executor contract is JSON-ONLY. The model must return a JSON object
+    (optionally inside a ```json fence). Fenced shell and bare prose lines are
+    NEVER executed as commands: 8B output variability is not authority to run
+    raw text, and a bash fence embedded in output must not become a shell
+    action. Anything that is not a JSON object is refused with a skip reason.
+    """
     text = (raw or "").strip()
+
+    # 1. Whole response is JSON. This also correctly handles a fence that
+    #    appears INSIDE a JSON string value (the object still parses).
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+
+    # 2. A ```json fenced block — only "json" is honored; bash/sh/shell fences
+    #    are never treated as executable actions.
     if "```" in text:
         parts = text.split("```")
         for block in parts[1:len(parts):2]:
             stripped = block.lstrip()
-            low = stripped.lower()
-            if low.startswith("json"):
+            if stripped.lower().startswith("json"):
                 stripped = stripped[4:]
-            elif low.startswith(("bash", "sh", "shell")):
-                newline = stripped.find(chr(10))
-                return {"command": stripped[newline + 1:].strip() if newline != -1 else ""}
             try:
                 obj = json.loads(stripped.strip())
                 if isinstance(obj, dict):
                     return obj
             except Exception:
                 continue
+
+    # 3. Prose wrapping a single JSON object.
     try:
         obj = json.loads(text[text.index("{"):text.rindex("}") + 1])
         if isinstance(obj, dict):
             return obj
     except Exception:
         pass
-    if text and chr(10) not in text and len(text) < 400:
-        return {"command": text}
-    return {"skip_reason": "unparseable model action"}
+
+    # No JSON object -> refuse. Never execute fenced shell or a bare line.
+    return {"skip_reason": "executor contract violated: response was not a JSON action object"}
 
 
 def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple[bool, str]:
@@ -513,9 +595,12 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
             timeout=timeout,
         )
         out = (result.stdout[-800:] + result.stderr[-400:]).strip()
-        return result.returncode == 0, out or f"(exit {result.returncode})"
+        ok = result.returncode == 0
+        if not ok:
+            out = (out + f" (exit {result.returncode})").strip()
+        return ok, out or f"(exit {result.returncode})"
     except subprocess.TimeoutExpired:
-        return False, "execution timed out"
+        return False, "execution timed out (exit: timeout)"
     except Exception as exc:
         return False, str(exc)[:200]
 
@@ -524,7 +609,10 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
     """Execute the task via the active model's shell action.
 
     Returns (outcome, detail); outcome is one of
-    executed | no_backend | refused | blocked | error.
+    executed | executed_failed | no_backend | refused | blocked | error.
+    ``executed_failed`` means the command RAN and exited nonzero (or timed
+    out) — an executed failure with the exit class retained, distinct from
+    ``error`` (a pre-execution framework failure).
     """
     model = os.environ.get("JUSTAI_ACTIVE_MODEL") or MINI_MODEL
     # Endpoint role is set explicitly by escalate_task per attempt and never
@@ -532,7 +620,14 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
     # endpoint; the mini/first/direct-local attempt uses the executor endpoint
     # when JUSTAI_EXECUTOR_BASE_URL is configured (else primary, fail-closed).
     role = os.environ.get("JUSTAI_EXEC_ROLE") or "mini"
-    action_base_url = None if role == "primary" else _executor_base_url()
+    if role == "primary":
+        # Escalation attempt uses the configured primary router (may route to a
+        # cloud escalation model — an accepted feature, not the executor path).
+        action_base_url = None
+    else:
+        # Mini/first/direct LOCAL EXECUTION path is pinned loopback and never
+        # follows an off-box ambient LITELLM_BASE_URL (fail-closed).
+        action_base_url = _execution_endpoint()
     prompt = (
         "Task: " + task.title + chr(10) + chr(10) + task.description
         + chr(10) + chr(10) + "Produce the shell command."
@@ -550,7 +645,8 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
     if _is_catastrophic(command):
         return "blocked", f"refused catastrophic command: {command[:120]}"
     ok, out = _run_local_command(command)
-    return ("executed" if ok else "error"), "$ " + command[:160] + chr(10) + out[:400]
+    outcome = "executed" if ok else "executed_failed"
+    return outcome, "$ " + command[:160] + chr(10) + out[:400]
 
 
 def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
@@ -575,6 +671,11 @@ def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult
     elif executed and passed is False:
         status = "failed"
         detail = f"executed, but verify failed: {verify_output[:150]}"
+    elif outcome == "executed_failed":
+        # The command RAN and exited nonzero/timed out — an executed failure,
+        # not a pre-execution ("not executed") failure.
+        status = "failed"
+        detail = f"executed, but the command failed: {exec_detail[:170]}"
     else:
         status = "failed"
         detail = f"not executed ({outcome}): {exec_detail[:170]}"
