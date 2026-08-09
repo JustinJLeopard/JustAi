@@ -43,6 +43,7 @@ from justai.ledger import Ledger
 from justai.memory import Memory
 from justai.reviewer import REVIEWER_MODEL, ReviewResult, review
 from justai.scope_planner import PLANNER_MODEL, Plan, decompose, format_plan
+from justai.results import classify_status, tally
 from justai.synthesizer import format_summary, synthesize
 from justai.tracing import flush_traces, trace_event, trace_generation
 
@@ -114,6 +115,24 @@ def _print_header(goal: str, auto: bool = False) -> None:
     print("╚══════════════════════════════════════════════════════╝")
     print(f"  Goal: {goal[:70]}")
     print()
+
+
+def _describe_unusable_results(results) -> str:
+    """Best-effort, operator-facing description of why a result set is unusable.
+
+    Names the first offending result (status + task title) so the failure is
+    diagnosable, without assuming the set is even iterable.
+    """
+    try:
+        for r in results:
+            status = getattr(r, "status", None)
+            try:
+                classify_status(status)
+            except ValueError:
+                return f"unusable result status {status!r} on task {getattr(r, 'title', '?')!r}"
+        return "result set failed validation"
+    except TypeError:
+        return f"executor returned no result sequence ({type(results).__name__})"
 
 
 def run(
@@ -328,8 +347,33 @@ def run(
         print(f"\n[5/6] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
         results = escalate_plan(approved_tasks, session_ref=session_ref, mode=mode)
 
-        done_count = sum(1 for r in results if r.status == "done")
-        failed_count = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
+        # Fail-closed boundary: a result set the run cannot report safely
+        # (unknown status, malformed shape, non-numeric duration, or not even a
+        # sequence) must END THE RUN AS FAILED with its traces flushed and a
+        # record filed — never a traceback that loses the evidence, and never a
+        # silent bucket that could read as success downstream.
+        try:
+            exec_counts = tally(results, strict=True)
+        except (ValueError, TypeError) as exc:
+            diag = _describe_unusable_results(results)
+            _t5.end(output_text="unusable results", metadata={"error": str(exc)[:160]})
+            duration = time.time() - start
+            print(f"\n[!] Run failed closed at execute: {diag}")
+            _hook.on_error("unusable execution results", stage=stage5_name, root_cause=diag)
+            _ledger.record(run_id=run_id, agent=session_ref, stage="execute-invalid")
+            record_run(goal, [], duration, final_status="failed")
+            flush_traces()
+            return OrchestrationResult(
+                goal=goal,
+                intent=intent_result.intent.value,
+                task_count=len(plan.tasks),
+                results=[],
+                duration_seconds=duration,
+                status="failed",
+            )
+
+        done_count = exec_counts.done
+        failed_count = exec_counts.failed
         _t5.end(
             output_text=f"{done_count}/{len(results)} done",
             metadata={"done": done_count, "failed": failed_count, "total": len(results)},
