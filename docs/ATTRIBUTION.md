@@ -11,6 +11,16 @@ JustAi is built on open-source infrastructure from the Python, frontend, observa
 - **License:** MIT
 - **Role in JustAi:** Reference bash-action agent loop. JustAi plans around this execution style; `safe-mini` is the intended local substrate boundary.
 
+### Ruflo (claude-flow)
+
+- **By:** rUv (Reuven Cohen)
+- **Repository:** https://github.com/ruvnet/claude-flow
+- **License:** MIT
+- **Role in JustAi:** Memory substrate. `justai/memory.py` is a client for the
+  claude-flow MCP HTTP server (with a `claude-flow memory` CLI-subprocess
+  fallback), and the planner's researcher agent role follows the Ruflo
+  researcher pattern.
+
 ### Model Routing Proxy
 
 - **License:** MIT

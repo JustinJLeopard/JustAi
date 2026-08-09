@@ -85,8 +85,11 @@ class DocumentationTests(unittest.TestCase):
         self.assertTrue((JUSTAI_ROOT / "README.md").exists())
 
     def test_readme_has_install_section(self):
+        # install.sh was retired in the stabilization pass; the documented
+        # install contract is an editable pip install into a virtualenv.
         content = (JUSTAI_ROOT / "README.md").read_text()
-        self.assertIn("install.sh", content)
+        self.assertIn("## Install", content)
+        self.assertIn("pip install -e .", content)
 
     def test_readme_has_quick_start(self):
         content = (JUSTAI_ROOT / "README.md").read_text()

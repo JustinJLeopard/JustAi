@@ -37,7 +37,9 @@ class TestComponents:
         assert (DASH / "components" / "MetricCard.tsx").exists()
 
     def test_pipeline_exists(self):
-        assert (DASH / "components" / "Pipeline.tsx").exists()
+        # The pipeline visualization lives in ControlPlaneStages.tsx (renamed
+        # from the sprint-era Pipeline.tsx during the control-plane redesign).
+        assert (DASH / "components" / "ControlPlaneStages.tsx").exists()
 
 
 class TestViews:

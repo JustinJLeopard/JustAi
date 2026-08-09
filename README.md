@@ -63,6 +63,13 @@ Current behavior:
 | Checkpoint | `checkpoint.py` | Apply R0-R3 risk gates; `--auto` skips the R1 wait. |
 | Execute/Synthesize | `agent_dispatch.py`, `synthesizer.py` | Run local verification commands or return removed-backend errors, then summarize results. |
 
+## Dashboard
+
+The `dashboard/` directory contains the React control-plane UI. `src/` is the
+authenticated control-plane surface (mission control, task board, run history,
+observability); `demo/` is the self-contained sprint-simulation build served at
+the public production deployment (justai-demo.vercel.app).
+
 ## Install
 
 For an existing checkout with a prepared virtualenv:
@@ -100,7 +107,7 @@ Canonical test run:
 .venv/bin/python -m pytest -q
 ```
 
-Current expected result for this branch is 370 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
+Current expected result for this branch is 424 passing tests, 0 failures, plus 14 passing subtests reported by pytest output.
 
 ## Repo Map
 
