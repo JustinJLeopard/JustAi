@@ -338,17 +338,21 @@ def _run_pipeline(
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
     print("\n[4/6] Evaluating checkpoints...")
     trace_event("checkpoint", metadata={"task_count": len(plan.tasks)}, session_id=session_ref)
-    approved_tasks = []
+    # Positions are preserved: blocked tasks are marked by INDEX and passed to
+    # escalate_plan alongside the full plan, so depends_on indices stay valid and
+    # a dependent of a blocked task is skipped (compacting the list here used to
+    # shift indices and let the dependent run anyway).
+    blocked_indices: dict[int, str] = {}
     for i, task in enumerate(plan.tasks):
         task_id = f"{session_ref}-plan-{i}"
         proceed, reason = evaluate(task, task_id=task_id)
         if proceed:
             print(f"      [{i}] {task.title} [{task.risk.value}] → {reason}")
-            approved_tasks.append(task)
         else:
             print(f"      [{i}] {task.title} [{task.risk.value}] → BLOCKED: {reason}")
+            blocked_indices[i] = reason
 
-    if not approved_tasks:
+    if plan.tasks and len(blocked_indices) == len(plan.tasks):
         return OrchestrationResult(
             goal=goal,
             intent=intent_result.intent.value,
@@ -363,18 +367,21 @@ def _run_pipeline(
     stage5_name = "swarm" if swarm else ("local" if local else "external")
     with trace_generation(
         stage5_name,
-        input_text=f"{len(approved_tasks)} tasks",
+        input_text=f"{len(plan.tasks) - len(blocked_indices)} tasks",
         session_id=session_ref,
         tags=[stage5_name],
         metadata={
             "stage": stage5_name,
-            "task_count": len(approved_tasks),
+            "task_count": len(plan.tasks) - len(blocked_indices),
             "mode": "swarm" if swarm else ("local" if local else "delegated"),
         },
     ) as _t5:
         mode = "swarm" if swarm else ("local" if local else "delegated")
-        print(f"\n[5/6] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
-        results = escalate_plan(approved_tasks, session_ref=session_ref, mode=mode)
+        runnable = len(plan.tasks) - len(blocked_indices)
+        print(f"\n[5/6] Executing {runnable} task(s) via {mode} (with escalation)...")
+        results = escalate_plan(
+            plan.tasks, session_ref=session_ref, mode=mode, blocked_indices=blocked_indices
+        )
 
         # Fail-closed boundary: a result set the run cannot report safely
         # (unknown status, malformed shape, non-numeric duration, or not even a
