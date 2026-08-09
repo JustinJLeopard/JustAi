@@ -18,6 +18,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from justai.memory import Memory
+from justai.results import tally
 
 _memory = Memory()
 
@@ -30,6 +31,7 @@ class RunSummary:
     done: int
     failed: int
     skipped: int
+    blocked: int
     duration_seconds: float
     session_ref: str
     status: str  # "complete" | "partial" | "failed"
@@ -58,20 +60,17 @@ def synthesize(
             task-complete run is judged to have MISSED the intent, its status is
             honestly downgraded to "partial".
     """
-    done = sum(1 for r in results if r.status == "done")
-    failed = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
-    skipped = sum(1 for r in results if r.status == "skipped")
-    total = len(results)
-
-    unverified = sum(1 for r in results if r.status == "unverified")
-    # Honest: "complete" ONLY when every task is genuinely done (a failing/
-    # unverified task can no longer masquerade as a complete run).
-    if total > 0 and done == total:
-        status = "complete"
-    elif done > 0 or unverified > 0:
-        status = "partial"
-    else:
-        status = "failed"
+    # One shared vocabulary: tally() is also what the learning layer reads, so
+    # the two surfaces cannot disagree about the same result set. It raises on a
+    # status outside the canonical vocabulary rather than bucketing it toward a
+    # success path, and on a result set that is not a well-formed sequence.
+    counts = tally(results)
+    done = counts.done
+    failed = counts.failed
+    skipped = counts.skipped
+    blocked = counts.blocked
+    total = counts.total
+    status = counts.run_status
 
     # Intent-fidelity gate: a task-complete run that missed the original intent
     # is not honestly "complete" — downgrade it. No effect when fidelity is None
@@ -106,6 +105,7 @@ def synthesize(
         done=done,
         failed=failed,
         skipped=skipped,
+        blocked=blocked,
         duration_seconds=duration,
         session_ref=session_ref,
         status=status,

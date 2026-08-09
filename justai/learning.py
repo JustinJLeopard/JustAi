@@ -76,12 +76,20 @@ def record_run(
     """
     try:
         steps = [r.title for r in results]
-        done = sum(1 for r in results if r.status == "done")
-        failed = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
+        # Shared vocabulary with the synthesizer (justai.results.tally): the two
+        # surfaces must agree on what counts as success. "success" is reserved
+        # for a verified-complete run; an empty run records nothing; an unknown
+        # or malformed result status is refused (tally raises -> caught below ->
+        # return False) rather than counted as "no failures = success".
+        from justai.results import RUN_COMPLETE, RUN_PARTIAL, tally
 
-        if failed == 0:
+        counts = tally(results)
+        if counts.total == 0:
+            return False
+        run_status = counts.run_status
+        if run_status == RUN_COMPLETE:
             outcome = "success"
-        elif done > 0:
+        elif run_status == RUN_PARTIAL:
             outcome = "partial"
         else:
             outcome = "failed"
