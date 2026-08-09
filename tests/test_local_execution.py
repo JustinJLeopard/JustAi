@@ -32,7 +32,7 @@ def _task(description: str, criteria: str, title: str = "t") -> Task:
 
 
 def _stub_llm(monkeypatch, payload):
-    def fake(model, prompt, system=""):
+    def fake(model, prompt, system="", base_url=None):
         return payload(prompt) if callable(payload) else payload
 
     monkeypatch.setattr(agent_dispatch, "_llm_call", fake)
@@ -114,7 +114,7 @@ def test_end_to_end_local_run_flips_artifact_and_completes(tmp_path, monkeypatch
     )
     create.depends_on = [0]
 
-    def fake(model, prompt, system=""):
+    def fake(model, prompt, system="", base_url=None):
         if "Explore" in prompt:
             return json.dumps({"command": "echo exploring"})
         return json.dumps({"command": f"printf %s HELLO_JUSTAI > {artifact}"})

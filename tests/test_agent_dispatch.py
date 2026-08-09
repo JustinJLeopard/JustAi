@@ -54,7 +54,7 @@ class TestAgentDispatchPipeline:
         }
 
         with patch("justai.agent_dispatch._llm_call") as mock_llm:
-            mock_llm.side_effect = lambda model, prompt, system="": mock_responses.get(
+            mock_llm.side_effect = lambda model, prompt, system="", base_url=None: mock_responses.get(
                 next((p for p in mock_responses if p in prompt), ""), "ok"
             )
             with patch("justai.agent_dispatch._run_tests", return_value=(True, "5 passed")):
@@ -73,7 +73,7 @@ class TestAgentDispatchPipeline:
 
         call_count = 0
 
-        def mock_llm(model, prompt, system=""):
+        def mock_llm(model, prompt, system="", base_url=None):
             nonlocal call_count
             call_count += 1
             return "attempted but incomplete"

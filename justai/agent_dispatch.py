@@ -86,8 +86,25 @@ class PipelineResult:
     final_output: str = ""
 
 
-def _llm_call(model: str, prompt: str, system: str = "") -> str:
-    """Call LLM via LiteLLM proxy. Returns response text."""
+def _executor_base_url() -> str | None:
+    """Executor endpoint override — default-OFF.
+
+    When JUSTAI_EXECUTOR_BASE_URL is set, mini/executor calls route here so a
+    dedicated coder (e.g. a local Qwen3-Coder-Next server) can run the executor
+    while planner/reviewer/pseudocode/escalation stay on LITELLM_BASE_URL.
+    Unset/empty -> None -> primary endpoint (byte-for-byte equivalent).
+    Endpoint is selected by call site, never inferred from model text.
+    """
+    url = os.environ.get("JUSTAI_EXECUTOR_BASE_URL", "").strip().rstrip("/").removesuffix("/v1")
+    return url or None
+
+
+def _llm_call(model: str, prompt: str, system: str = "", base_url: str | None = None) -> str:
+    """Call LLM via the OpenAI-compatible endpoint. Returns response text.
+
+    base_url overrides the endpoint for this call only (executor routing);
+    None uses the primary LITELLM_URL.
+    """
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -107,7 +124,7 @@ def _llm_call(model: str, prompt: str, system: str = "") -> str:
     if _key:
         headers["Authorization"] = f"Bearer {_key}"
     req = urllib.request.Request(
-        f"{LITELLM_URL}/chat/completions",
+        f"{base_url or LITELLM_URL}/chat/completions",
         data=payload,
         headers=headers,
     )
@@ -146,7 +163,7 @@ class AgentDispatchPipeline:
     def _call_mini(self, prompt: str, system: str = "") -> str:
         self._model_calls += 1
         self._mini_calls += 1
-        return _llm_call(self.config.mini_model, prompt, system)
+        return _llm_call(self.config.mini_model, prompt, system, base_url=_executor_base_url())
 
     def _call_escalation(self, prompt: str, system: str = "") -> str:
         self._model_calls += 1
@@ -510,7 +527,7 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
         + chr(10) + chr(10) + "Produce the shell command."
     )
     try:
-        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM)
+        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM, base_url=_executor_base_url())
     except Exception as exc:
         return "no_backend", f"execution model unavailable: {str(exc)[:160]}"
     action = _parse_action(raw)
