@@ -64,7 +64,7 @@ def synthesize(
     # the two surfaces cannot disagree about the same result set. It raises on a
     # status outside the canonical vocabulary rather than bucketing it toward a
     # success path, and on a result set that is not a well-formed sequence.
-    counts = tally(results)
+    counts = tally(results, strict=True)
     done = counts.done
     failed = counts.failed
     skipped = counts.skipped

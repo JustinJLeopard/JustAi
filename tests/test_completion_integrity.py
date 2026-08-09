@@ -333,3 +333,172 @@ def test_a_result_without_a_duration_is_still_countable():
     counts = tally([_SNS(task_id="t", title="Task 0", status="done", result="ok")])
 
     assert counts.done == 1
+
+
+# ── Finding 7: unusable results fail the run closed (not a traceback) ─────────
+# The orchestrator must turn an unusable executor result set into a FAILED run
+# that still flushes traces, files a record, and tells the operator what was
+# wrong — never a traceback that loses the evidence, never a silent success.
+# Bounded to the three named result-set regressions (unknown status, malformed
+# shape, non-sequence). Rejected-blocked-index (needs dependency indexing) and
+# stage-tally are later slices.
+
+import os as _os
+from contextlib import contextmanager as _contextmanager
+
+from justai.exit_codes import for_run_status as _for_run_status
+from justai.scope_planner import AgentType as _AgentType
+from justai.scope_planner import Plan as _Plan
+from justai.scope_planner import RiskLevel as _RiskLevel
+from justai.scope_planner import Task as _Task
+
+
+def _task(title: str) -> _Task:
+    return _Task(
+        title=title,
+        description=f"Do {title}.",
+        agent=_AgentType.MINI,
+        risk=_RiskLevel.R0,
+        success_criteria="echo ok",
+        depends_on=[],
+    )
+
+
+def _trace_ctx7():
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=ctx)
+    ctx.__exit__ = MagicMock(return_value=False)
+    ctx.end = MagicMock()
+    return ctx
+
+
+def _execution_intent7():
+    from justai.intent_gate import Intent, IntentResult
+
+    return IntentResult(
+        intent=Intent("execution"), confidence=0.9, reasoning="test", clarifying_question=""
+    )
+
+
+def _approved_review7():
+    from justai.reviewer import ReviewResult
+
+    return ReviewResult(approved=True, feedback=[])
+
+
+@_contextmanager
+def _orchestrated_run(plan, **overrides):
+    """Stub every stage but the one under test; keep memory writes local."""
+    stubs = {
+        "classify": MagicMock(return_value=_execution_intent7()),
+        "decompose": MagicMock(return_value=plan),
+        "review": MagicMock(return_value=_approved_review7()),
+        "evaluate": MagicMock(return_value=(True, "auto")),
+        "preflight": MagicMock(return_value=[]),
+        "print_preflight": MagicMock(return_value=True),
+        "flush_traces": MagicMock(),
+        "trace_generation": MagicMock(side_effect=lambda *a, **k: _trace_ctx7()),
+        "trace_event": MagicMock(),
+        "record_run": MagicMock(),
+        "enrich_context": MagicMock(return_value=""),
+        "_memory": MagicMock(),
+        "_ledger": MagicMock(),
+        "OrchestratorHook": MagicMock(),
+    }
+    stubs.update(overrides)
+    # Isolate os.environ: orchestrator.run(auto=True) sets JUSTAI_AUTO_MODE=1
+    # globally (pre-existing; flagged to Codex). patch.dict snapshots + restores
+    # so these tests stay hermetic and cannot leak auto-mode into later tests.
+    with patch.dict(_os.environ), patch.multiple(
+        "justai.orchestrator", **stubs
+    ), patch("justai.synthesizer._memory", MagicMock()):
+        yield stubs
+
+
+def test_an_unknown_result_status_fails_the_run_closed_instead_of_raising(capsys):
+    from justai.orchestrator import run
+
+    plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    unusable = [_result("mission-accomplished", title="Task 0")]
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=unusable)) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert _for_run_status(result.status) != 0, "an uncountable run must not exit 0"
+
+    out = capsys.readouterr().out
+    assert "mission-accomplished" in out, "the operator must be told which status was unusable"
+    assert "Task 0" in out, "and which task carried it"
+
+    stubs["flush_traces"].assert_called_once()
+    stubs["record_run"].assert_called_once()
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+
+
+@_pytest.mark.parametrize(
+    "malformed",
+    [
+        _pytest.param(_SNS(title="Task 0", status="done", result="ok"), id="missing-task-id"),
+        _pytest.param(_SNS(task_id="t", status="done", result="ok"), id="missing-title"),
+        _pytest.param(_SNS(task_id="t", title="Task 0", result="ok"), id="missing-status"),
+        _pytest.param(_SNS(task_id="t", title="Task 0", status="done"), id="missing-result"),
+        _pytest.param(_SNS(task_id="t", title=7, status="done", result="ok"), id="non-string-title"),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", status=["done"], result="ok"), id="non-string-status"
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", status="done", result=7), id="non-string-result"
+        ),
+    ],
+)
+def test_a_malformed_result_still_preserves_the_failed_run(malformed):
+    from justai.orchestrator import run
+
+    plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=[malformed])) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert _for_run_status(result.status) != 0
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
+    stubs["flush_traces"].assert_called_once()
+
+
+def test_a_non_numeric_duration_preserves_the_failed_run():
+    from justai.orchestrator import run
+
+    plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    malformed = _SNS(
+        task_id="t", title="Task 0", status="done", result="ok", duration_seconds="fast"
+    )
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=[malformed])) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert _for_run_status(result.status) != 0
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
+    stubs["flush_traces"].assert_called_once()
+
+
+@_pytest.mark.parametrize("returned", [None, {"0": "done"}, "done"])
+def test_an_executor_that_returns_no_sequence_preserves_the_failed_run(returned):
+    from justai.orchestrator import run
+
+    plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+
+    with _orchestrated_run(plan, escalate_plan=MagicMock(return_value=returned)) as stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert result.status == "failed"
+    assert result.results == [], "nothing countable was produced, so nothing may be reported"
+    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    stubs["_ledger"].record.assert_called()
+    stubs["record_run"].assert_called_once()
+    stubs["flush_traces"].assert_called_once()
