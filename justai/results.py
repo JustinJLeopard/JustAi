@@ -109,7 +109,7 @@ def classify_status(status: object) -> str:
     raise ValueError(f"unknown result status {status!r}; expected one of {sorted(KNOWN_STATUSES)}")
 
 
-def tally(results: list) -> ResultTally:
+def tally(results: list, *, strict: bool = False) -> ResultTally:
     """Count well-formed results, rejecting shapes the run cannot report safely.
 
     The result set itself is checked before anything in it. An executor that
@@ -119,17 +119,29 @@ def tally(results: list) -> ResultTally:
 
     ``duration_seconds`` is optional (the synthesizer records it only when
     present) but must be a number when present, because that surface rounds it.
+
+    ``strict`` additionally requires ``task_id``/``title``/``status``/``result``
+    to be strings. The synthesizer and any reporting surface that reads those
+    fields passes ``strict=True`` so a malformed executor object fails the run
+    closed instead of reaching a reporting surface that reads a missing field.
+    The learning layer, which is handed richer run-result objects that do not
+    carry those fields, uses the default lenient counting.
     """
     if not isinstance(results, (list, tuple)):
         raise ValueError(f"results must be a sequence of results, got {type(results).__name__}")
 
-    # tally counts by status. It validates only what it reads: the status must
+    # tally counts by status. It always validates what it reads: the status must
     # be in the canonical vocabulary, and a duration_seconds (optional) must be
-    # a number when present, because reporting surfaces round it. Strict
-    # result-shape validation (task_id/title/result string fields for the
-    # malformed-result-preserves-the-run contract) is the orchestrator
-    # fail-closed slice, not this counting primitive.
+    # a number when present. ``strict`` also validates the reporting fields.
     for index, r in enumerate(results):
+        if strict:
+            for field in ("task_id", "title", "status", "result"):
+                value = getattr(r, field, None)
+                if not isinstance(value, str):
+                    raise ValueError(
+                        f"result [{index}] field {field!r} must be a string, "
+                        f"got {type(value).__name__}"
+                    )
         duration = getattr(r, "duration_seconds", 0.0)
         if isinstance(duration, bool) or not isinstance(duration, (int, float)):
             raise ValueError(
