@@ -9,6 +9,9 @@ fail-closed URL shape. Deliberately narrow — no adversarial family.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 from justai import agent_dispatch as ad
@@ -64,6 +67,28 @@ def test_empty_or_whitespace_is_none_fail_closed(monkeypatch):
     assert ad._executor_base_url() is None
     monkeypatch.delenv("JUSTAI_EXECUTOR_BASE_URL", raising=False)
     assert ad._executor_base_url() is None
+
+
+def test_mini_model_env_remains_the_executor_model_selector():
+    """The default pipeline config must honor JUSTAI_MINI_MODEL at import."""
+    env = os.environ.copy()
+    env["JUSTAI_MINI_MODEL"] = "qwen3-coder-next-mxfp4"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from justai.agent_dispatch import AgentDispatchConfig; "
+                "print(AgentDispatchConfig().mini_model)"
+            ),
+        ],
+        capture_output=True,
+        check=True,
+        env=env,
+        text=True,
+    )
+    assert probe.stdout.strip() == "qwen3-coder-next-mxfp4"
 
 
 def test_local_escalation_uses_primary_not_executor(monkeypatch):

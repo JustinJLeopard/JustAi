@@ -25,12 +25,12 @@ class TestAgentDispatchPipeline:
         assert PHASES == ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
 
     def test_iteration_config_defaults(self):
-        from justai.agent_dispatch import AgentDispatchConfig
+        from justai.agent_dispatch import AgentDispatchConfig, MINI_MODEL
 
         cfg = AgentDispatchConfig()
         assert cfg.max_mini_iterations == 3
         assert cfg.escalation_model == "claude-opus-4-6"
-        assert cfg.mini_model == "gpt-5.3-codex"
+        assert cfg.mini_model == MINI_MODEL
 
     def test_phase_result_dataclass(self):
         from justai.agent_dispatch import PhaseResult

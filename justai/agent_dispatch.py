@@ -55,7 +55,7 @@ ESCALATION_MODEL = os.environ.get("JUSTAI_ESCALATION_MODEL", "claude-opus-4-6")
 @dataclass
 class AgentDispatchConfig:
     max_mini_iterations: int = 3
-    mini_model: str = "gpt-5.3-codex"
+    mini_model: str = MINI_MODEL
     escalation_model: str = "claude-opus-4-6"
     pseudocode_model: str = "gpt-5.3-codex"
     test_command: str = "python3 -m pytest tests/ -v --tb=short"
