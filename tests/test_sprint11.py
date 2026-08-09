@@ -50,11 +50,30 @@ class TestConfig(unittest.TestCase):
         self.assertNotIn("/v1", LITELLM_BASE_URL)
 
     def test_default_models(self):
-        from justai.config import INTENT_MODEL, PLANNER_MODEL, REVIEWER_MODEL
+        """Code defaults are the LiteLLM-compatible openai/ names.
 
-        self.assertTrue(PLANNER_MODEL.startswith("openai/"))
-        self.assertTrue(INTENT_MODEL.startswith("openai/"))
-        self.assertTrue(REVIEWER_MODEL.startswith("openai/"))
+        Env profiles (e.g. .env.llamacpp exporting qwen3-vl-8b) may override
+        these at runtime, so this asserts the *defaults* under an isolated env
+        rather than whatever the host happens to export.
+        """
+        import importlib
+        import os
+        from unittest import mock
+
+        import justai.config as config
+
+        with mock.patch.dict(os.environ):
+            for var in (
+                "JUSTAI_PLANNER_MODEL",
+                "JUSTAI_INTENT_MODEL",
+                "JUSTAI_REVIEWER_MODEL",
+            ):
+                os.environ.pop(var, None)
+            fresh = importlib.reload(config)
+            self.assertTrue(fresh.PLANNER_MODEL.startswith("openai/"))
+            self.assertTrue(fresh.INTENT_MODEL.startswith("openai/"))
+            self.assertTrue(fresh.REVIEWER_MODEL.startswith("openai/"))
+        importlib.reload(config)  # restore real-env values for other tests
 
     def test_runtime_root_path(self):
         from justai.config import RUNTIME_ROOT
@@ -163,13 +182,17 @@ class TestReadme(unittest.TestCase):
         self.assertIn("--auto", self.content)
 
     def test_documents_pipeline_stages(self):
-        self.assertIn("## Pipeline Stages", self.content)
+        # Heading renamed "## Pipeline Stages" -> "## Pipeline" in the
+        # stabilization README; the stage table lives under it.
+        self.assertIn("## Pipeline", self.content)
 
     def test_documents_dashboard(self):
         self.assertIn("## Dashboard", self.content)
 
     def test_version_in_readme(self):
-        self.assertIn("v1.0.0", self.content)
+        # The README no longer hardcodes a release string; it documents the
+        # version CLI surface instead.
+        self.assertIn("--version", self.content)
 
 
 class TestE2ESmokeLocal(unittest.TestCase):
