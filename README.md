@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-JustAi is a project-orchestration control-plane for breaking engineering goals into small, reviewable tasks and running them through checkpointed local workflows.
+JustAi is a project-orchestration control-plane for breaking engineering goals into small, reviewable tasks and running them through checkpointed local workflows. Current package version: v1.0.0 (`justai --version`).
 
 ## Status
 
@@ -72,6 +72,13 @@ the public production deployment (justai-demo.vercel.app).
 
 ## Install
 
+Guided install (preflight checks, then editable install; `--check` runs
+preflight only, `--skip-npm` skips the dashboard install):
+
+```bash
+bash install.sh
+```
+
 For an existing checkout with a prepared virtualenv:
 
 ```bash
@@ -80,7 +87,7 @@ python -m pytest -q
 justai --help
 ```
 
-Fresh editable install:
+Manual fresh editable install:
 
 ```bash
 python3.12 -m venv .venv

@@ -190,8 +190,15 @@ class TestReadme(unittest.TestCase):
         self.assertIn("## Dashboard", self.content)
 
     def test_version_in_readme(self):
-        # The README no longer hardcodes a release string; it documents the
-        # version CLI surface instead.
+        # The README's version claim must stay consistent with the package
+        # version in pyproject.toml (self-truing: a version bump that forgets
+        # the README fails here).
+        import re
+
+        pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
+        assert m, "pyproject.toml must declare a version"
+        self.assertIn(f"v{m.group(1)}", self.content)
         self.assertIn("--version", self.content)
 
 
@@ -199,10 +206,20 @@ class TestE2ESmokeLocal(unittest.TestCase):
     """Smoke test: full pipeline with mocked LLM, local execution."""
 
     def test_full_pipeline_smoke(self):
+        from justai.intent_fidelity import FidelityResult, FidelityVerdict
         from justai.intent_gate import Intent, IntentResult
         from justai.orchestrator import run
         from justai.reviewer import ReviewResult
         from justai.scope_planner import AgentType, Plan, RiskLevel, Task
+
+        mock_fidelity = FidelityResult(
+            fidelity=100.0,
+            verdict=FidelityVerdict.MET,
+            a_or_better=True,
+            grade="A+",
+            rationale="smoke: deterministic stub",
+            source="heuristic",
+        )
 
         mock_intent = IntentResult(
             intent=Intent.EXECUTION,
@@ -223,7 +240,25 @@ class TestE2ESmokeLocal(unittest.TestCase):
                     "justai.orchestrator.review",
                     return_value=ReviewResult(approved=True, feedback=[]),
                 ):
-                    result = run("smoke test", session_ref="v1-smoke", auto=True, local=True)
+                    # Mock the executor LLM boundary AND the intent-fidelity
+                    # judge: the smoke test validates the pipeline, not the
+                    # broker. Unmocked, score_fidelity live-called the model
+                    # server when one was up (measured 1.9s on a box with
+                    # llama.cpp on 8085) — non-hermetic and nondeterministic.
+                    with patch(
+                        "justai.agent_dispatch._llm_call",
+                        return_value='{"command": "echo ok"}',
+                    ):
+                        with patch(
+                            "justai.orchestrator.score_fidelity",
+                            return_value=mock_fidelity,
+                        ):
+                            result = run(
+                                "smoke test",
+                                session_ref="v1-smoke",
+                                auto=True,
+                                local=True,
+                            )
 
         self.assertEqual(result.status, "complete")
         self.assertEqual(result.intent, "execution")
