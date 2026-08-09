@@ -16,10 +16,12 @@ JustAi is built on open-source infrastructure from the Python, frontend, observa
 - **By:** rUv (Reuven Cohen)
 - **Repository:** https://github.com/ruvnet/claude-flow
 - **License:** MIT
-- **Role in JustAi:** Memory substrate. `justai/memory.py` is a client for the
-  claude-flow MCP HTTP server (with a `claude-flow memory` CLI-subprocess
-  fallback), and the planner's researcher agent role follows the Ruflo
-  researcher pattern.
+- **Role in JustAi:** Historical/transitional. `justai/memory.py` retains a
+  client for the claude-flow MCP HTTP server (with a `claude-flow memory`
+  CLI-subprocess fallback) from the earlier memory substrate, and the
+  planner's researcher agent role descends from the Ruflo researcher pattern.
+  Claude-Flow is not the canonical runtime backend going forward; the credit
+  remains while the derived code does.
 
 ### Model Routing Proxy
 
