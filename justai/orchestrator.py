@@ -441,15 +441,27 @@ def _parse_args(argv: list[str]) -> tuple[str, bool, bool, bool]:
     return goal, auto, local, swarm
 
 
-if __name__ == "__main__":
-    goal, auto_flag, local_flag, swarm_flag = _parse_args(sys.argv[1:])
+def _run_cli(argv: list[str]) -> int:
+    """Entry logic for `python -m justai.orchestrator`, returning an exit code.
+
+    Routes the exit through the shared exit-code mapping so the direct module
+    cannot report an ambiguous/unexecuted run as success (exit 0) — the same
+    contract the `justai`/legacy CLIs use.
+    """
+    from justai.exit_codes import for_run_status
+
+    goal, auto_flag, local_flag, swarm_flag = _parse_args(argv)
     if not goal:
         print('Usage: python3 -m justai.orchestrator [--auto] [--local] [--swarm] "your goal here"')
-        sys.exit(1)
+        return 1
     result = run(
         goal,
         auto=auto_flag or AUTO_MODE,
         local=local_flag or LOCAL_EXEC,
         swarm=swarm_flag or SWARM_MODE,
     )
-    sys.exit(0 if result.status in ("complete", "ambiguous") else 1)
+    return for_run_status(result.status)
+
+
+if __name__ == "__main__":
+    sys.exit(_run_cli(sys.argv[1:]))

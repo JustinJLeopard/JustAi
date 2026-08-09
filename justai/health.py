@@ -67,6 +67,10 @@ def check_litellm() -> ServiceStatus:
     except urllib.error.HTTPError as e:
         body = e.read()
         headers = {k.lower(): v for k, v in dict(e.headers).items()}
+        # Unauthorized/forbidden means the configured caller cannot plan, even
+        # if the body is recognizably LiteLLM. Reachable != usable.
+        if e.code in (401, 403):
+            return ServiceStatus("LiteLLM", url, False, f"unauthorized (http {e.code})")
         if _is_litellm_response(e.code, headers, body):
             return ServiceStatus("LiteLLM", url, True, f"models API reachable (http {e.code})")
         return ServiceStatus("LiteLLM", url, False, f"http {e.code}")
@@ -80,7 +84,14 @@ def check_safe_mini_boundary() -> ServiceStatus:
         from justai.runner_protocol import AgentRunner
 
         _ = AgentRunner
-        return ServiceStatus("safe-mini boundary", "justai.runner_protocol", True, "stub available")
+        # The Protocol stub importing is NOT a usable runner. Reporting ok here
+        # would expose execution_ready=true with nothing that can execute.
+        return ServiceStatus(
+            "safe-mini boundary",
+            "justai.runner_protocol",
+            False,
+            "stub only — no concrete runner integrated",
+        )
     except Exception as e:
         return ServiceStatus("safe-mini boundary", "justai.runner_protocol", False, str(e)[:120])
 

@@ -55,20 +55,24 @@ class ServiceHealthTests(unittest.TestCase):
         self.assertTrue(status.ok)
         self.assertIn("models API", status.detail)
 
-    def test_litellm_accepts_auth_required_signature(self):
+    def test_litellm_unauthorized_is_not_ok(self):
+        """A recognizable LiteLLM 401/403 is still unauthorized: the caller
+        cannot plan, so readiness must not report it healthy."""
         from justai.health import check_litellm
 
         err = _http_error(401, {"error": {"message": "Missing API key"}})
         with patch("urllib.request.urlopen", side_effect=err):
             status = check_litellm()
-        self.assertTrue(status.ok)
-        self.assertIn("http 401", status.detail)
+        self.assertFalse(status.ok, "unauthorized planning endpoint must not be healthy")
+        self.assertIn("401", status.detail)
 
-    def test_safe_mini_boundary_stub_available(self):
+    def test_safe_mini_boundary_stub_is_not_execution_ready(self):
+        """The Protocol stub importing is not a usable runner. Reporting it ok
+        would expose execution_ready=true with no runner integrated."""
         from justai.health import check_safe_mini_boundary
 
         status = check_safe_mini_boundary()
-        self.assertTrue(status.ok)
+        self.assertFalse(status.ok, "a stub import is not a concrete runner")
         self.assertEqual(status.name, "safe-mini boundary")
 
     def test_memory_requires_health_ok_signature(self):
