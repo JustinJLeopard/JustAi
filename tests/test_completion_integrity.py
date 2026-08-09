@@ -259,6 +259,18 @@ def test_learning_does_not_record_an_empty_run_as_successful():
     store.store.assert_not_called()
 
 
+def test_learning_records_an_explicit_empty_failed_run_as_failed_evidence():
+    from justai.learning import record_run
+
+    with patch("justai.learning._store") as store:
+        store.store.return_value = True
+        recorded = record_run("goal", [], duration=1.0, final_status="failed")
+
+    assert recorded is True
+    assert store.store.call_args.kwargs["steps"] == []
+    assert store.store.call_args.kwargs["outcome"] == "failed"
+
+
 def test_learning_does_not_call_a_fully_skipped_run_successful():
     from justai.learning import record_run
 
@@ -437,22 +449,46 @@ def test_an_unknown_result_status_fails_the_run_closed_instead_of_raising(capsys
 
 
 @_pytest.mark.parametrize(
-    "malformed",
+    ("malformed", "expected_reason"),
     [
-        _pytest.param(_SNS(title="Task 0", status="done", result="ok"), id="missing-task-id"),
-        _pytest.param(_SNS(task_id="t", status="done", result="ok"), id="missing-title"),
-        _pytest.param(_SNS(task_id="t", title="Task 0", result="ok"), id="missing-status"),
-        _pytest.param(_SNS(task_id="t", title="Task 0", status="done"), id="missing-result"),
-        _pytest.param(_SNS(task_id="t", title=7, status="done", result="ok"), id="non-string-title"),
         _pytest.param(
-            _SNS(task_id="t", title="Task 0", status=["done"], result="ok"), id="non-string-status"
+            _SNS(title="Task 0", status="done", result="ok"),
+            "field 'task_id' must be a string, got NoneType",
+            id="missing-task-id",
         ),
         _pytest.param(
-            _SNS(task_id="t", title="Task 0", status="done", result=7), id="non-string-result"
+            _SNS(task_id="t", status="done", result="ok"),
+            "field 'title' must be a string, got NoneType",
+            id="missing-title",
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", result="ok"),
+            "field 'status' must be a string, got NoneType",
+            id="missing-status",
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", status="done"),
+            "field 'result' must be a string, got NoneType",
+            id="missing-result",
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title=7, status="done", result="ok"),
+            "field 'title' must be a string, got int",
+            id="non-string-title",
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", status=["done"], result="ok"),
+            "field 'status' must be a string, got list",
+            id="non-string-status",
+        ),
+        _pytest.param(
+            _SNS(task_id="t", title="Task 0", status="done", result=7),
+            "field 'result' must be a string, got int",
+            id="non-string-result",
         ),
     ],
 )
-def test_a_malformed_result_still_preserves_the_failed_run(malformed):
+def test_a_malformed_result_still_preserves_the_failed_run(malformed, expected_reason):
     from justai.orchestrator import run
 
     plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
@@ -462,7 +498,8 @@ def test_a_malformed_result_still_preserves_the_failed_run(malformed):
 
     assert result.status == "failed"
     assert _for_run_status(result.status) != 0
-    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    root_cause = stubs["OrchestratorHook"].return_value.on_error.call_args.kwargs["root_cause"]
+    assert expected_reason in root_cause
     stubs["_ledger"].record.assert_called()
     stubs["record_run"].assert_called_once()
     stubs["flush_traces"].assert_called_once()
@@ -481,7 +518,9 @@ def test_a_non_numeric_duration_preserves_the_failed_run():
 
     assert result.status == "failed"
     assert _for_run_status(result.status) != 0
-    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    root_cause = stubs["OrchestratorHook"].return_value.on_error.call_args.kwargs["root_cause"]
+    assert "field 'duration_seconds' must be a number, got str" in root_cause
+    assert "Task 0" in root_cause
     stubs["_ledger"].record.assert_called()
     stubs["record_run"].assert_called_once()
     stubs["flush_traces"].assert_called_once()
@@ -498,7 +537,8 @@ def test_an_executor_that_returns_no_sequence_preserves_the_failed_run(returned)
 
     assert result.status == "failed"
     assert result.results == [], "nothing countable was produced, so nothing may be reported"
-    stubs["OrchestratorHook"].return_value.on_error.assert_called_once()
+    root_cause = stubs["OrchestratorHook"].return_value.on_error.call_args.kwargs["root_cause"]
+    assert f"results must be a sequence of results, got {type(returned).__name__}" in root_cause
     stubs["_ledger"].record.assert_called()
     stubs["record_run"].assert_called_once()
     stubs["flush_traces"].assert_called_once()

@@ -43,7 +43,7 @@ from justai.ledger import Ledger
 from justai.memory import Memory
 from justai.reviewer import REVIEWER_MODEL, ReviewResult, review
 from justai.scope_planner import PLANNER_MODEL, Plan, decompose, format_plan
-from justai.results import classify_status, tally
+from justai.results import tally
 from justai.synthesizer import format_summary, synthesize
 from justai.tracing import flush_traces, trace_event, trace_generation
 
@@ -63,7 +63,7 @@ class OrchestrationResult:
     task_count: int
     results: list
     duration_seconds: float
-    status: str  # "complete" | "partial" | "blocked" | "ambiguous"
+    status: str  # "complete" | "partial" | "blocked" | "failed" | "ambiguous"
     escalations: int = 0
     # Intent-fidelity gate (None when the gate did not run):
     intent_fidelity: float | None = None  # 0-100 percentile
@@ -117,22 +117,23 @@ def _print_header(goal: str, auto: bool = False) -> None:
     print()
 
 
-def _describe_unusable_results(results) -> str:
+def _describe_unusable_results(results, validation_error: Exception) -> str:
     """Best-effort, operator-facing description of why a result set is unusable.
 
-    Names the first offending result (status + task title) so the failure is
-    diagnosable, without assuming the set is even iterable.
+    Preserve the validator's exact field/type reason. For a real result
+    sequence, also name the first offending task when one is available.
     """
-    try:
-        for r in results:
-            status = getattr(r, "status", None)
-            try:
-                classify_status(status)
-            except ValueError:
-                return f"unusable result status {status!r} on task {getattr(r, 'title', '?')!r}"
-        return "result set failed validation"
-    except TypeError:
-        return f"executor returned no result sequence ({type(results).__name__})"
+    reason = str(validation_error)
+    if not isinstance(results, (list, tuple)):
+        return reason
+
+    for result in results:
+        try:
+            tally([result], strict=True)
+        except (ValueError, TypeError):
+            task = getattr(result, "title", None) or getattr(result, "task_id", None)
+            return f"{reason} on task {task!r}" if task is not None else reason
+    return reason
 
 
 def run(
@@ -355,7 +356,7 @@ def run(
         try:
             exec_counts = tally(results, strict=True)
         except (ValueError, TypeError) as exc:
-            diag = _describe_unusable_results(results)
+            diag = _describe_unusable_results(results, exc)
             _t5.end(output_text="unusable results", metadata={"error": str(exc)[:160]})
             duration = time.time() - start
             print(f"\n[!] Run failed closed at execute: {diag}")

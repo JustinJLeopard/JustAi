@@ -79,13 +79,15 @@ def record_run(
         steps = [r.title for r in results]
         # Shared vocabulary with the synthesizer (justai.results.tally): the two
         # surfaces must agree on what counts as success. "success" is reserved
-        # for a verified-complete run; an empty run records nothing; an unknown
-        # or malformed result status is refused (tally raises -> caught below ->
-        # return False) rather than counted as "no failures = success".
+        # for a verified-complete run. An ordinary empty run records nothing;
+        # an explicitly failed empty run may record the orchestrator's
+        # fail-closed evidence. An unknown or malformed status is refused
+        # (tally raises -> caught below -> return False) rather than counted as
+        # "no failures = success".
         from justai.results import RUN_COMPLETE, RUN_PARTIAL, tally
 
         counts = tally(results)
-        if counts.total == 0:
+        if counts.total == 0 and final_status is None:
             return False
         run_status = counts.run_status
         if final_status is not None:
