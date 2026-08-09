@@ -55,7 +55,7 @@ ESCALATION_MODEL = os.environ.get("JUSTAI_ESCALATION_MODEL", "claude-opus-4-6")
 @dataclass
 class AgentDispatchConfig:
     max_mini_iterations: int = 3
-    mini_model: str = "gpt-5.3-codex"
+    mini_model: str = MINI_MODEL
     escalation_model: str = "claude-opus-4-6"
     pseudocode_model: str = "gpt-5.3-codex"
     test_command: str = "python3 -m pytest tests/ -v --tb=short"
@@ -86,8 +86,25 @@ class PipelineResult:
     final_output: str = ""
 
 
-def _llm_call(model: str, prompt: str, system: str = "") -> str:
-    """Call LLM via LiteLLM proxy. Returns response text."""
+def _executor_base_url() -> str | None:
+    """Executor endpoint override — default-OFF.
+
+    When JUSTAI_EXECUTOR_BASE_URL is set, mini/executor calls route here so a
+    dedicated coder (e.g. a local Qwen3-Coder-Next server) can run the executor
+    while planner/reviewer/pseudocode/escalation stay on LITELLM_BASE_URL.
+    Unset/empty -> None -> primary endpoint (byte-for-byte equivalent).
+    Endpoint is selected by call site, never inferred from model text.
+    """
+    url = os.environ.get("JUSTAI_EXECUTOR_BASE_URL", "").strip().rstrip("/").removesuffix("/v1")
+    return url or None
+
+
+def _llm_call(model: str, prompt: str, system: str = "", base_url: str | None = None) -> str:
+    """Call LLM via the OpenAI-compatible endpoint. Returns response text.
+
+    base_url overrides the endpoint for this call only (executor routing);
+    None uses the primary LITELLM_URL.
+    """
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -107,7 +124,7 @@ def _llm_call(model: str, prompt: str, system: str = "") -> str:
     if _key:
         headers["Authorization"] = f"Bearer {_key}"
     req = urllib.request.Request(
-        f"{LITELLM_URL}/chat/completions",
+        f"{base_url or LITELLM_URL}/chat/completions",
         data=payload,
         headers=headers,
     )
@@ -146,7 +163,7 @@ class AgentDispatchPipeline:
     def _call_mini(self, prompt: str, system: str = "") -> str:
         self._model_calls += 1
         self._mini_calls += 1
-        return _llm_call(self.config.mini_model, prompt, system)
+        return _llm_call(self.config.mini_model, prompt, system, base_url=_executor_base_url())
 
     def _call_escalation(self, prompt: str, system: str = "") -> str:
         self._model_calls += 1
@@ -345,13 +362,16 @@ def escalate_task(
         DelegationResult — from first attempt if successful, from escalation otherwise.
     """
     original_model = os.environ.get("JUSTAI_ACTIVE_MODEL", "")
+    original_role = os.environ.get("JUSTAI_EXEC_ROLE", "")
 
-    # First attempt: cheap model
+    # First attempt: cheap model on the executor endpoint (when configured).
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = MINI_MODEL
+        os.environ["JUSTAI_EXEC_ROLE"] = "mini"
         result = runner(task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+        os.environ["JUSTAI_EXEC_ROLE"] = original_role
 
     if result.status == "done":
         return result
@@ -376,9 +396,11 @@ def escalate_task(
 
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = ESCALATION_MODEL
+        os.environ["JUSTAI_EXEC_ROLE"] = "primary"
         escalation_result = runner(escalated_task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+        os.environ["JUSTAI_EXEC_ROLE"] = original_role
 
     return escalation_result
 
@@ -505,12 +527,18 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
     executed | no_backend | refused | blocked | error.
     """
     model = os.environ.get("JUSTAI_ACTIVE_MODEL") or MINI_MODEL
+    # Endpoint role is set explicitly by escalate_task per attempt and never
+    # inferred from model text: the escalation attempt uses the primary
+    # endpoint; the mini/first/direct-local attempt uses the executor endpoint
+    # when JUSTAI_EXECUTOR_BASE_URL is configured (else primary, fail-closed).
+    role = os.environ.get("JUSTAI_EXEC_ROLE") or "mini"
+    action_base_url = None if role == "primary" else _executor_base_url()
     prompt = (
         "Task: " + task.title + chr(10) + chr(10) + task.description
         + chr(10) + chr(10) + "Produce the shell command."
     )
     try:
-        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM)
+        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM, base_url=action_base_url)
     except Exception as exc:
         return "no_backend", f"execution model unavailable: {str(exc)[:160]}"
     action = _parse_action(raw)

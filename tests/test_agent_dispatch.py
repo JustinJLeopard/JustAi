@@ -25,12 +25,12 @@ class TestAgentDispatchPipeline:
         assert PHASES == ["pseudocode", "write_tests", "write_code", "iterate", "escalate"]
 
     def test_iteration_config_defaults(self):
-        from justai.agent_dispatch import AgentDispatchConfig
+        from justai.agent_dispatch import AgentDispatchConfig, MINI_MODEL
 
         cfg = AgentDispatchConfig()
         assert cfg.max_mini_iterations == 3
         assert cfg.escalation_model == "claude-opus-4-6"
-        assert cfg.mini_model == "gpt-5.3-codex"
+        assert cfg.mini_model == MINI_MODEL
 
     def test_phase_result_dataclass(self):
         from justai.agent_dispatch import PhaseResult
@@ -54,7 +54,7 @@ class TestAgentDispatchPipeline:
         }
 
         with patch("justai.agent_dispatch._llm_call") as mock_llm:
-            mock_llm.side_effect = lambda model, prompt, system="": mock_responses.get(
+            mock_llm.side_effect = lambda model, prompt, system="", base_url=None: mock_responses.get(
                 next((p for p in mock_responses if p in prompt), ""), "ok"
             )
             with patch("justai.agent_dispatch._run_tests", return_value=(True, "5 passed")):
@@ -73,7 +73,7 @@ class TestAgentDispatchPipeline:
 
         call_count = 0
 
-        def mock_llm(model, prompt, system=""):
+        def mock_llm(model, prompt, system="", base_url=None):
             nonlocal call_count
             call_count += 1
             return "attempted but incomplete"
