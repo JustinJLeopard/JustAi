@@ -18,9 +18,11 @@ def run(cmd: list[str]) -> int:
 
 def run_cmd(args: argparse.Namespace) -> int:
     """Main entrypoint: justai run "goal" → orchestrator pipeline."""
+    from justai.exit_codes import for_run_status
     from justai.orchestrator import run as orchestrate
     result = orchestrate(args.goal, session_ref=args.session_ref)
-    return 0 if result.status in ("complete", "ambiguous") else 1
+    # Exit 0 only for verified completion; ambiguous -> CLARIFICATION_REQUIRED.
+    return for_run_status(result.status)
 
 
 def start_cmd(args: argparse.Namespace) -> int:

@@ -121,10 +121,13 @@ class TestCLICommands(unittest.TestCase):
 
         from justai.cli import cmd_status
 
+        from justai.exit_codes import NOT_READY, OK
+
         args = argparse.Namespace()
         result = cmd_status(args)
-        # Returns 0 or 1 depending on service availability
-        self.assertIn(result, (0, 1))
+        # OK only when every probe is ready; NOT_READY otherwise (readiness is
+        # full-probe, not planning-only — see test_completion_integrity).
+        self.assertIn(result, (OK, NOT_READY))
 
     def test_cmd_run_delegates_to_orchestrator(self):
         import argparse
