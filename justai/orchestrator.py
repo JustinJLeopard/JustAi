@@ -143,6 +143,35 @@ def run(
     local: bool = LOCAL_EXEC,
     swarm: bool = SWARM_MODE,
 ) -> OrchestrationResult:
+    """Full orchestration pipeline for a given goal.
+
+    Thin wrapper that scopes the ``JUSTAI_AUTO_MODE`` export to THIS run and
+    restores the prior environment state afterward. Without this, an
+    ``auto=True`` run left the variable set process-wide, so a later
+    ``auto=False`` run inherited auto approval and silently skipped its R1
+    checkpoint waits.
+    """
+    prior_auto = os.environ.get("JUSTAI_AUTO_MODE")
+    if auto:
+        os.environ["JUSTAI_AUTO_MODE"] = "1"
+    try:
+        return _run_pipeline(
+            goal, session_ref=session_ref, auto=auto, local=local, swarm=swarm
+        )
+    finally:
+        if prior_auto is None:
+            os.environ.pop("JUSTAI_AUTO_MODE", None)
+        else:
+            os.environ["JUSTAI_AUTO_MODE"] = prior_auto
+
+
+def _run_pipeline(
+    goal: str,
+    session_ref: str = SESSION_REF,
+    auto: bool = AUTO_MODE,
+    local: bool = LOCAL_EXEC,
+    swarm: bool = SWARM_MODE,
+) -> OrchestrationResult:
     """
     Full orchestration pipeline for a given goal.
 
@@ -159,9 +188,8 @@ def run(
     # Discord notifications (no-op if webhook not configured)
     _hook = OrchestratorHook(run_id=run_id)
 
-    # Export auto mode so checkpoint.py can read it
-    if auto:
-        os.environ["JUSTAI_AUTO_MODE"] = "1"
+    # JUSTAI_AUTO_MODE is exported and restored by the run() wrapper so it does
+    # not leak past this run; checkpoint.py reads it during the checkpoint stage.
 
     # ── Preflight: service health ─────────────────────────────────────────────
     statuses = preflight()
