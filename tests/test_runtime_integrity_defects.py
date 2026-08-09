@@ -71,6 +71,20 @@ def test_d2_fenced_shell_is_refused_not_executed():
     assert action.get("skip_reason")
 
 
+def test_d2_json_inside_bash_fence_is_still_refused():
+    raw = '```bash\n{"command": "echo should-not-run"}\n```'
+    action = ad._parse_action(raw)
+    assert "command" not in action, f"non-JSON fence must not execute: {action}"
+    assert action.get("skip_reason")
+
+
+def test_d2_prose_wrapped_json_is_refused():
+    raw = 'Here is the action: {"command": "echo should-not-run"}'
+    action = ad._parse_action(raw)
+    assert "command" not in action, f"prose-wrapped JSON is not JSON-only: {action}"
+    assert action.get("skip_reason")
+
+
 def test_d2_fence_inside_json_string_does_not_win_over_json():
     raw = '{"command": "echo safe", "note": "```bash\\nrm -rf /\\n```"}'
     action = ad._parse_action(raw)
@@ -196,6 +210,23 @@ def test_d7_offbox_executor_base_url_rejected_fail_closed():
     with patch.dict(os.environ, {"JUSTAI_EXECUTOR_BASE_URL": "http://10.9.8.7:9999"}):
         url = ad._executor_base_url()
     assert url is None, f"off-box executor endpoint must be rejected: {url}"
+
+
+def test_d7_dns_names_that_only_look_like_127_space_are_rejected():
+    for value in (
+        "http://127.evil.example:18087",
+        "http://127.0.0.1.evil.example:18087",
+    ):
+        with patch.dict(os.environ, {"JUSTAI_EXECUTOR_BASE_URL": value}):
+            assert ad._executor_base_url() is None, value
+
+
+def test_d7_executor_endpoint_requires_http_transport():
+    with patch.dict(
+        os.environ,
+        {"JUSTAI_EXECUTOR_BASE_URL": "ftp://127.0.0.1:18087"},
+    ):
+        assert ad._executor_base_url() is None
 
 
 def test_d7_loopback_executor_base_url_accepted():

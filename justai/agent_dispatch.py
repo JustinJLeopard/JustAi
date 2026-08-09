@@ -31,6 +31,7 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import subprocess
@@ -89,8 +90,19 @@ class PipelineResult:
 
 def _is_loopback_url(url: str) -> bool:
     """True only for loopback hosts (127.0.0.0/8, localhost, ::1)."""
-    host = (urllib.parse.urlsplit(url).hostname or "").strip("[]")
-    return host == "localhost" or host == "::1" or host.startswith("127.")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = parsed.hostname or ""
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _execution_endpoint() -> str:
@@ -558,28 +570,20 @@ def _parse_action(raw: str) -> dict:
     except Exception:
         pass
 
-    # 2. A ```json fenced block — only "json" is honored; bash/sh/shell fences
-    #    are never treated as executable actions.
-    if "```" in text:
-        parts = text.split("```")
-        for block in parts[1:len(parts):2]:
-            stripped = block.lstrip()
-            if stripped.lower().startswith("json"):
-                stripped = stripped[4:]
-            try:
-                obj = json.loads(stripped.strip())
-                if isinstance(obj, dict):
-                    return obj
-            except Exception:
-                continue
-
-    # 3. Prose wrapping a single JSON object.
-    try:
-        obj = json.loads(text[text.index("{"):text.rindex("}") + 1])
-        if isinstance(obj, dict):
-            return obj
-    except Exception:
-        pass
+    # 2. One exact ```json fenced object. The fence must cover the complete
+    #    response; bash/sh/shell fences and prose-wrapped objects are refused.
+    lines = text.splitlines()
+    if (
+        len(lines) >= 3
+        and lines[0].strip().lower() == "```json"
+        and lines[-1].strip() == "```"
+    ):
+        try:
+            obj = json.loads("\n".join(lines[1:-1]).strip())
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
 
     # No JSON object -> refuse. Never execute fenced shell or a bare line.
     return {"skip_reason": "executor contract violated: response was not a JSON action object"}
