@@ -711,47 +711,115 @@ _EXECUTORS = {
 }
 
 
+def _normalize_blocked_indices(blocked_indices, n: int) -> dict[int, str]:
+    """Validate caller-supplied blocked task indices; return {index: reason}.
+
+    Raises ValueError if any index does not name a task position in [0, n). A
+    stray index means the caller (checkpoint) and the plan disagree, and
+    silently dropping it would dispatch a task the checkpoint refused — the
+    exact false success this guard prevents. Accepts a set or an
+    {index: reason} dict. bool is rejected explicitly (it is an int subclass).
+    """
+    if not blocked_indices:
+        return {}
+    normalized: dict[int, str] = {}
+    for idx in blocked_indices:
+        if isinstance(idx, bool) or not isinstance(idx, int):
+            raise ValueError(f"blocked index {idx!r} is not a task position")
+        if idx < 0 or idx >= n:
+            raise ValueError(f"blocked index {idx} does not name a task (0..{n - 1})")
+        reason = blocked_indices[idx] if isinstance(blocked_indices, dict) else "vetoed"
+        normalized[idx] = str(reason)
+    return normalized
+
+
+def _dependency_error(depends_on, position: int, n: int) -> str | None:
+    """Return an error message if depends_on cannot name already-decided tasks.
+
+    depends_on comes from model-authored JSON, so it is untyped. A dependency
+    must be a plain int naming a task BEFORE this one; anything else (wrong type,
+    negative, out of range, self, or forward) can never be satisfied and must
+    fail the task closed rather than be silently ignored (a negative index would
+    even wrap and read a later task's slot).
+    """
+    if not isinstance(depends_on, list):
+        return f"dependency list must be a list, got {type(depends_on).__name__}"
+    for dep in depends_on:
+        if isinstance(dep, bool) or not isinstance(dep, int):
+            return f"dependency index {dep!r} is not an integer"
+        if dep < 0 or dep >= n:
+            return f"dependency index {dep} is out of range (0..{n - 1})"
+        if dep >= position:
+            return f"dependency index {dep} does not name an earlier task"
+    return None
+
+
 def escalate_plan(
     tasks: list[Task],
     session_ref: str = "",
     mode: str = "delegated",
+    blocked_indices=None,
 ) -> list[DelegationResult]:
-    """Execute a task plan with per-task escalation.
+    """Execute a task plan with per-task escalation, PRESERVING task positions.
 
-    Each task tries cheap model first, escalates to expensive model on failure.
-    Tasks run in dependency order; if a dependency fails (even after escalation),
-    dependent tasks are skipped.
+    Positions are preserved (no compaction): ``depends_on`` indices address the
+    ORIGINAL plan, so a dependent of a blocked/failed task is correctly skipped
+    rather than silently promoted into a freed slot. ``blocked_indices`` (a set
+    or {index: reason} dict of tasks a checkpoint refused) is validated up front;
+    a stray index raises ValueError. An unsatisfiable dependency fails its task
+    closed with status ``error``.
 
     Args:
         tasks: Ordered list of tasks from the planner.
         session_ref: Session identifier.
         mode: Execution mode — "delegated", "local", or "swarm".
+        blocked_indices: Indices of tasks the checkpoint blocked.
     """
     runner = _EXECUTORS.get(mode, _execute_removed_backend)
-    results: list[DelegationResult | None] = [None] * len(tasks)
+    n = len(tasks)
+    blocked = _normalize_blocked_indices(blocked_indices, n)
+    results: list[DelegationResult | None] = [None] * n
 
     for i, task in enumerate(tasks):
-        # Check dependencies
-        skip = False
-        for dep_idx in task.depends_on:
-            dep_result = results[dep_idx] if dep_idx < len(results) else None
-            if dep_result is not None and dep_result.status != "done":
-                print(
-                    f"[escalation] skipping task [{i}] '{task.title}' — dependency [{dep_idx}] failed"
-                )
-                results[i] = DelegationResult(
-                    task_id="skipped",
-                    title=task.title,
-                    status="skipped",
-                    result=f"Skipped — dependency [{dep_idx}] did not complete after escalation",
-                    duration_seconds=0,
-                )
-                skip = True
-                break
+        if i in blocked:
+            results[i] = DelegationResult(
+                task_id=f"blocked-{i}",
+                title=task.title,
+                status="blocked",
+                result=f"blocked at checkpoint: {blocked[i]}",
+                duration_seconds=0.0,
+            )
+            print(f"[escalation] task [{i}] '{task.title}' blocked: {blocked[i]}")
+            continue
 
-        if not skip:
-            result = escalate_task(task, session_ref=session_ref, runner=runner)
-            results[i] = result
-            print(f"[escalation] task [{i}] {result.status}: {result.result[:80]}")
+        dep_error = _dependency_error(task.depends_on, i, n)
+        if dep_error is not None:
+            results[i] = DelegationResult(
+                task_id=f"error-{i}",
+                title=task.title,
+                status="error",
+                result=f"dependency error: {dep_error}",
+                duration_seconds=0.0,
+            )
+            print(f"[escalation] task [{i}] '{task.title}' dependency error: {dep_error}")
+            continue
+
+        unmet = next(
+            (d for d in task.depends_on if results[d] is None or results[d].status != "done"),
+            None,
+        )
+        if unmet is not None:
+            results[i] = DelegationResult(
+                task_id=f"skipped-{i}",
+                title=task.title,
+                status="skipped",
+                result=f"skipped: dependency [{unmet}] did not complete",
+                duration_seconds=0.0,
+            )
+            print(f"[escalation] task [{i}] '{task.title}' skipped — dependency [{unmet}] not done")
+            continue
+
+        results[i] = escalate_task(task, session_ref=session_ref, runner=runner)
+        print(f"[escalation] task [{i}] {results[i].status}: {results[i].result[:80]}")
 
     return [r for r in results if r is not None]

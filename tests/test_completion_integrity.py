@@ -365,14 +365,14 @@ from justai.scope_planner import RiskLevel as _RiskLevel
 from justai.scope_planner import Task as _Task
 
 
-def _task(title: str) -> _Task:
+def _task(title: str, depends_on=None) -> _Task:
     return _Task(
         title=title,
         description=f"Do {title}.",
         agent=_AgentType.MINI,
         risk=_RiskLevel.R0,
         success_criteria="echo ok",
-        depends_on=[],
+        depends_on=list(depends_on or []),
     )
 
 
@@ -413,6 +413,7 @@ def _orchestrated_run(plan, **overrides):
         "trace_event": MagicMock(),
         "record_run": MagicMock(),
         "enrich_context": MagicMock(return_value=""),
+        "score_fidelity": MagicMock(side_effect=RuntimeError("skip fidelity")),
         "_memory": MagicMock(),
         "_ledger": MagicMock(),
         "OrchestratorHook": MagicMock(),
@@ -542,3 +543,139 @@ def test_an_executor_that_returns_no_sequence_preserves_the_failed_run(returned)
     stubs["_ledger"].record.assert_called()
     stubs["record_run"].assert_called_once()
     stubs["flush_traces"].assert_called_once()
+
+
+# ── Findings 3 + 6: dependency indexing fails closed; positions preserved ─────
+# depends_on / blocked_indices come from model-authored plans and checkpoint
+# decisions. An index that cannot name an already-decided task must fail its
+# task closed (never silently promote a dependent into a freed slot), and a
+# blocked index that names no task must be rejected loudly, not dropped.
+
+from justai.agent_dispatch import escalate_plan as _escalate_plan
+
+
+@_pytest.mark.parametrize(
+    ("depends_on", "reason"),
+    [
+        ([-1], "negative"),
+        ([5], "out-of-range"),
+        ([1], "forward"),
+        ([0], "self"),
+        (["0"], "string"),
+        ([True], "bool that would silently index task 1"),
+        ([None], "null"),
+    ],
+)
+def test_invalid_dependency_indices_fail_closed(depends_on, reason):
+    tasks = [_task("only task", depends_on=depends_on)]
+
+    [result] = _escalate_plan(tasks, session_ref="dep", mode="local")
+
+    assert result.status == "error", f"{reason} dependency should fail closed"
+    assert "dependency" in result.result.lower()
+
+
+def test_a_dependency_list_that_is_not_a_list_fails_closed():
+    task = _task("only task")
+    task.depends_on = 2  # type: ignore[assignment]
+
+    [result] = _escalate_plan([task], session_ref="dep", mode="local")
+
+    assert result.status == "error"
+    assert "dependency" in result.result.lower()
+
+
+def test_blocked_indices_keep_original_task_positions():
+    tasks = [_task("a"), _task("b"), _task("c", depends_on=[1])]
+
+    # Task "a" is not blocked, so it would run; mock the runner so the test is
+    # hermetic and asserts only the position/blocked/skipped contract.
+    done = _result("done", title="a")
+    with patch("justai.agent_dispatch.escalate_task", return_value=done):
+        results = _escalate_plan(tasks, session_ref="dep", mode="local", blocked_indices={1})
+
+    assert [r.title for r in results] == ["a", "b", "c"]
+    assert results[1].status == "blocked"
+    assert results[2].status == "skipped", "a dependent of a blocked task must not run"
+
+
+@_pytest.mark.parametrize(
+    ("blocked", "reason"),
+    [
+        ({-1: "vetoed"}, "negative"),
+        ({2: "vetoed"}, "one past the end"),
+        ({99: "vetoed"}, "far past the end"),
+        ({-1}, "negative, as a bare collection"),
+        ({2}, "past the end, as a bare collection"),
+    ],
+)
+def test_a_blocked_index_outside_the_plan_is_rejected(blocked, reason):
+    tasks = [_task("a"), _task("b")]
+
+    with _pytest.raises(ValueError, match="blocked index"):
+        _escalate_plan(tasks, session_ref="dep", mode="local", blocked_indices=blocked)
+
+
+@_pytest.mark.parametrize(
+    ("blocked", "reason"),
+    [
+        ({True: "vetoed"}, "bool that would silently block task 1"),
+        ({"0": "vetoed"}, "string"),
+        ({None: "vetoed"}, "null"),
+        ({1.0: "vetoed"}, "float"),
+    ],
+)
+def test_a_blocked_index_that_is_not_a_task_position_is_rejected(blocked, reason):
+    tasks = [_task("a"), _task("b")]
+
+    with _pytest.raises(ValueError, match="blocked index"):
+        _escalate_plan(tasks, session_ref="dep", mode="local", blocked_indices=blocked)
+
+
+def test_a_blocked_index_against_an_empty_plan_is_rejected():
+    with _pytest.raises(ValueError, match="blocked index"):
+        _escalate_plan([], session_ref="dep", mode="local", blocked_indices={0})
+
+
+def test_every_in_range_blocked_index_is_still_honoured():
+    """Guarding the opposite error: rejecting strays must not drop real ones."""
+    tasks = [_task("a"), _task("b"), _task("c")]
+
+    done = _result("done", title="b")
+    with patch("justai.agent_dispatch.escalate_task", return_value=done):
+        results = _escalate_plan(
+            tasks, session_ref="dep", mode="local", blocked_indices={0: "vetoed", 2: "vetoed"}
+        )
+
+    # Positions preserved; only the two blocked tasks are withheld, and the
+    # in-range non-blocked task actually ran.
+    assert [r.status for r in results] == ["blocked", "done", "blocked"]
+
+
+def test_blocked_dependency_does_not_let_its_dependent_run():
+    """End-to-end: a checkpoint-blocked task's dependent is skipped, not run.
+
+    Compacting the approved list used to shift indices so the dependent ran.
+    """
+    from justai.orchestrator import run
+
+    plan = _Plan(
+        goal="g",
+        tasks=[_task("Task 0"), _task("Task 1", depends_on=[0])],
+        session_ref="t",
+    )
+
+    def gate(task, task_id=None):
+        # Task 0 is blocked at the checkpoint; Task 1 would be approved alone.
+        blocked = task.title == "Task 0"
+        return (not blocked, "blocked for test" if blocked else "auto")
+
+    with _orchestrated_run(plan, evaluate=MagicMock(side_effect=gate)) as _stubs:
+        result = run("goal", session_ref="t", auto=True, local=True)
+
+    assert len(result.results) == 2, "every planned task must keep a result slot"
+    assert result.results[0].status == "blocked"
+    assert result.results[1].status == "skipped", (
+        "Task 1 depends on a task the checkpoint blocked and must not be dispatched"
+    )
+    assert result.status != "complete"
