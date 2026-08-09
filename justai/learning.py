@@ -5,7 +5,7 @@ Trajectory context enrichment for the planner and post-run trajectory storage.
 
 Called by orchestrator at two points:
   - Before planning: enrich_context(goal) -> str of similar past trajectories
-  - After synthesis: record_run(goal, results, duration) -> bool
+  - After synthesis: record_run(goal, results, duration, final_status=...) -> bool
 
 Both functions are fire-and-forget — they never raise, never block the pipeline.
 """
@@ -57,6 +57,7 @@ def record_run(
     results: list,
     duration: float,
     *,
+    final_status: str | None = None,
     actions: list | None = None,
     failure_class: str | None = None,
     strategy_used: str | dict | None = None,
@@ -87,6 +88,18 @@ def record_run(
         if counts.total == 0:
             return False
         run_status = counts.run_status
+        if final_status is not None:
+            # Synthesis owns the final run verdict because post-execution gates
+            # (currently intent fidelity) may honestly downgrade an otherwise
+            # complete tally. Accept only the one defined transition so callers
+            # cannot use this argument to upgrade or rewrite execution evidence.
+            if final_status != run_status and not (
+                run_status == RUN_COMPLETE and final_status == RUN_PARTIAL
+            ):
+                raise ValueError(
+                    f"final status {final_status!r} contradicts result status {run_status!r}"
+                )
+            run_status = final_status
         if run_status == RUN_COMPLETE:
             outcome = "success"
         elif run_status == RUN_PARTIAL:

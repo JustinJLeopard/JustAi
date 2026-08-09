@@ -401,7 +401,7 @@ def run(
     print(format_summary(summary))
 
     # ── Record run as trajectory for future learning ─────────────────────────
-    record_run(goal, results, duration)
+    record_run(goal, results, duration, final_status=summary.status)
 
     flush_traces()
     escalation_count = sum(
