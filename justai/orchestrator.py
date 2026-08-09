@@ -2,7 +2,8 @@
 """
 JustAi — Orchestrator
 ======================
-Main pipeline: intake → intent → plan → review → checkpoint → delegate → synthesize
+Main pipeline: intake → intent → plan → review → checkpoint → delegate →
+synthesize → intent-fidelity gate
 
 Usage:
     python3 -m justai.orchestrator "your goal here"
@@ -18,6 +19,9 @@ Evidence-based design:
   - Checkpoint enforces R0-R3 gates (default: autonomous)
   - Mini-first execution handles local/delegated task outcomes
   - Synthesizer aggregates results and stores in claude-flow memory
+  - Intent-fidelity gate judges whether the OUTCOME achieved the original
+    intent ("A or better"); a task-complete-but-intent-missed run is honestly
+    downgraded rather than reported as complete
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ from justai.agent_dispatch import escalate_plan
 from justai.checkpoint import evaluate
 from justai.discord import OrchestratorHook
 from justai.health import preflight, print_preflight
+from justai.intent_fidelity import score_fidelity
 from justai.intent_gate import INTENT_MODEL, Intent, IntentResult, classify
 from justai.learning import enrich_context, record_run
 from justai.ledger import Ledger
@@ -46,6 +51,8 @@ SESSION_REF = os.environ.get("JUSTAI_SESSION_REF", "sprint-2")
 AUTO_MODE = os.environ.get("JUSTAI_AUTO_MODE", "").lower() in ("1", "true", "yes")
 LOCAL_EXEC = os.environ.get("JUSTAI_LOCAL_EXEC", "").lower() in ("1", "true", "yes")
 SWARM_MODE = os.environ.get("JUSTAI_SWARM_MODE", "").lower() in ("1", "true", "yes")
+# Intent-fidelity gate: on by default; set JUSTAI_FIDELITY_GATE=0 to disable.
+FIDELITY_GATE_ENABLED = os.environ.get("JUSTAI_FIDELITY_GATE", "1").lower() in ("1", "true", "yes")
 
 
 @dataclass
@@ -57,6 +64,11 @@ class OrchestrationResult:
     duration_seconds: float
     status: str  # "complete" | "partial" | "blocked" | "ambiguous"
     escalations: int = 0
+    # Intent-fidelity gate (None when the gate did not run):
+    intent_fidelity: float | None = None  # 0-100 percentile
+    fidelity_verdict: str | None = None  # met | exceeded | missed
+    fidelity_grade: str | None = None  # A+/A/B/C/D/F
+    a_or_better: bool | None = None  # cleared the intent bar
 
 
 # Shared memory client — talks to MCP HTTP at :3100 (~5ms vs ~300ms CLI)
@@ -147,7 +159,7 @@ def run(
         print()
 
     # ── Stage 1: Intent Classification ───────────────────────────────────────
-    print("[1/5] Classifying intent...")
+    print("[1/6] Classifying intent...")
     with trace_generation(
         "intent-gate",
         model=INTENT_MODEL,
@@ -183,7 +195,7 @@ def run(
         )
 
     # ── Stage 2: Plan Decomposition ───────────────────────────────────────────
-    print("\n[2/5] Decomposing into tasks...")
+    print("\n[2/6] Decomposing into tasks...")
     extra_context = ""
     if prior_context:
         extra_context += f"Prior session context:\n{prior_context}\n\n"
@@ -215,7 +227,7 @@ def run(
     print(format_plan(plan))
 
     # ── Stage 3: Plan Review ──────────────────────────────────────────────────
-    print("[3/5] Reviewing plan quality...")
+    print("[3/6] Reviewing plan quality...")
     with trace_generation(
         "reviewer",
         model=REVIEWER_MODEL,
@@ -276,7 +288,7 @@ def run(
     print("      Plan approved ✓")
 
     # ── Stage 4: Checkpoint Gates ─────────────────────────────────────────────
-    print("\n[4/5] Evaluating checkpoints...")
+    print("\n[4/6] Evaluating checkpoints...")
     trace_event("checkpoint", metadata={"task_count": len(plan.tasks)}, session_id=session_ref)
     approved_tasks = []
     for i, task in enumerate(plan.tasks):
@@ -298,6 +310,7 @@ def run(
             status="blocked",
         )
 
+
     # ── Stage 5: Execute ─────────────────────────────────────────────────────
     stage5_name = "swarm" if swarm else ("local" if local else "external")
     with trace_generation(
@@ -312,7 +325,7 @@ def run(
         },
     ) as _t5:
         mode = "swarm" if swarm else ("local" if local else "delegated")
-        print(f"\n[5/5] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
+        print(f"\n[5/6] Executing {len(approved_tasks)} task(s) via {mode} (with escalation)...")
         results = escalate_plan(approved_tasks, session_ref=session_ref, mode=mode)
 
         done_count = sum(1 for r in results if r.status == "done")
@@ -323,6 +336,24 @@ def run(
         )
     _hook.on_stage(stage5_name, f"{done_count}/{len(results)} done")
     _ledger.record(run_id=run_id, agent=session_ref, stage=stage5_name)
+
+    # ── Stage 6: Intent-Fidelity Gate (A or better) ───────────────────────────
+    # Judge whether the OUTCOME achieved the original intent — not just whether
+    # tasks ran. A task-complete run that missed the intent is downgraded by the
+    # synthesizer (below). The gate must never fail a run: any error → skip.
+    fidelity = None
+    if FIDELITY_GATE_ENABLED:
+        print("\n[6/6] Intent-fidelity gate (A or better)...")
+        try:
+            fidelity = score_fidelity(goal, plan, results)
+            print(
+                f"      Fidelity: {fidelity.fidelity:.0f}/100 grade {fidelity.grade} "
+                f"— {fidelity.verdict.value} (source: {fidelity.source})"
+            )
+            print(f"      {fidelity.rationale}")
+        except Exception as e:  # noqa: BLE001 -- gate is best-effort, never fatal
+            print(f"      (fidelity gate skipped: {e.__class__.__name__})")
+            fidelity = None
 
     # ── Synthesize ────────────────────────────────────────────────────────────
     duration = time.time() - start
@@ -339,6 +370,7 @@ def run(
             results=results,
             session_ref=session_ref,
             duration=duration,
+            fidelity=fidelity,
         )
         _t6.end(
             output_text=f"{summary.status}: {summary.done}/{summary.total_tasks} done, {duration:.1f}s",
@@ -348,6 +380,9 @@ def run(
                 "failed": summary.failed,
                 "total": summary.total_tasks,
                 "duration_s": round(duration, 2),
+                "intent_fidelity": summary.intent_fidelity,
+                "fidelity_verdict": summary.fidelity_verdict,
+                "a_or_better": summary.a_or_better,
             },
         )
     _ledger.record(
@@ -380,6 +415,10 @@ def run(
         duration_seconds=duration,
         status=summary.status,
         escalations=escalation_count,
+        intent_fidelity=summary.intent_fidelity,
+        fidelity_verdict=summary.fidelity_verdict,
+        fidelity_grade=summary.fidelity_grade,
+        a_or_better=summary.a_or_better,
     )
 
 
