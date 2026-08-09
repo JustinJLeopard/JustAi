@@ -144,3 +144,54 @@ def test_exit_zero_requires_a_complete_run_with_at_least_one_task():
     assert for_run_status("partial") == FAILED
     assert for_run_status("blocked") == FAILED
     assert for_run_status("failed") == FAILED
+
+
+# ── Slice 1 follow-up (Desktop Codex 1951 exact review) ──────────────────────
+# Three functional misses inside the readiness/exit slice: the direct module
+# entrypoint still exited 0 on ambiguous; execution readiness was true from a
+# mere Protocol stub; an unauthorized (401/403) planning endpoint read healthy.
+
+
+def test_direct_orchestrator_module_does_not_exit_zero_when_ambiguous():
+    """`python -m justai.orchestrator` must route its exit through the shared
+    mapping, not its own `complete/ambiguous -> 0` shortcut."""
+    from justai.exit_codes import CLARIFICATION_REQUIRED, OK
+    from justai.orchestrator import OrchestrationResult, _run_cli
+
+    ambiguous = OrchestrationResult("g", "ambiguous", 0, [], 0.1, "ambiguous")
+    with patch("justai.orchestrator.run", return_value=ambiguous):
+        assert _run_cli(["do", "something"]) == CLARIFICATION_REQUIRED
+
+    complete = OrchestrationResult("g", "execution", 1, [], 0.1, "complete")
+    with patch("justai.orchestrator.run", return_value=complete):
+        assert _run_cli(["do", "something"]) == OK
+
+
+def test_execution_readiness_is_not_true_from_a_mere_protocol_stub():
+    """A Protocol stub import is not a usable runner."""
+    from justai.health import check_safe_mini_boundary
+
+    assert check_safe_mini_boundary().ok is False
+
+
+def test_planning_readiness_is_not_true_when_unauthorized():
+    """An unauthorized (401/403) planning endpoint cannot plan -> not ok, and
+    readiness must not surface planning_ready/all_ok true off it."""
+    import urllib.error
+
+    from justai.health import check_litellm, readiness
+
+    err = urllib.error.HTTPError(
+        "http://localhost:4000/v1/models",
+        401,
+        "Unauthorized",
+        {"Content-Type": "application/json"},
+        None,
+    )
+    err.read = lambda: b'{"error": {"message": "litellm: invalid api key"}}'
+    with patch("urllib.request.urlopen", side_effect=err):
+        status = check_litellm()
+        assert status.ok is False
+        r = readiness([status])
+        assert r.planning_ready is False
+        assert r.all_ok is False
