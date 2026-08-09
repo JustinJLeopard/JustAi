@@ -136,6 +136,22 @@ def test_run_returns_complete_when_all_tasks_succeed():
     assert result.fidelity_verdict == "met"
 
 
+def test_fidelity_downgrade_is_the_learning_outcome():
+    """Learning must store the synthesized verdict, not re-tally a false success."""
+    from justai.orchestrator import run
+
+    with _patch_pipeline(results=[_result("done")]):
+        with (
+            patch("justai.orchestrator.score_fidelity", return_value=_fidelity("missed", 20.0)),
+            patch("justai.learning._store") as store,
+        ):
+            store.store.return_value = True
+            result = run("miss the requested outcome", session_ref="test")
+
+    assert result.status == "partial"
+    assert store.store.call_args.kwargs["outcome"] == "partial"
+
+
 def test_run_returns_partial_when_some_tasks_fail():
     from justai.orchestrator import run
 
