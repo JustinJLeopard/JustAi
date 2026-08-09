@@ -195,3 +195,141 @@ def test_planning_readiness_is_not_true_when_unauthorized():
         r = readiness([status])
         assert r.planning_ready is False
         assert r.all_ok is False
+
+
+# ── Slice 2: result / synthesis / learning vocabulary + tally ────────────────
+# One shared vocabulary (justai.results.tally) that the synthesizer and the
+# learning layer both read, so they cannot disagree about what a result set
+# means. Empty and unknown-status runs must never read as success. (Finding 4 +
+# the tally unit of Finding 7b. The orchestrator fail-closed integration —
+# Finding 7 whole-run + Finding 8 stage tally — is the next slice.)
+
+import pytest as _pytest
+from types import SimpleNamespace as _SNS
+
+from justai.results import DelegationResult as _DR
+
+
+def _result(status: str = "done", title: str = "task") -> _DR:
+    return _DR(task_id="t", title=title, status=status, result="ok", duration_seconds=1.0)
+
+
+def test_synthesize_refuses_to_call_an_empty_run_complete():
+    from justai.synthesizer import synthesize
+
+    summary = synthesize("goal", "execution", [], "test", 1.0)
+
+    assert summary.total_tasks == 0
+    assert summary.status != "complete"
+
+
+def test_synthesize_rejects_an_unknown_result_status():
+    from justai.synthesizer import synthesize
+
+    with _pytest.raises(ValueError, match="unknown result status"):
+        synthesize("goal", "execution", [_result("mission-accomplished")], "test", 1.0)
+
+
+def test_synthesize_counts_blocked_results_without_calling_them_complete():
+    from justai.synthesizer import synthesize
+
+    summary = synthesize("goal", "execution", [_result("blocked"), _result("done")], "test", 1.0)
+
+    assert summary.blocked == 1
+    assert summary.status == "partial"
+
+
+def test_synthesize_unverified_run_is_partial_not_complete():
+    """JustAi's honest 3-state: an executed-but-unverified task is not done."""
+    from justai.synthesizer import synthesize
+
+    summary = synthesize("goal", "execution", [_result("unverified")], "test", 1.0)
+
+    assert summary.status == "partial"
+
+
+def test_learning_does_not_record_an_empty_run_as_successful():
+    from justai.learning import record_run
+
+    with patch("justai.learning._store") as store:
+        store.store.return_value = True
+        recorded = record_run("goal", [], duration=1.0)
+
+    assert recorded is False
+    store.store.assert_not_called()
+
+
+def test_learning_does_not_call_a_fully_skipped_run_successful():
+    from justai.learning import record_run
+
+    with patch("justai.learning._store") as store:
+        store.store.return_value = True
+        record_run("goal", [_result("skipped"), _result("blocked")], duration=1.0)
+
+    assert store.store.call_args.kwargs["outcome"] != "success"
+
+
+def test_learning_rejects_an_unknown_result_status_instead_of_storing_success():
+    from justai.learning import record_run
+
+    with patch("justai.learning._store") as store:
+        store.store.return_value = True
+        recorded = record_run("goal", [_result("mission-accomplished")], duration=1.0)
+
+    assert recorded is False
+    store.store.assert_not_called()
+
+
+def test_synthesizer_and_learning_agree_on_what_counts_as_success():
+    """The two surfaces must not disagree about the same result set."""
+    from justai.learning import record_run
+    from justai.synthesizer import synthesize
+
+    cases = [
+        [],
+        [_result("done")],
+        [_result("done"), _result("skipped")],
+        [_result("failed")],
+        [_result("blocked")],
+    ]
+    for results in cases:
+        summary = synthesize("goal", "execution", results, "test", 1.0)
+        with patch("justai.learning._store") as store:
+            store.store.return_value = True
+            record_run("goal", results, duration=1.0)
+            outcome = (
+                store.store.call_args.kwargs["outcome"] if store.store.call_args else "not-recorded"
+            )
+        assert (summary.status == "complete") == (outcome == "success"), (
+            f"disagreement for {[r.status for r in results]}: "
+            f"synthesizer={summary.status} learning={outcome}"
+        )
+
+
+def test_tally_rejects_a_non_numeric_duration():
+    from justai.results import tally
+
+    with _pytest.raises(ValueError, match="'duration_seconds' must be a number"):
+        tally(
+            [
+                _SNS(
+                    task_id="t", title="Task 0", status="done", result="ok", duration_seconds="fast"
+                )
+            ]
+        )
+
+
+def test_tally_rejects_a_result_set_that_is_not_a_sequence():
+    from justai.results import tally
+
+    with _pytest.raises(ValueError, match="must be a sequence of results"):
+        tally(None)
+
+
+def test_a_result_without_a_duration_is_still_countable():
+    """Guarding the opposite error: only what a surface reads may be required."""
+    from justai.results import tally
+
+    counts = tally([_SNS(task_id="t", title="Task 0", status="done", result="ok")])
+
+    assert counts.done == 1
