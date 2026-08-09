@@ -4,6 +4,11 @@ JustAi — Synthesizer
 =====================
 Aggregates execution results into a structured summary.
 Stores results in claude-flow memory for future sessions.
+
+Also applies the intent-fidelity gate's verdict (computed upstream by
+justai.intent_fidelity): a run whose tasks all completed but whose OUTCOME
+missed the user's original intent is honestly downgraded from "complete" to
+"partial". The fidelity percentile/grade/verdict travel on the summary.
 """
 
 from __future__ import annotations
@@ -29,6 +34,11 @@ class RunSummary:
     session_ref: str
     status: str  # "complete" | "partial" | "failed"
     details: list[dict]
+    # Intent-fidelity gate (None when the gate did not run):
+    intent_fidelity: float | None = None  # 0-100 percentile
+    fidelity_verdict: str | None = None  # met | exceeded | missed
+    fidelity_grade: str | None = None  # A+/A/B/C/D/F
+    a_or_better: bool | None = None  # cleared the intent bar
 
 
 def synthesize(
@@ -37,12 +47,16 @@ def synthesize(
     results: list,
     session_ref: str = "",
     duration: float = 0.0,
+    fidelity=None,
 ) -> RunSummary:
     """
     Aggregate results and produce a run summary.
 
     Args:
         results: list of DelegationResult or ExecResult objects
+        fidelity: optional FidelityResult from justai.intent_fidelity. When a
+            task-complete run is judged to have MISSED the intent, its status is
+            honestly downgraded to "partial".
     """
     done = sum(1 for r in results if r.status == "done")
     failed = sum(1 for r in results if r.status in ("failed", "error", "timeout"))
@@ -58,6 +72,20 @@ def synthesize(
         status = "partial"
     else:
         status = "failed"
+
+    # Intent-fidelity gate: a task-complete run that missed the original intent
+    # is not honestly "complete" — downgrade it. No effect when fidelity is None
+    # or the intent was met/exceeded.
+    intent_fidelity = fidelity_verdict = fidelity_grade = a_or_better = None
+    if fidelity is not None:
+        intent_fidelity = fidelity.fidelity
+        fidelity_verdict = (
+            fidelity.verdict.value if hasattr(fidelity.verdict, "value") else str(fidelity.verdict)
+        )
+        fidelity_grade = fidelity.grade
+        a_or_better = fidelity.a_or_better
+        if status == "complete" and fidelity_verdict == "missed":
+            status = "partial"
 
     details = []
     for r in results:
@@ -82,6 +110,10 @@ def synthesize(
         session_ref=session_ref,
         status=status,
         details=details,
+        intent_fidelity=intent_fidelity,
+        fidelity_verdict=fidelity_verdict,
+        fidelity_grade=fidelity_grade,
+        a_or_better=a_or_better,
     )
 
     # Store in memory
@@ -99,6 +131,8 @@ def _store_summary(s: RunSummary) -> None:
         f"duration={s.duration_seconds:.0f}s | session={s.session_ref} | "
         f"status={s.status}"
     )
+    if s.intent_fidelity is not None:
+        value += f" | fidelity={s.intent_fidelity:.0f}({s.fidelity_grade}/{s.fidelity_verdict})"
     with suppress(Exception):
         _memory.store(key, value)
 
@@ -125,5 +159,11 @@ def format_summary(s: RunSummary) -> str:
         + "|"
     )
     lines.append(f"|  Status: {s.status:<48} |")
+    if s.intent_fidelity is not None:
+        intent_line = (
+            f"Intent:  {s.intent_fidelity:.0f}/100 ({s.fidelity_grade}) "
+            f"{s.fidelity_verdict} | a-or-better: {s.a_or_better}"
+        )
+        lines.append(f"|  {intent_line:<48} |")
     lines.append("+" + "=" * 58 + "+")
     return "\n".join(lines)
