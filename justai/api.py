@@ -51,12 +51,19 @@ _run_lock = threading.Lock()
 
 
 def _get_health() -> dict:
+    from justai.health import readiness
+
     statuses = preflight()
+    r = readiness(statuses)
     return {
         "services": [
             {"name": s.name, "url": s.url, "ok": s.ok, "detail": s.detail} for s in statuses
         ],
-        "all_ok": all(s.ok for s in statuses),
+        # Readiness is not one bit: name which capability is available so the
+        # API and `justai status` cannot disagree about the same probe set.
+        "planning_ready": r.planning_ready,
+        "execution_ready": r.execution_ready,
+        "all_ok": r.all_ok,
         "timestamp": time.time(),
     }
 

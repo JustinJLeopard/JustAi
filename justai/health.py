@@ -139,6 +139,47 @@ def preflight() -> list[ServiceStatus]:
     return [check_litellm(), check_safe_mini_boundary(), check_memory()]
 
 
+PLANNING_SERVICE = "LiteLLM"
+EXECUTION_SERVICE = "safe-mini boundary"
+
+
+@dataclass
+class Readiness:
+    """What the control plane can actually do right now.
+
+    Readiness is deliberately not one bit. Collapsing it lets a caller read
+    "planning works" as "the whole system works" -- which is how `justai status`
+    came to exit 0 while the execution probe was down and the API's own
+    ``all_ok`` was false.
+    """
+
+    statuses: list[ServiceStatus]
+    planning_ready: bool
+    execution_ready: bool
+    all_ok: bool
+
+
+def readiness(statuses: list[ServiceStatus] | None = None) -> Readiness:
+    """Derive explicit readiness from probe results.
+
+    Args:
+        statuses: probe results; runs :func:`preflight` when omitted.
+    """
+    statuses = list(statuses) if statuses is not None else preflight()
+    by_name = {s.name: s for s in statuses}
+    planning = by_name.get(PLANNING_SERVICE)
+    execution = by_name.get(EXECUTION_SERVICE)
+
+    return Readiness(
+        statuses=statuses,
+        planning_ready=bool(planning and planning.ok),
+        execution_ready=bool(execution and execution.ok),
+        # An empty probe set is not evidence of health. `all(())` is True, and
+        # that default would report a system nobody checked as fully ready.
+        all_ok=bool(statuses) and all(s.ok for s in statuses),
+    )
+
+
 def print_preflight(statuses: list[ServiceStatus]) -> bool:
     """Print preflight results. Returns True if all critical services are up."""
     print("  Service preflight:")

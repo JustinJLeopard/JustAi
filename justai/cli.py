@@ -37,7 +37,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     result = run(
         goal, session_ref=args.session, auto=args.auto, local=getattr(args, "local", False)
     )
-    return 0 if result.status in ("complete", "ambiguous") else 1
+    # Exit 0 is reserved for verified completion. An ambiguous goal is a
+    # legitimate result but NOT completion -> CLARIFICATION_REQUIRED, not 0.
+    from justai.exit_codes import for_run_status
+
+    return for_run_status(result.status)
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -59,12 +63,16 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Check service health."""
-    from justai.health import preflight, print_preflight
+    from justai.exit_codes import NOT_READY, OK
+    from justai.health import preflight, print_preflight, readiness
 
     print("JustAi Service Status")
     print("=" * 60)
     statuses = preflight()
-    all_ok = print_preflight(statuses)
+    print_preflight(statuses)
+    # Exit reflects full readiness (every probe), not just the planning bit —
+    # so `justai status` cannot exit 0 while the API's own all_ok is false.
+    r = readiness(statuses)
 
     # Also check if memory has data
     from justai.memory import Memory
@@ -77,7 +85,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     except Exception:
         print("  Memory: unavailable")
 
-    return 0 if all_ok else 1
+    return OK if r.all_ok else NOT_READY
 
 
 def cmd_history(args: argparse.Namespace) -> int:
