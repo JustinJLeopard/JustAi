@@ -266,6 +266,22 @@ def _extract_exact_text(goal: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _is_route_target(path: str, goal: str) -> bool:
+    """True when an extracted 'path' is really a URL or an API route, not a
+    filesystem path. Prevents verifying `/api/users` (a product route) with
+    `test -f`. A real file (extension in its last segment, e.g. notes.txt) is
+    never a route."""
+    if "://" in goal or "://" in path:
+        return True
+    last = path.rsplit("/", 1)[-1]
+    has_ext = bool(re.search(r"\.[A-Za-z][\w]{0,7}$", last))
+    if not has_ext and re.search(
+        r"\b(api|route|endpoint|handler|http|https|rest|url)\b", goal, re.IGNORECASE
+    ):
+        return True
+    return False
+
+
 def _infer_verify_command(goal: str) -> str:
     """Infer a verification command from the goal text.
 
@@ -283,6 +299,9 @@ def _infer_verify_command(goal: str) -> str:
 
     path = _extract_path(goal)
     creation = re.search(r"\b(creat|writ|mak|generat|sav|produc|add|append)\w*\b", goal, re.IGNORECASE)
+    # A URL/route target (e.g. /api/users) is not a filesystem path.
+    if path and _is_route_target(path, goal):
+        path = None
     if path and "/" in path and creation:
         quoted = shlex.quote(path)
         text = _extract_exact_text(goal)
