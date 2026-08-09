@@ -120,6 +120,25 @@ def test_llm_better_than_intent_is_exceeded():
     assert fr.a_or_better is True
 
 
+def test_judge_string_false_does_not_become_exceeded():
+    # Guards the bool("false") == True trap: a judge that returns the STRING
+    # "false" for better_than_intent must NOT be scored EXCEEDED.
+    with patch("urllib.request.urlopen", return_value=_llm_resp(99, better="false")):
+        fr = score_fidelity("g", _plan(), [_res("done")])
+    assert fr.verdict == FidelityVerdict.MET
+    assert fr.verdict != FidelityVerdict.EXCEEDED
+
+
+def test_judge_nonnumeric_fidelity_degrades_to_missed():
+    # A non-numeric / NaN judge score must degrade to a conservative MISSED,
+    # never crash and never mint a spurious pass.
+    for bad in ("n/a", "NaN", None, "", {}):
+        with patch("urllib.request.urlopen", return_value=_llm_resp(bad)):
+            fr = score_fidelity("g", _plan(), [_res("done")])
+        assert fr.fidelity == 0.0
+        assert fr.verdict == FidelityVerdict.MISSED
+
+
 def test_score_fidelity_falls_back_on_llm_error():
     with patch("urllib.request.urlopen", side_effect=URLError("down")):
         fr = score_fidelity("g", _plan(), [_res("done")])

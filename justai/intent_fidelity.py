@@ -49,10 +49,24 @@ class FidelityResult:
     source: str                # "llm" | "heuristic"
 
 
+def _env_float(name: str, default: float) -> float:
+    """Read a float env var without letting a malformed value crash import.
+    Tolerates an accidental inline comment and any non-numeric junk, falling
+    back to the default (import must never fail on a slightly-off env)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    raw = raw.split("#", 1)[0].strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 # "A or better" — the intent bar. Default: A == 90th-percentile fidelity.
 # a_or_better tracks THIS bar; the letter grade is a fixed scale, so at the
 # default bar (90) a_or_better is exactly (grade in {A, A+}).
-INTENT_BAR = float(os.environ.get("JUSTAI_INTENT_BAR", "90"))
+INTENT_BAR = _env_float("JUSTAI_INTENT_BAR", 90.0)
 FIDELITY_MODEL = os.environ.get("JUSTAI_FIDELITY_MODEL", "openai/claude-opus-4-6")
 LITELLM_URL = (
     os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/").removesuffix("/v1")
@@ -82,10 +96,35 @@ def _verdict_for(fidelity: float, better: bool, bar: float = INTENT_BAR) -> Fide
     return FidelityVerdict.MISSED
 
 
+def _coerce_fidelity(x) -> float:
+    """Parse a judge-returned fidelity into a clamped 0-100 float. Any
+    non-numeric or NaN value degrades to 0.0 (conservative: an unparseable
+    judge score becomes MISSED, never a spurious pass)."""
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return 0.0
+    if f != f:  # NaN
+        return 0.0
+    return max(0.0, min(100.0, f))
+
+
+def _as_bool(x) -> bool:
+    """Strict truthy parse for judge booleans. Guards the bool("false") == True
+    trap: only real True, a nonzero number, or "true"/"1"/"yes" count as True."""
+    if isinstance(x, bool):
+        return x
+    if isinstance(x, (int, float)):
+        return x == x and x != 0
+    if isinstance(x, str):
+        return x.strip().lower() in ("true", "1", "yes")
+    return False
+
+
 def _make(fidelity, better, rationale, source, bar: float = INTENT_BAR) -> FidelityResult:
     """Clamp, grade, and package a fidelity score into a FidelityResult."""
-    fidelity = max(0.0, min(100.0, float(fidelity)))
-    verdict = _verdict_for(fidelity, bool(better), bar)
+    fidelity = _coerce_fidelity(fidelity)
+    verdict = _verdict_for(fidelity, _as_bool(better), bar)
     return FidelityResult(
         fidelity=round(fidelity, 1),
         verdict=verdict,
@@ -225,7 +264,7 @@ def score_fidelity(goal: str, plan, results: list) -> FidelityResult:
         raw = _call_litellm(goal, plan, results)
         return _make(
             fidelity=raw.get("fidelity", 0),
-            better=bool(raw.get("better_than_intent", False)),
+            better=raw.get("better_than_intent", False),
             rationale=str(raw.get("rationale", "")),
             source="llm",
         )
