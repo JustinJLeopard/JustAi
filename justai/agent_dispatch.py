@@ -362,13 +362,16 @@ def escalate_task(
         DelegationResult — from first attempt if successful, from escalation otherwise.
     """
     original_model = os.environ.get("JUSTAI_ACTIVE_MODEL", "")
+    original_role = os.environ.get("JUSTAI_EXEC_ROLE", "")
 
-    # First attempt: cheap model
+    # First attempt: cheap model on the executor endpoint (when configured).
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = MINI_MODEL
+        os.environ["JUSTAI_EXEC_ROLE"] = "mini"
         result = runner(task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+        os.environ["JUSTAI_EXEC_ROLE"] = original_role
 
     if result.status == "done":
         return result
@@ -393,9 +396,11 @@ def escalate_task(
 
     try:
         os.environ["JUSTAI_ACTIVE_MODEL"] = ESCALATION_MODEL
+        os.environ["JUSTAI_EXEC_ROLE"] = "primary"
         escalation_result = runner(escalated_task, session_ref=session_ref)
     finally:
         os.environ["JUSTAI_ACTIVE_MODEL"] = original_model
+        os.environ["JUSTAI_EXEC_ROLE"] = original_role
 
     return escalation_result
 
@@ -522,12 +527,18 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
     executed | no_backend | refused | blocked | error.
     """
     model = os.environ.get("JUSTAI_ACTIVE_MODEL") or MINI_MODEL
+    # Endpoint role is set explicitly by escalate_task per attempt and never
+    # inferred from model text: the escalation attempt uses the primary
+    # endpoint; the mini/first/direct-local attempt uses the executor endpoint
+    # when JUSTAI_EXECUTOR_BASE_URL is configured (else primary, fail-closed).
+    role = os.environ.get("JUSTAI_EXEC_ROLE") or "mini"
+    action_base_url = None if role == "primary" else _executor_base_url()
     prompt = (
         "Task: " + task.title + chr(10) + chr(10) + task.description
         + chr(10) + chr(10) + "Produce the shell command."
     )
     try:
-        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM, base_url=_executor_base_url())
+        raw = _llm_call(model, prompt, system=_ACTION_SYSTEM, base_url=action_base_url)
     except Exception as exc:
         return "no_backend", f"execution model unavailable: {str(exc)[:160]}"
     action = _parse_action(raw)

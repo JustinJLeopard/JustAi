@@ -64,3 +64,40 @@ def test_empty_or_whitespace_is_none_fail_closed(monkeypatch):
     assert ad._executor_base_url() is None
     monkeypatch.delenv("JUSTAI_EXECUTOR_BASE_URL", raising=False)
     assert ad._executor_base_url() is None
+
+
+def test_local_escalation_uses_primary_not_executor(monkeypatch):
+    """Regression: through escalate_task + the real _execute_single_local runner,
+    the first (mini) attempt routes to the executor endpoint, but the escalation
+    attempt uses the primary endpoint. The role is set explicitly by
+    escalate_task per attempt, never inferred from model text.
+
+    test_escalation_stays_primary_when_executor_set covers only
+    AgentDispatchPipeline._call_escalation; this covers the local-execution
+    fallback that Desktop Codex flagged (both attempts previously hit 18087).
+    """
+    from justai.scope_planner import AgentType, RiskLevel, Task
+
+    monkeypatch.setenv("JUSTAI_EXECUTOR_BASE_URL", EXEC)
+    # Force the first attempt to fail so escalation runs; keep it hermetic
+    # (no real shell execution / verification).
+    monkeypatch.setattr(ad, "_run_local_command", lambda *a, **k: (False, "forced"))
+    monkeypatch.setattr(ad, "_verify_task", lambda task: (False, "n/a"))
+
+    task = Task(
+        title="t",
+        description="d",
+        agent=AgentType.MINI,
+        risk=RiskLevel.R1,
+        success_criteria="true",
+        depends_on=[],
+    )
+
+    with patch("urllib.request.urlopen", return_value=_fake_resp()) as m:
+        ad.escalate_task(task, session_ref="s", runner=ad._execute_single_local)
+
+    urls = [c.args[0].full_url for c in m.call_args_list]
+    assert urls == [
+        f"{EXEC}/chat/completions",
+        f"{ad.LITELLM_URL}/chat/completions",
+    ], urls
