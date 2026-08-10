@@ -22,7 +22,7 @@ JustAi control plane
   - synthesize results and memory
         |
         v
-safe-mini substrate (planned separate repo)
+safe-mini substrate (separate repository)
   - mini-style bash-action loop
   - worktree isolation
   - env scrubbing
@@ -53,7 +53,9 @@ The long-term job of this layer is to predict both budgets:
 
 ### 2. Substrate
 
-Substrate lives in safe-mini once that repo is stood up.
+The substrate lives in the separate safe-mini repository. JustAi consumes its
+public runner contract through an explicit adapter; the default local executor
+is unchanged.
 
 The substrate is the load-bearing runtime around a mini-swe-agent-style loop:
 
@@ -88,11 +90,14 @@ JustAi -----------+
 local-resident ---+
 ```
 
-Planned ship sequence:
+Current source-integration sequence:
 
-- Phase A: consumers pin `safe-mini @ git+https://github.com/JustinJLeopard/safe-mini.git@...`.
+- Phase A: JustAi pins `safe-mini` to an exact Git revision and exposes an
+  explicit adapter over SafeMini's public runner contract.
 - Phase B: safe-mini publishes to PyPI and consumers use a version pin.
-- Current state: the safe-mini repo does not exist yet. Stand-up is post-JustAi-closure work.
+- Current state: the safe-mini repository exists and JustAi's source carries
+  the Phase A pin. This records source integration only; installation,
+  productive execution, and any PyPI release remain separate decisions.
 
 ## Current Repo Layout
 
@@ -127,7 +132,8 @@ Important boundaries:
 - `scope_planner.py` owns task decomposition and task data shapes for the current repo.
 - `agent_dispatch.py` is transitional. Local mode runs verification commands; removed backends return explicit errors.
 - `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates.
-- `results.py`, `trajectory.py`, and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
+- `results.py`, `trajectory.py`, and `ledger.py` are the local
+  result/accounting surface; SafeMini owns its runner result types.
 - `memory.py` is integration glue with the surrounding development memory system.
 
 ## Failure Taxonomy
@@ -185,7 +191,7 @@ Historical sprint-era designs now live under `docs/archive/` when they are still
 
 ## Migration Plan
 
-When safe-mini is stood up, move or re-author these pieces there:
+Follow-on migration scope, if an implementation need arises:
 
 - runner loop and action protocol
 - executor policy types

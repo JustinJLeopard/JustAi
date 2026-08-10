@@ -27,7 +27,9 @@ This pattern was validated empirically across 54 controlled trials (6 task famil
 - **Reviewer** (`reviewer.py`) — pre-dispatch quality gate that catches ambiguous descriptions and missing success criteria.
 - **Checkpoint** (`checkpoint.py`) — risk-level approval (R0 auto through R3 manual).
 - **Agent dispatch** (`agent_dispatch.py`) — runs each chunk through the substrate runner.
-- **Runner Protocol** (`runner_protocol.py`) — local stub; will move to `safe-mini` once that repo is stood up.
+- **Runner Protocol** (`runner_protocol.py`) — compatibility protocol for
+  existing control-plane code. The explicit `safe_mini_adapter.py` maps a
+  JustAi task to SafeMini's public runner contract.
 - **Trajectory store** — per-step record of every run: action type, file touched, observation, outcome.
 - **Memory** — vector-indexed, queryable across runs and projects.
 - **Dashboard** — Mission Control, Task Board, Trajectories, Memory, Agents, Observability views.
@@ -115,9 +117,13 @@ Phase summary:
 - **Phase 1-3** — closed.
 - **Phase 4** — A through F landed 2026-04-29 (control-plane reframe, dead-code amputation, module renames, Protocol stub). G+H landed 2026-04-30 (ruff/mypy clean, test cleanup, docs-contract test lock-in).
 - **Phase 5** — ratification: secrets scrub (gitleaks), dependency audit (pip-audit + npm audit), license check, install-verify in clean venv, 3-repo plan consistency.
-- **Phase 6** — closure: tag, PR strategy, public flip.
+- **Phase 6** — source integration: SafeMini is a separate repository and
+  JustAi has an explicit, opt-in adapter pinned to an exact SafeMini commit.
+  This is source-level integration, not an installation, runtime, or release
+  claim.
 
-Once Phase 6 ships, `safe-mini` and `local-resident` will be stood up as their own repos.
+`local-resident` remains a separate research harness; its own stand-up and any
+public release are separate decisions.
 
 ---
 
