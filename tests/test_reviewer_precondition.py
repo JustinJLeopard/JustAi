@@ -241,3 +241,65 @@ def test_review_keeps_llm_approval_for_clean_plan(monkeypatch):
     monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": [], "suggestions": []})
     result = R.review(plan)
     assert result.approved is True, result.feedback
+
+
+# --- Disagreement preservation: when the deterministic check overrides an LLM
+#     approval the operator must be able to see that the two reviewers
+#     disagreed (5 real disagreements were observed in the held-out eval). ---
+
+def test_override_is_labelled_and_llm_verdict_preserved(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(
+        goal="Copy the file /tmp/src-2.dat to /tmp/out/copy.dat.",
+        tasks=[
+            _task("Ensure source exists", "Create /tmp/src-2.dat if it is missing.", "test -f /tmp/src-2.dat"),
+            _task("Copy", "cp /tmp/src-2.dat /tmp/out/copy.dat", "test -f /tmp/out/copy.dat", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": [], "suggestions": []})
+    result = R.review(plan)
+    assert result.approved is False
+    blob = " ".join(result.feedback).lower()
+    assert "override" in blob, "override must be labelled"
+    assert "approved" in blob, "the LLM's own verdict must stay visible"
+    assert any("fabricat" in f.lower() for f in result.feedback)
+
+
+def test_no_override_label_when_both_reject(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(
+        goal="Copy the file /tmp/src-3.dat to /tmp/out/copy.dat.",
+        tasks=[
+            _task("Ensure source exists", "Create /tmp/src-3.dat if it is missing.", "test -f /tmp/src-3.dat"),
+        ],
+        session_ref="t",
+    )
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": False, "feedback": ["Task too large"], "suggestions": []})
+    result = R.review(plan)
+    assert result.approved is False
+    blob = " ".join(result.feedback).lower()
+    assert "override" not in blob, "no disagreement to report when both reject"
+    assert "task too large" in blob and any("fabricat" in f.lower() for f in result.feedback)
+
+
+def test_string_feedback_is_not_shredded_into_characters(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(goal="Summarize /d/r.csv into /o/s.txt",
+                tasks=[_task("S", "read /d/r.csv write /o/s.txt", "test -s /o/s.txt")], session_ref="t")
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": "plan is fine", "suggestions": None})
+    result = R.review(plan)
+    assert result.feedback == ["plan is fine"], result.feedback
+
+
+def test_model_failure_is_reported_even_on_clean_approval(monkeypatch):
+    from justai import reviewer as R
+    def boom(pj):
+        raise TimeoutError("read timed out")
+    plan = Plan(goal="Summarize /d/r.csv into /o/s.txt",
+                tasks=[_task("S", "read /d/r.csv write /o/s.txt", "test -s /o/s.txt")], session_ref="t")
+    monkeypatch.setattr(R, "_call_litellm", boom)
+    result = R.review(plan)
+    assert result.approved is True
+    assert result.feedback and "model reviewer unavailable" in result.feedback[0].lower()
+    assert "TimeoutError" in result.feedback[0]
