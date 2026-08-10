@@ -173,33 +173,22 @@ def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
 
 
 def _task_makes_exist(blob_lower: str, path_lower: str) -> bool:
-    """True if a task makes the given path EXIST -- via a shell op, or in prose
-    ("create X", "write a placeholder X", "if X is absent ... create ..."). A
-    read-only check ("confirm X exists without changing it") is not creation:
-    it carries no creation verb, so it does not match.
+    """True if a task makes the given path EXIST -- via a shell op, or a prose
+    creation whose DIRECT OBJECT is the path/basename ("create X", "write a
+    placeholder X"). Reads of the path ("summary FROM x", "backup OF x") and
+    read-only checks ("confirm x exists") carry no creating-object match, so
+    they are not flagged. Path is boundary-anchored so report.csv does not match
+    report.csv.lock.
     """
-    ep = re.escape(path_lower)
     if _task_creates_path(blob_lower, path_lower):
         return True
-    has_create = re.search(
-        r"\b(?:create|creates|creating|generate|generates|make|makes|"
-        r"initializ\w*|write\s+(?:an?\s+)?(?:empty|placeholder)|placeholder)\b",
-        blob_lower,
-    ) is not None
-    if not has_create:
-        return False
-    # a creation verb close before the exact path
-    if re.search(
-        r"\b(?:create|generate|make|initializ\w*|write\s+(?:an?\s+)?(?:empty|placeholder)|placeholder)\b[^\n]{0,40}?"
-        + ep,
-        blob_lower,
-    ):
-        return True
-    # a creation-bearing task that conditions on the exact path being missing/absent
-    if re.search(ep + r"[^\n]{0,40}?\b(?:missing|absent)\b", blob_lower) or re.search(
-        r"\b(?:missing|absent)\b[^\n]{0,40}?" + ep, blob_lower
-    ):
-        return True
+    verb = (r"\b(?:create|creates|creating|touch|mkdir|generate|generates|"
+            r"make|makes|initializ\w*|write|writes|writing)\s+")
+    det = r"(?:(?:a|an|the|empty|new|blank|dummy|stub|initial|placeholder|requested)\s+){0,4}"
+    basename = path_lower.rsplit("/", 1)[-1]
+    for target in {re.escape(path_lower), re.escape(basename)}:
+        if re.search(verb + det + r"(?<![\w./~-])" + target + r"(?![\w./~-])", blob_lower):
+            return True
     return False
 
 

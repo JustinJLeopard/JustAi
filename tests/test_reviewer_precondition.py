@@ -163,3 +163,33 @@ def test_allows_confirm_exists_without_creating():
     )
     r = _heuristic_review(plan)
     assert r.approved is True, r.feedback
+
+
+
+def test_allows_input_used_as_source_of_creation():
+    # "generate a summary FROM report.csv" reads the input; must not flag it.
+    plan = Plan(
+        goal="Summarize /data/report.csv into /out/summary.txt",
+        tasks=[
+            _task("Summarize", "Generate a summary from /data/report.csv and write it to /out/summary.txt.",
+                  "test -s /out/summary.txt"),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is True, r.feedback
+
+
+def test_allows_input_existence_guard_without_creation():
+    # A guard that aborts when the input is missing does not create it.
+    plan = Plan(
+        goal="Copy /data/in.csv to /data/out.csv",
+        tasks=[
+            _task("Guard", "If /data/in.csv is missing, generate an error and abort.",
+                  "test -f /data/in.csv"),
+            _task("Copy", "cp /data/in.csv /data/out.csv", "test -f /data/out.csv", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is True, r.feedback
