@@ -23,7 +23,7 @@ The intended three-repo shape is:
 
 | Repo | Role |
 | --- | --- |
-| `safe-mini` | Local execution substrate: runner loop, command/path guards, isolated worktrees, observation policy, incident artifacts, trajectory recording, and canonical execution types. |
+| `safe-mini` | Local execution substrate: runner loop, policy guards, copied worktrees, observation policy, in-memory run transcripts, and canonical execution types. The explicit JustAi adapter supplies the Bubblewrap boundary. |
 | `JustAi` | Control-plane: goal decomposition, chunk sizing, checkpoints, review, coordination, dashboard/API support, and synthesis. |
 | `local-resident` | Local experiment driver: private benchmark slices, calibration runs, and comparative evaluation. |
 

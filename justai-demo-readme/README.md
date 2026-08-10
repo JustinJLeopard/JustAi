@@ -1,8 +1,8 @@
 # JustAi
 
-**A thin project-orchestration layer over a safe-by-construction local-execution substrate for mini-swe-agent–style coding agents.**
+**A thin project-orchestration layer with an explicit, bounded local-execution adapter for mini-swe-agent–style coding agents.**
 
-JustAi sits between an engineering goal and the bash actions that fulfill it. It decomposes goals into chunks sized to a budgeted bash-action loop, dispatches each chunk through a sandboxed runner, classifies failures with a structured taxonomy, and learns from every run. The substrate underneath — `safe-mini` — is what makes the loop trustworthy on private repos: scoped worktrees, scrubbed environment, command/path guards, and an incident artifact for every action.
+JustAi sits between an engineering goal and the bash actions that fulfill it. It decomposes goals into bounded chunks, applies checkpoints, and records control-plane results. Its explicit SafeMini adapter runs actions through JustAi's Bubblewrap boundary in a copied worktree. SafeMini itself contributes worktree copying, environment scrubbing, command-policy guards, and an in-memory run transcript; those policy controls are not a standalone sandbox.
 
 [**Try the live demo**](https://justai-demo.vercel.app) · [**delegateandorchestrate.com**](https://delegateandorchestrate.com)
 
@@ -12,9 +12,9 @@ JustAi sits between an engineering goal and the bash actions that fulfill it. It
 
 [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) decides one bash command at a time within a budget — about a hundred lines of agent loop. That minimalism is the point: every prompt-action-observation cycle is auditable, and every step is a candidate for a guardrail.
 
-JustAi's bet: **sandbox the boundary, not the capability.** Inside a properly-scoped boundary, give the agent generous capability. Outside the boundary, deny by default. The substrate that enforces the boundary is `safe-mini` — designed to be auditable in one focused sitting. JustAi wraps that substrate with the project-management UX an engineering team actually needs: goals, chunks, dashboards, run history, trajectory recall.
+JustAi's boundary is explicit: the SafeMini adapter uses JustAi's Bubblewrap executor, while SafeMini provides the small runner contract and policy guards. The default local executor is unchanged; source integration is not a productive-runtime claim. JustAi wraps this bounded path with goals, chunks, dashboards, run history, and trajectory tooling.
 
-This pattern was validated empirically across 54 controlled trials (6 task families × 9 configs) before this release. The headline finding: an "open" executor leaked a fake credential 6/6 probe runs while still solving the task; the "safe" executor blocked 6/6 probes and still solved 6/6 tasks. Capability is preserved; the leak surface isn't.
+The reference lab recorded 54 deterministic trials (6 task families × 9 configurations). In those fixture probes, an "open" executor leaked a fake credential 6/6 times while a "safe" policy blocked 6/6 probes and still solved 6/6 tasks. These results are reference-study evidence, not proof of host isolation, release readiness, or broad real-model performance.
 
 ---
 
@@ -26,7 +26,7 @@ This pattern was validated empirically across 54 controlled trials (6 task famil
 - **Intent gate** (`intent_gate.py`) — classifies the goal type before any execution.
 - **Reviewer** (`reviewer.py`) — pre-dispatch quality gate that catches ambiguous descriptions and missing success criteria.
 - **Checkpoint** (`checkpoint.py`) — risk-level approval (R0 auto through R3 manual).
-- **Agent dispatch** (`agent_dispatch.py`) — runs each chunk through the substrate runner.
+- **Agent dispatch** (`agent_dispatch.py`) — runs the available local verification path and exposes the explicit SafeMini adapter.
 - **Runner Protocol** (`runner_protocol.py`) — compatibility protocol for
   existing control-plane code. The explicit `safe_mini_adapter.py` maps a
   JustAi task to SafeMini's public runner contract.
@@ -65,10 +65,10 @@ JustAi is one of three repos that share a substrate.
                 │  • bash-action runner loop                 │
                 │  • executor policies (open/safe/allowlist) │
                 │  • observation policies                    │
-                │  • worktree provisioner + env scrub        │
-                │  • command/path guard                      │
+                │  • copied worktree + env scrub             │
+                │  • command-policy guard                    │
                 │  • failure classifier (7-class taxonomy)   │
-                │  • trajectory + ledger                     │
+                │  • in-memory run transcript                │
                 │  • canonical types + AgentRunner Protocol  │
                 └────────────────────────────────────────────┘
 ```
