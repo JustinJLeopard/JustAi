@@ -322,11 +322,14 @@ def review(plan: Plan) -> ReviewResult:
     if not plan.tasks:
         return ReviewResult(approved=False, feedback=["Plan has no tasks."])
 
-    # Deterministic backstop: the fabricated-precondition check is cheap and
-    # high-precision, so run it on EVERY path -- an LLM that approves a plan
-    # which manufactures a required input must still be overridden. (Otherwise
-    # the check only ran on LLM failure, i.e. never in normal operation.)
-    fabricated = _fabricated_preconditions(plan)
+    # Deterministic backstops: cheap, high-precision checks that must run on
+    # EVERY path. A model that approves a plan which manufactures a required
+    # input, or whose success criteria cannot fail, must still be overridden.
+    # Kept here rather than only in _heuristic_review, which runs solely when
+    # the model call fails -- i.e. never in normal operation. The productive
+    # trial caught exactly that: the model approved a criterion that exits 0
+    # whichever branch runs, so the task verified vacuously.
+    fabricated = _unfalsifiable_criteria(plan) + _fabricated_preconditions(plan)
 
     try:
         plan_json = _format_plan_for_review(plan)

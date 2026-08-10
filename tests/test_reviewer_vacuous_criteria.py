@@ -81,3 +81,16 @@ def test_other_always_zero_shapes_are_rejected(criteria):
 def test_if_else_that_can_fail_is_kept():
     result = _heuristic_review(_plan("if test -f a.txt; then echo ok; else exit 1; fi"))
     assert result.approved is True, result.feedback
+
+
+def test_review_rejects_unfalsifiable_criteria_even_when_model_approves(monkeypatch):
+    """The productive trial showed the model approving the vacuous criterion,
+    so a check that lives only in the offline fallback never runs."""
+    from justai import reviewer as R
+
+    monkeypatch.setattr(R, "_call_litellm",
+                        lambda pj: {"approved": True, "feedback": [], "suggestions": []})
+    result = R.review(_plan("grep -Fxq 'Hi' greeting.py && echo 'success' || echo 'failure'"))
+    assert result.approved is False
+    blob = " ".join(result.feedback).lower()
+    assert "cannot fail" in blob and "override" in blob, result.feedback
