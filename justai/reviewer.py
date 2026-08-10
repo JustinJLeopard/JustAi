@@ -256,15 +256,23 @@ def review(plan: Plan) -> ReviewResult:
     if not plan.tasks:
         return ReviewResult(approved=False, feedback=["Plan has no tasks."])
 
+    # Deterministic backstop: the fabricated-precondition check is cheap and
+    # high-precision, so run it on EVERY path -- an LLM that approves a plan
+    # which manufactures a required input must still be overridden. (Otherwise
+    # the check only ran on LLM failure, i.e. never in normal operation.)
+    fabricated = _fabricated_preconditions(plan)
+
     try:
         plan_json = _format_plan_for_review(plan)
         raw = _call_litellm(plan_json)
+        feedback = raw.get("feedback", []) + raw.get("suggestions", []) + fabricated
         return ReviewResult(
-            approved=bool(raw.get("approved", False)),
-            feedback=raw.get("feedback", []) + raw.get("suggestions", []),
+            approved=bool(raw.get("approved", False)) and not fabricated,
+            feedback=feedback,
         )
     except Exception as e:
-        # LiteLLM unavailable — fall back to heuristic
+        # LiteLLM unavailable — fall back to heuristic (which already includes
+        # the fabricated-precondition check, so no double-count here).
         result = _heuristic_review(plan)
         if result.feedback:
             result.feedback.insert(0, f"[heuristic review: {e.__class__.__name__}]")

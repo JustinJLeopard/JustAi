@@ -208,3 +208,36 @@ def test_allows_input_existence_guard_without_creation():
     )
     r = _heuristic_review(plan)
     assert r.approved is True, r.feedback
+
+
+# --- The deterministic fabrication check must also backstop the LLM path.
+#     In production review() calls the LLM first; the heuristic (and its
+#     fabrication check) only runs on LLM failure, so a fabrication the LLM
+#     approves would slip through. ---
+
+def test_review_rejects_fabrication_even_when_llm_approves(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(
+        goal="Copy the file /tmp/src-1.dat to /tmp/out/copy.dat.",
+        tasks=[
+            _task("Ensure source exists", "Create /tmp/src-1.dat if it is missing.", "test -f /tmp/src-1.dat"),
+            _task("Copy", "cp /tmp/src-1.dat /tmp/out/copy.dat", "test -f /tmp/out/copy.dat", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": [], "suggestions": []})
+    result = R.review(plan)
+    assert result.approved is False
+    assert any("fabricat" in f.lower() for f in result.feedback), result.feedback
+
+
+def test_review_keeps_llm_approval_for_clean_plan(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(
+        goal="Summarize /data/report.csv into /out/summary.txt",
+        tasks=[_task("Summarize", "Read /data/report.csv and write summary to /out/summary.txt", "test -s /out/summary.txt")],
+        session_ref="t",
+    )
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": [], "suggestions": []})
+    result = R.review(plan)
+    assert result.approved is True, result.feedback
