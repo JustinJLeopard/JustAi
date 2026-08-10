@@ -176,6 +176,35 @@ def run(
                 os.environ["JUSTAI_AUTO_MODE"] = prior_auto
 
 
+def _report_learning_write(stored: bool, run_id: str, session_ref: str) -> None:
+    """Surface a lost learning record.
+
+    record_run() returns False when the trajectory store cannot persist the run
+    (backend unreachable, or learning disabled). Discarding that value meant a
+    run reported success while its evidence vanished, and `justai history` then
+    read "No run history found" -- indistinguishable from "no runs yet". Losing
+    the record must never fail a finished run, so this only reports.
+    """
+    if stored:
+        return
+    print(
+        "  [!] Run NOT recorded to the trajectory store -- learning evidence for "
+        "this run was lost (memory backend unavailable or learning disabled). "
+        "The run result itself is unaffected."
+    )
+    with suppress(Exception):
+        _hook.on_error(
+            "run not recorded to the trajectory store",
+            stage="learning",
+            root_cause="record_run returned False (backend unavailable or disabled)",
+        )
+    with suppress(Exception):
+        trace_event(
+            "learning-write-failed",
+            metadata={"run_id": run_id, "agent": session_ref, "stored": False},
+        )
+
+
 def _run_pipeline(
     goal: str,
     session_ref: str = SESSION_REF,
@@ -408,7 +437,9 @@ def _run_pipeline(
             print(f"\n[!] Run failed closed at execute: {diag}")
             _hook.on_error("unusable execution results", stage=stage5_name, root_cause=diag)
             _ledger.record(run_id=run_id, agent=session_ref, stage="execute-invalid")
-            record_run(goal, [], duration, final_status="failed")
+            _report_learning_write(
+                record_run(goal, [], duration, final_status="failed"), run_id, session_ref
+            )
             flush_traces()
             return OrchestrationResult(
                 goal=goal,
@@ -498,7 +529,9 @@ def _run_pipeline(
     print(format_summary(summary))
 
     # ── Record run as trajectory for future learning ─────────────────────────
-    record_run(goal, results, duration, final_status=summary.status)
+    _report_learning_write(
+        record_run(goal, results, duration, final_status=summary.status), run_id, session_ref
+    )
 
     flush_traces()
     escalation_count = sum(
