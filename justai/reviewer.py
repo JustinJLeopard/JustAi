@@ -58,7 +58,11 @@ Check each task for:
    or similar placeholders)? Flag missing criteria.
 5. SCOPE — Does any task try to do too many things? "Add endpoint AND write tests
    AND update README" in one task is too much. Flag it.
-6. PRECONDITION FABRICATION -- Does any task CREATE or generate an input the
+6. UNFALSIFIABLE CRITERIA -- Does any success_criteria exit 0 no matter what?
+   Patterns like "... || echo failure", "... || true", "...; true" always
+   succeed, so the task would be marked done without verifying anything.
+   Flag it and require a command that exits non-zero on failure.
+7. PRECONDITION FABRICATION -- Does any task CREATE or generate an input the
    goal treats as already existing (e.g., goal "summarize report.csv" but a
    task runs "touch report.csv")? Inputs the goal names as existing must not
    be manufactured by the plan; that yields false success. Flag it.
@@ -197,6 +201,52 @@ def _task_makes_exist(blob_lower: str, path_lower: str) -> bool:
     return False
 
 
+# A success criterion whose exit status is 0 regardless of outcome cannot
+# verify anything: the honest three-state result depends on the criterion
+# exiting non-zero when the work did not happen. Observed in a real run --
+# "grep -Fxq ... && echo 'success' || echo 'failure'" printed "failure" and
+# still exited 0, so the task was marked done.
+#
+# Only the LAST command decides the exit status, so a no-op fallback is judged
+# only when nothing falsifiable follows it: "mkdir -p out || true; test -f out"
+# is a legitimate setup idiom and must not be flagged. Quoted spans are blanked
+# first so "grep -Fq '|| echo' deploy.sh" is not mistaken for the idiom itself.
+_QUOTED_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+_CANNOT_FAIL_RE = re.compile(
+    r"\|\|\s*(?:true\b|:(?:\s|;|&|$)|echo\b|printf\b|exit\s+0\b)[^;&|\n]*$"
+    r"|(?:^|[;\n])\s*(?:true|:|exit\s+0)\s*$",
+    re.MULTILINE,
+)
+# A criterion that is nothing but an always-succeeding command.
+_ALWAYS_ZERO_RE = re.compile(r"^(?:true|:|echo\b.*|printf\b.*)$")
+# if/then/else where neither branch can fail -- the nearest neighbour of the
+# observed bug, reachable by a replanner told to stop using "|| echo".
+_IF_ELSE_ALWAYS_ZERO_RE = re.compile(r"^if\b.*\belse\b.*\bfi\b\s*$", re.DOTALL)
+
+
+def _unfalsifiable_criteria(plan: Plan) -> list[str]:
+    """Flag success criteria that always exit 0."""
+    issues: list[str] = []
+    for i, t in enumerate(plan.tasks):
+        criteria = (t.success_criteria or "").strip()
+        if not criteria:
+            continue
+        bare = _QUOTED_SPAN_RE.sub("''", criteria).strip()
+        cannot_fail = bool(_CANNOT_FAIL_RE.search(bare)) or bool(_ALWAYS_ZERO_RE.match(bare))
+        if not cannot_fail and _IF_ELSE_ALWAYS_ZERO_RE.match(bare):
+            # if/fi returns its last branch's status; without a failing exit or
+            # false in either branch it can only succeed.
+            cannot_fail = not re.search(r"\bexit\s+[1-9]|\bfalse\b|\breturn\s+[1-9]", bare)
+        if cannot_fail:
+            issues.append(
+                f"Task [{i}] '{t.title}': success criteria cannot fail -- "
+                f"{criteria[:80]!r} exits 0 whichever branch runs, so verification "
+                "would pass for any outcome. Use a command that exits non-zero "
+                "when the work did not happen."
+            )
+    return issues
+
+
 def _fabricated_preconditions(plan: Plan) -> list[str]:
     """Flag tasks that manufacture an input the goal assumes already exists.
 
@@ -243,6 +293,7 @@ def _heuristic_review(plan: Plan) -> ReviewResult:
             if dep >= i:
                 issues.append(f"Task [{i}] '{task.title}': depends_on [{dep}] which comes after it")
 
+    issues.extend(_unfalsifiable_criteria(plan))
     issues.extend(_fabricated_preconditions(plan))
 
     return ReviewResult(approved=len(issues) == 0, feedback=issues)
