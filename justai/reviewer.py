@@ -265,11 +265,19 @@ def review(plan: Plan) -> ReviewResult:
     try:
         plan_json = _format_plan_for_review(plan)
         raw = _call_litellm(plan_json)
-        feedback = raw.get("feedback", []) + raw.get("suggestions", []) + fabricated
-        return ReviewResult(
-            approved=bool(raw.get("approved", False)) and not fabricated,
-            feedback=feedback,
-        )
+        llm_approved = bool(raw.get("approved", False))
+        feedback = list(raw.get("feedback", []) or []) + list(raw.get("suggestions", []) or [])
+        if fabricated:
+            # Preserve the disagreement: when the model approved a plan the
+            # deterministic check rejects, say so explicitly and keep the
+            # model's own verdict visible, so an operator can see both.
+            if llm_approved:
+                feedback.append(
+                    "[deterministic override] The model reviewer APPROVED this plan; the "
+                    "precondition-fabrication check overrode that approval for the reason(s) below."
+                )
+            feedback.extend(fabricated)
+        return ReviewResult(approved=llm_approved and not fabricated, feedback=feedback)
     except Exception as e:
         # LiteLLM unavailable — fall back to heuristic (which already includes
         # the fabricated-precondition check, so no double-count here).
