@@ -720,8 +720,16 @@ def _normalize_blocked_indices(blocked_indices, n: int) -> dict[int, str]:
     exact false success this guard prevents. Accepts a set or an
     {index: reason} dict. bool is rejected explicitly (it is an int subclass).
     """
-    if not blocked_indices:
+    if blocked_indices is None:
         return {}
+    # Only None means "omitted". A falsy malformed value (False, 0, "", [], ())
+    # must NOT be read as "nothing blocked", and an unsupported iterable must not
+    # be silently accepted — require the declared set/dict type before validating.
+    if not isinstance(blocked_indices, (set, frozenset, dict)):
+        raise ValueError(
+            f"blocked_indices must be a set or {{index: reason}} dict, "
+            f"got {type(blocked_indices).__name__}"
+        )
     normalized: dict[int, str] = {}
     for idx in blocked_indices:
         if isinstance(idx, bool) or not isinstance(idx, int):
