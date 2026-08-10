@@ -35,6 +35,9 @@ import ipaddress
 import json
 import os
 import subprocess
+import tempfile
+
+from justai.sandbox import SandboxUnavailable, run_sandboxed
 import time
 import urllib.parse
 import urllib.request
@@ -475,6 +478,25 @@ def escalate_task(
     return escalation_result
 
 
+_FALLBACK_WORKDIR: list[str] = []
+
+
+def _task_workdir() -> str:
+    """The ONLY writable window the sandboxed executor gets (Atom C).
+
+    ``JUSTAI_TASK_WORKDIR`` when configured; otherwise one private per-process
+    scratch directory created on first use — stable across commands so a
+    create-then-verify sequence shares state. A configured path that does not
+    exist fails closed in ``run_sandboxed`` (the command does not run).
+    """
+    configured = os.environ.get("JUSTAI_TASK_WORKDIR", "").strip()
+    if configured:
+        return configured
+    if not _FALLBACK_WORKDIR:
+        _FALLBACK_WORKDIR.append(tempfile.mkdtemp(prefix="justai-work-"))
+    return _FALLBACK_WORKDIR[0]
+
+
 def _verify_task(task: Task) -> tuple[bool, str]:
     """Run the task's success criteria and return (passed, output)."""
     criteria = task.success_criteria
@@ -485,19 +507,21 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         return None, "no automated verification (task not confirmed done)"
 
     try:
-        result = subprocess.run(
+        result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", criteria],
-            capture_output=True,
-            text=True,
+            _task_workdir(),
             timeout=30,
         )
-        if result.returncode == 0:
-            return True, result.stdout[:500]
-        return False, f"exit {result.returncode}: {result.stderr[:300]}"
-    except subprocess.TimeoutExpired:
-        return False, "verification command timed out"
+    except SandboxUnavailable as exc:
+        # Fail closed: verification did not run, so the task cannot pass.
+        return False, f"verification not run, sandbox unavailable: {str(exc)[:200]}"
     except Exception as exc:
         return False, str(exc)[:200]
+    if result.timed_out:
+        return False, "verification command timed out"
+    if result.returncode == 0:
+        return True, result.stdout[:500]
+    return False, f"exit {result.returncode}: {result.stderr[:300]}"
 
 
 LOCAL_EXEC_TIMEOUT = int(os.environ.get("JUSTAI_LOCAL_EXEC_TIMEOUT", "60"))
@@ -590,23 +614,29 @@ def _parse_action(raw: str) -> dict:
 
 
 def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple[bool, str]:
-    """Run one bash command with a timeout; return (ok, receipts)."""
+    """Run one bash command INSIDE the bwrap boundary; return (ok, receipts).
+
+    Raises ``SandboxUnavailable`` when the boundary cannot be constructed: the
+    command did not and will not run (fail closed). Callers surface that as a
+    pre-execution error, never as an executed failure.
+    """
     try:
-        result = subprocess.run(
+        result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", command],
-            capture_output=True,
-            text=True,
+            _task_workdir(),
             timeout=timeout,
         )
-        out = (result.stdout[-800:] + result.stderr[-400:]).strip()
-        ok = result.returncode == 0
-        if not ok:
-            out = (out + f" (exit {result.returncode})").strip()
-        return ok, out or f"(exit {result.returncode})"
-    except subprocess.TimeoutExpired:
-        return False, "execution timed out (exit: timeout)"
+    except SandboxUnavailable:
+        raise
     except Exception as exc:
         return False, str(exc)[:200]
+    if result.timed_out:
+        return False, "execution timed out (exit: timeout)"
+    out = (result.stdout[-800:] + result.stderr[-400:]).strip()
+    ok = result.returncode == 0
+    if not ok:
+        out = (out + f" (exit {result.returncode})").strip()
+    return ok, out or f"(exit {result.returncode})"
 
 
 def _perform_task_action(task: Task) -> tuple[str, str]:
@@ -648,7 +678,11 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
         return "error", "model returned no command"
     if _is_catastrophic(command):
         return "blocked", f"refused catastrophic command: {command[:120]}"
-    ok, out = _run_local_command(command)
+    try:
+        ok, out = _run_local_command(command)
+    except SandboxUnavailable as exc:
+        # Fail closed at the operator surface: the command was never executed.
+        return "error", f"sandbox unavailable, command not executed: {str(exc)[:200]}"
     outcome = "executed" if ok else "executed_failed"
     return outcome, "$ " + command[:160] + chr(10) + out[:400]
 

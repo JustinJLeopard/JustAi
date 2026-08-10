@@ -8,6 +8,9 @@ the honest-completion invariants from the honest-completion fix intact.
 from __future__ import annotations
 
 import json
+import shutil
+
+import pytest
 
 from justai import agent_dispatch
 from justai.agent_dispatch import (
@@ -18,6 +21,19 @@ from justai.agent_dispatch import (
 )
 from justai.scope_planner import AgentType, RiskLevel, Task
 from justai.synthesizer import synthesize
+
+
+# Atom C: execution goes through the bwrap boundary; only the task workdir is
+# writable. Point the workdir at each test's tmp_path so host-visible artifact
+# assertions still prove the real effect through the single rw bind.
+needs_bwrap = pytest.mark.skipif(
+    shutil.which("bwrap") is None, reason="bwrap not installed"
+)
+
+
+@pytest.fixture(autouse=True)
+def _task_workdir_is_tmp_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("JUSTAI_TASK_WORKDIR", str(tmp_path))
 
 
 def _task(description: str, criteria: str, title: str = "t") -> Task:
@@ -38,6 +54,7 @@ def _stub_llm(monkeypatch, payload):
     monkeypatch.setattr(agent_dispatch, "_llm_call", fake)
 
 
+@needs_bwrap
 def test_local_execution_creates_artifact_and_reports_done(tmp_path, monkeypatch):
     artifact = tmp_path / "art.txt"
     _stub_llm(monkeypatch, json.dumps({"command": f"printf %s HELLO_JUSTAI > {artifact}"}))
@@ -69,6 +86,7 @@ def test_model_refusal_is_failed(monkeypatch):
     assert "refused" in res.result
 
 
+@needs_bwrap
 def test_executed_but_verify_fails(monkeypatch):
     _stub_llm(monkeypatch, json.dumps({"command": "true"}))
     res = _execute_single_local(_task("x", "false"))  # verify exits 1
@@ -76,6 +94,7 @@ def test_executed_but_verify_fails(monkeypatch):
     assert "verify failed" in res.result
 
 
+@needs_bwrap
 def test_executed_without_criteria_is_unverified(monkeypatch):
     _stub_llm(monkeypatch, json.dumps({"command": "true"}))
     res = _execute_single_local(_task("x", ""))  # no criteria -> verify None
@@ -97,6 +116,7 @@ def test_catastrophic_command_is_blocked_and_not_run(tmp_path, monkeypatch):
     assert not _is_catastrophic("rm -rf /tmp/justai-scratch")
 
 
+@needs_bwrap
 def test_parse_action_tolerates_fenced_json(monkeypatch):
     fenced = "```json\n{\"command\": \"echo hi\"}\n```"
     _stub_llm(monkeypatch, fenced)
@@ -104,6 +124,7 @@ def test_parse_action_tolerates_fenced_json(monkeypatch):
     assert res.status == "done"
 
 
+@needs_bwrap
 def test_end_to_end_local_run_flips_artifact_and_completes(tmp_path, monkeypatch):
     artifact = tmp_path / "e2e.txt"
     explore = _task("Explore the workspace", "echo ok", title="Explore")
