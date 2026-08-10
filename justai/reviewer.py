@@ -136,30 +136,34 @@ def _call_litellm(plan_json: str) -> dict:
     return json.loads(content)
 
 
-# Verbs that CONSUME a pre-existing input, matched at a word boundary (prefix)
-# so "summariz" covers summarize/summarizing.
-_CONSUMER_VERBS = (
-    "copy", "copies", "move", "moves", "rename", "summariz", "analyz",
-    "parse", "convert", "backup", "compress", "translat", "extract",
-    "deduplicat", "ingest",
+# Two ways a GOAL can authorize a path being made, with different binding rules.
+# A preposition binds tightly to its object ("to X", "into X"), so the path must
+# follow immediately -- otherwise a cue early in the sentence would reach across
+# and wrongly exempt a real input. A creation verb naturally takes an
+# intervening noun phrase ("create a fresh SQLite database at X"), so it allows
+# a short bounded gap.
+_DEST_PREP_RE = r"(?:\bto|\binto|\bonto|\bas|\boutput|\bsave|\bexport|\bdump|-o)\s+"
+_MAKE_VERB_RE = (
+    r"(?:\bcreat\w*|\bgenerat\w*|\bwrit\w*|\bproduc\w*|\bmak\w*|\bbuild\w*|\bnew\b|"
+    r"\binitializ\w*|\breinitializ\w*|\breset|\brotat\w*|\btruncat\w*|\boverwrit\w*|"
+    r"\bregenerat\w*|\brecreat\w*|\bscaffold\w*|\bprovision\w*|\bseed|\bbootstrap|"
+    r"\brender)"
 )
-# Destination cues: when the goal introduces a path as an output/destination,
-# a task creating it is correct, not a fabricated precondition. Kept liberal on
-# purpose -- misclassifying an input as an output only costs a missed flag,
-# never a blocked good plan (false positives are the worse failure here).
-_DEST_CUE_RE = (
-    r"(?:\bto|\binto|\bonto|\bas|\boutput|\bsave|\bexport|\bdump|\brender|"
-    r"\bwrit\w*|\bgenerat\w*|\bcreat\w*|\bproduc\w*|-o)\s+"
-)
-
-
-def _has_consumer_verb(goal_lower: str) -> bool:
-    return any(re.search(r"\b" + re.escape(v), goal_lower) for v in _CONSUMER_VERBS)
 
 
 def _is_goal_output_path(goal_lower: str, path_lower: str) -> bool:
-    """True if the goal introduces this path as an output/destination."""
-    return bool(re.search(_DEST_CUE_RE + re.escape(path_lower), goal_lower))
+    """The goal introduces this path as an output/destination."""
+    return bool(re.search(_DEST_PREP_RE + re.escape(path_lower), goal_lower))
+
+
+def _goal_permits_making(goal_lower: str, path_lower: str) -> bool:
+    """The goal names this path as an output/destination, or explicitly
+    authorizes creating/resetting/rotating it."""
+    if _is_goal_output_path(goal_lower, path_lower):
+        return True
+    return bool(
+        re.search(_MAKE_VERB_RE + r"[^\n]{0,40}?" + re.escape(path_lower), goal_lower)
+    )
 
 
 def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
@@ -200,21 +204,24 @@ def _task_makes_exist(blob_lower: str, path_lower: str) -> bool:
 def _fabricated_preconditions(plan: Plan) -> list[str]:
     """Flag tasks that manufacture an input the goal assumes already exists.
 
-    A goal that CONSUMES an input (copy/summarize/convert X) must not be
-    satisfied against an X the plan itself created -- that is a false completion.
-    Only fires for a concrete file-like input the goal does NOT introduce as an
-    output/destination or ask to create, when a task makes that exact path exist
-    (shell op or natural-language creation). Errs toward NOT flagging.
+    A goal that operates on an existing input must not be satisfied against an
+    input the plan itself created -- that is a false completion. Fires for any
+    concrete file-like path the goal names but does NOT introduce as an output/
+    destination and does NOT authorize creating or resetting, when a task makes
+    that exact path exist (shell op or natural-language creation).
+
+    An earlier version gated the whole check on an allowlist of 'consumer verbs',
+    which silently skipped every goal phrased with merge/load/validate/restore/
+    apply/count -- the dominant miss cause in held-out evaluation. The gate is
+    gone; precision is held by the exemption above plus the direct-object rule.
     """
     goal_lower = (plan.goal or "").lower()
-    if not _has_consumer_verb(goal_lower):
-        return []
     goal_paths = set(re.findall(r"[\w./~-]*\.[A-Za-z0-9]{1,6}\b", plan.goal or ""))
     issues: list[str] = []
     seen: set[tuple[int, str]] = set()
     for path in sorted(goal_paths):
         pl = path.lower()
-        if _is_goal_output_path(goal_lower, pl):
+        if _goal_permits_making(goal_lower, pl):
             continue
         for i, t in enumerate(plan.tasks):
             blob = ((t.title or "") + " " + (t.description or "") + " " + (t.success_criteria or "")).lower()
