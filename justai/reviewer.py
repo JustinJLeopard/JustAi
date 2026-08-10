@@ -177,14 +177,34 @@ def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
     )
 
 
+def _task_makes_exist(blob_lower: str, path_lower: str) -> bool:
+    """True if a task makes the given path EXIST -- via a shell op, or a prose
+    creation whose DIRECT OBJECT is the path/basename ("create X", "write a
+    placeholder X"). Reads of the path ("summary FROM x", "backup OF x") and
+    read-only checks ("confirm x exists") carry no creating-object match, so
+    they are not flagged. Path is boundary-anchored so report.csv does not match
+    report.csv.lock.
+    """
+    if _task_creates_path(blob_lower, path_lower):
+        return True
+    verb = (r"\b(?:create|creates|creating|touch|mkdir|generate|generates|"
+            r"make|makes|initializ\w*|write|writes|writing)\s+")
+    det = r"(?:(?:a|an|the|empty|new|blank|dummy|stub|initial|placeholder|requested)\s+){0,4}"
+    basename = path_lower.rsplit("/", 1)[-1]
+    for target in {re.escape(path_lower), re.escape(basename)}:
+        if re.search(verb + det + r"(?<![\w./~-])" + target + r"(?![\w./~-])", blob_lower):
+            return True
+    return False
+
+
 def _fabricated_preconditions(plan: Plan) -> list[str]:
     """Flag tasks that manufacture an input the goal assumes already exists.
 
     A goal that CONSUMES an input (copy/summarize/convert X) must not be
     satisfied against an X the plan itself created -- that is a false completion.
-    Conservative: only fires when the goal names a concrete file-like input that
-    it does NOT introduce as an output, and a task creates that exact path. Errs
-    toward NOT flagging (a missed case is cheaper than blocking a good plan).
+    Only fires for a concrete file-like input the goal does NOT introduce as an
+    output/destination or ask to create, when a task makes that exact path exist
+    (shell op or natural-language creation). Errs toward NOT flagging.
     """
     goal_lower = (plan.goal or "").lower()
     if not _has_consumer_verb(goal_lower):
@@ -198,12 +218,12 @@ def _fabricated_preconditions(plan: Plan) -> list[str]:
             continue
         for i, t in enumerate(plan.tasks):
             blob = ((t.title or "") + " " + (t.description or "") + " " + (t.success_criteria or "")).lower()
-            if _task_creates_path(blob, pl) and (i, pl) not in seen:
+            if pl in blob and _task_makes_exist(blob, pl) and (i, pl) not in seen:
                 seen.add((i, pl))
                 issues.append(
-                    f"Task [{i}] '{t.title}': plan manufactures '{path}', which the goal "
-                    f"treats as an existing input (fabricated precondition -- goal may be "
-                    f"satisfied against a file the plan created, not the real one)"
+                    f"Task [{i}] '{t.title}': plan makes '{path}' exist, but the goal "
+                    f"treats it as an existing input (fabricated precondition -- the goal "
+                    f"could be satisfied against a file the plan created, not the real one)"
                 )
     return issues
 

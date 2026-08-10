@@ -106,3 +106,105 @@ def test_allows_normal_consumer_plan_without_fabrication():
     )
     result = _heuristic_review(plan)
     assert result.approved is True, result.feedback
+
+
+# --- Real planner output uses PROSE, not shell ops. These mirror the held-out
+#     lab/planner_intent_ab_cases.json cases (the first version of this fix only
+#     caught literal `touch`/redirect and was inert on real plans). ---
+
+def test_flags_prose_create_missing_source():
+    plan = Plan(
+        goal="Copy the file /tmp/src-9z8x7.dat to /tmp/out/copy.dat.",
+        tasks=[
+            _task("Ensure source file exists",
+                  "Create /tmp/src-9z8x7.dat if it is missing.",
+                  "test -f /tmp/src-9z8x7.dat"),
+            _task("Copy source file", "Copy /tmp/src-9z8x7.dat to /tmp/out/copy.dat.",
+                  "test -f /tmp/out/copy.dat", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is False and any("fabricat" in f.lower() for f in r.feedback), r.feedback
+
+
+def test_flags_prose_conditional_create_of_existing_source():
+    plan = Plan(
+        goal="Copy the existing file /workspace/invoice.csv to /workspace/archive/invoice.csv without modifying the source.",
+        tasks=[
+            _task("Prepare the source invoice",
+                  "If /workspace/invoice.csv is absent, create an empty invoice.csv so the copy can proceed.",
+                  "test -f /workspace/invoice.csv"),
+            _task("Archive the invoice", "Copy /workspace/invoice.csv to /workspace/archive/invoice.csv.",
+                  "cmp /workspace/invoice.csv /workspace/archive/invoice.csv", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is False and any("fabricat" in f.lower() for f in r.feedback), r.feedback
+
+
+def test_flags_prose_placeholder_for_readonly_input():
+    plan = Plan(
+        goal="Summarize the existing report at /workspace/report.md into /workspace/summary.txt; do not modify report.md.",
+        tasks=[
+            _task("Ensure a report is available",
+                  "Write a placeholder /workspace/report.md if the requested report is missing.",
+                  "test -s /workspace/report.md"),
+            _task("Summarize the report",
+                  "Read /workspace/report.md and write its summary to /workspace/summary.txt.",
+                  "test -s /workspace/summary.txt", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is False and any("fabricat" in f.lower() for f in r.feedback), r.feedback
+
+
+def test_allows_confirm_exists_without_creating():
+    # A read-only "confirm it exists" task is not fabrication.
+    plan = Plan(
+        goal="Copy the existing /workspace/source.txt to /workspace/new/archive/source.txt, creating destination directories as needed without modifying the source.",
+        tasks=[
+            _task("Verify the existing source",
+                  "Confirm /workspace/source.txt exists without changing it.",
+                  "test -f /workspace/source.txt"),
+            _task("Create destination directories", "Create /workspace/new/archive as permitted by the goal.",
+                  "test -d /workspace/new/archive", depends_on=[0]),
+            _task("Copy the source", "Copy /workspace/source.txt to /workspace/new/archive/source.txt without modifying the source.",
+                  "cmp /workspace/source.txt /workspace/new/archive/source.txt", depends_on=[0, 1]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is True, r.feedback
+
+
+
+def test_allows_input_used_as_source_of_creation():
+    # "generate a summary FROM report.csv" reads the input; must not flag it.
+    plan = Plan(
+        goal="Summarize /data/report.csv into /out/summary.txt",
+        tasks=[
+            _task("Summarize", "Generate a summary from /data/report.csv and write it to /out/summary.txt.",
+                  "test -s /out/summary.txt"),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is True, r.feedback
+
+
+def test_allows_input_existence_guard_without_creation():
+    # A guard that aborts when the input is missing does not create it.
+    plan = Plan(
+        goal="Copy /data/in.csv to /data/out.csv",
+        tasks=[
+            _task("Guard", "If /data/in.csv is missing, generate an error and abort.",
+                  "test -f /data/in.csv"),
+            _task("Copy", "cp /data/in.csv /data/out.csv", "test -f /data/out.csv", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    r = _heuristic_review(plan)
+    assert r.approved is True, r.feedback
