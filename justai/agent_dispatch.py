@@ -34,6 +34,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -484,17 +485,34 @@ _FALLBACK_WORKDIR: list[str] = []
 def _task_workdir() -> str:
     """The ONLY writable window the sandboxed executor gets (Atom C).
 
-    ``JUSTAI_TASK_WORKDIR`` when configured; otherwise one private per-process
-    scratch directory created on first use — stable across commands so a
-    create-then-verify sequence shares state. A configured path that does not
-    exist fails closed in ``run_sandboxed`` (the command does not run).
+    ``JUSTAI_TASK_WORKDIR`` when configured; otherwise the process working
+    directory, which is what the executor used before the sandbox landed.
+    Defaulting to a private scratch directory instead silently relocated every
+    run away from the workspace the operator was standing in, so goals writing
+    to real paths failed. A cwd of ``/`` is refused -- binding the whole
+    filesystem read-write would defeat the boundary -- and falls back to one
+    private per-process scratch directory.
     """
     configured = os.environ.get("JUSTAI_TASK_WORKDIR", "").strip()
     if configured:
         return configured
+    cwd = os.getcwd()
+    if os.path.realpath(cwd) != "/":
+        return cwd
     if not _FALLBACK_WORKDIR:
         _FALLBACK_WORKDIR.append(tempfile.mkdtemp(prefix="justai-work-"))
     return _FALLBACK_WORKDIR[0]
+
+
+def _outside_workdir_paths(command: str, workdir: str) -> list[str]:
+    """Absolute paths in the command that fall outside the writable window."""
+    root = os.path.realpath(workdir)
+    out: list[str] = []
+    for cand in re.findall(r"/[\w./~-]+", command):
+        rp = os.path.realpath(cand)
+        if rp != root and not rp.startswith(root + os.sep) and cand not in out:
+            out.append(cand)
+    return out
 
 
 def _verify_task(task: Task) -> tuple[bool, str]:
@@ -620,10 +638,11 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
     command did not and will not run (fail closed). Callers surface that as a
     pre-execution error, never as an executed failure.
     """
+    workdir = _task_workdir()
     try:
         result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", command],
-            _task_workdir(),
+            workdir,
             timeout=timeout,
         )
     except SandboxUnavailable:
@@ -636,6 +655,17 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
     ok = result.returncode == 0
     if not ok:
         out = (out + f" (exit {result.returncode})").strip()
+        # A path outside the writable window reports "No such file or
+        # directory" even though it exists on the host. Say so, or the operator
+        # debugs a phantom missing file.
+        outside = _outside_workdir_paths(command, workdir)
+        if outside:
+            out = (
+                out
+                + f" [sandbox: only {workdir} is writable; outside it: "
+                + ", ".join(outside[:3])
+                + "]"
+            )
     return ok, out or f"(exit {result.returncode})"
 
 
