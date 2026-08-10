@@ -26,6 +26,7 @@ Evidence-based design:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -59,6 +60,8 @@ FIDELITY_GATE_ENABLED = os.environ.get("JUSTAI_FIDELITY_GATE", "1").lower() in (
 # Serializes the JUSTAI_AUTO_MODE export around a run so overlapping runs cannot
 # corrupt the shared variable. Reentrant so a nested run on the same thread works.
 _RUN_ENV_LOCK = threading.RLock()
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -174,6 +177,49 @@ def run(
                 os.environ.pop("JUSTAI_AUTO_MODE", None)
             else:
                 os.environ["JUSTAI_AUTO_MODE"] = prior_auto
+
+
+def _report_learning_write(stored: bool, run_id: str, session_ref: str) -> None:
+    """Surface a lost learning record.
+
+    record_run() returns False when the trajectory store cannot persist the run
+    (backend unreachable, or learning not configured). Discarding that value
+    meant a run reported success while its evidence vanished, and
+    `justai history` then read "No run history found" -- indistinguishable from
+    "no runs yet". Losing the record must never fail a finished run, so the
+    whole body is guarded and nothing here can propagate.
+
+    Deliberately informational, not an error notification: record_run returns a
+    bare bool, so "backend died" is indistinguishable from "learning was never
+    configured". Paging per run on the second case would be pure alarm fatigue,
+    and the operator would mute the channel that is supposed to carry the first.
+    Distinguishing them needs a tri-state from record_run; deferred with the
+    rest of the trajectory-backend work.
+    """
+    if stored:
+        return
+    try:
+        # stderr: this is a diagnostic about the tool, not part of the run
+        # output that callers parse.
+        print(
+            "  [!] Run NOT recorded to the trajectory store -- learning evidence "
+            "for this run was lost (backend unavailable or learning not "
+            "configured). The run result itself is unaffected.",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 -- a closed/broken stdout must not fail a finished run
+        logger.debug("learning-write report could not be printed: %r", exc)
+    try:
+        _hook.on_stage("learning", "run not recorded (trajectory store unavailable)")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("learning-write hook failed: %r", exc)
+    try:
+        trace_event(
+            "learning-write-failed",
+            metadata={"run_id": run_id, "agent": session_ref, "stored": stored},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("learning-write trace failed: %r", exc)
 
 
 def _run_pipeline(
@@ -408,7 +454,9 @@ def _run_pipeline(
             print(f"\n[!] Run failed closed at execute: {diag}")
             _hook.on_error("unusable execution results", stage=stage5_name, root_cause=diag)
             _ledger.record(run_id=run_id, agent=session_ref, stage="execute-invalid")
-            record_run(goal, [], duration, final_status="failed")
+            _report_learning_write(
+                record_run(goal, [], duration, final_status="failed"), run_id, session_ref
+            )
             flush_traces()
             return OrchestrationResult(
                 goal=goal,
@@ -498,7 +546,9 @@ def _run_pipeline(
     print(format_summary(summary))
 
     # ── Record run as trajectory for future learning ─────────────────────────
-    record_run(goal, results, duration, final_status=summary.status)
+    _report_learning_write(
+        record_run(goal, results, duration, final_status=summary.status), run_id, session_ref
+    )
 
     flush_traces()
     escalation_count = sum(
