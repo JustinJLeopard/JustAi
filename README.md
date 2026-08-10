@@ -10,7 +10,8 @@ JustAi is a project-orchestration control-plane for breaking engineering goals i
 This repository is in a public stabilization pass after a cleanup and architecture reset.
 
 - Current code is the JustAi control-plane layer.
-- The execution substrate is being separated into `safe-mini`.
+- The execution substrate lives in the separate `safe-mini` repository and is
+  consumed through an explicit, opt-in adapter.
 - The experiment/calibration driver is being separated into `local-resident`.
 - Some CLI paths still expose transitional behavior while the split finishes.
 
