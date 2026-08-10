@@ -455,3 +455,40 @@ def test_live_dispatch_end_to_end_greeting(tmp_path, monkeypatch):
     task = Task("t", "d", AgentType.MINI, RiskLevel.R0, "test -f greeting.py", [])
     passed, _ = ad._verify_task(task)
     assert passed is True
+
+
+# ── Ephemeral-root writes must fail, not vanish ──────────────────────────────
+# Without this, a write outside the workdir lands on the sandbox's ephemeral
+# root, returns exit 0, and disappears -- the executor reports the command
+# succeeded while its effect never existed. Verification catches it later, but
+# the receipts claim success for work that vanished.
+
+
+def test_argv_remounts_the_root_read_only_after_the_binds(tmp_path):
+    argv = _argv(str(tmp_path))
+    i = argv.index("--remount-ro")
+    assert argv[i + 1] == "/"
+    assert i > argv.index("--bind"), "must come after the binds, or it would undo them"
+    assert i < argv.index("--"), "must be a bwrap option, not part of the command"
+
+
+@needs_bwrap
+def test_live_write_outside_the_workdir_fails_instead_of_vanishing(tmp_path):
+    from justai.sandbox import run_sandboxed
+
+    res = run_sandboxed(["bash", "-c", "printf x > /etc/nope-ro.txt"], str(tmp_path), timeout=30)
+    assert res.returncode != 0, "an unpersisted write must not report success"
+    assert "read-only" in res.stderr.lower()
+    assert not Path("/etc/nope-ro.txt").exists(), "must never reach the host"
+
+
+@needs_bwrap
+def test_live_workdir_and_tmp_writes_still_work(tmp_path):
+    from justai.sandbox import run_sandboxed
+
+    res = run_sandboxed(
+        ["bash", "-c", "printf y > inside.txt && printf z > /tmp/scratch.txt && test -s /tmp/scratch.txt"],
+        str(tmp_path), timeout=30,
+    )
+    assert res.returncode == 0, res.stderr
+    assert (tmp_path / "inside.txt").read_text() == "y"
