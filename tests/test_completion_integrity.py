@@ -545,6 +545,80 @@ def test_an_executor_that_returns_no_sequence_preserves_the_failed_run(returned)
     stubs["flush_traces"].assert_called_once()
 
 
+# ── Finding 8: stage-5 traces preserve the canonical result tally ────────────
+# The human detail remains the compact, truthful ``done/total`` summary.  The
+# structured trace must additionally retain every canonical bucket so withheld
+# and unverified work cannot disappear from machine-readable evidence.
+
+
+def _trace_capture():
+    traces = {}
+
+    def factory(name, *args, **kwargs):
+        del args, kwargs
+        traces[name] = _trace_ctx7()
+        return traces[name]
+
+    return traces, MagicMock(side_effect=factory)
+
+
+def test_stage5_trace_records_every_result_bucket_without_changing_detail():
+    from justai.orchestrator import run
+
+    statuses = ["done", "error", "skipped", "blocked", "unverified"]
+    results = [_result(status, title=f"Task {index}") for index, status in enumerate(statuses)]
+    plan = _Plan(goal="g", tasks=[_task(result.title) for result in results], session_ref="t")
+    traces, trace_generation = _trace_capture()
+
+    with _orchestrated_run(
+        plan,
+        escalate_plan=MagicMock(return_value=results),
+        trace_generation=trace_generation,
+    ) as stubs:
+        run("goal", session_ref="t", auto=True, local=True)
+
+    traces["local"].end.assert_called_once_with(
+        output_text="1/5 done",
+        metadata={
+            "done": 1,
+            "failed": 1,
+            "skipped": 1,
+            "blocked": 1,
+            "unverified": 1,
+            "total": 5,
+        },
+    )
+    stubs["OrchestratorHook"].return_value.on_stage.assert_any_call("local", "1/5 done")
+
+
+def test_stage5_trace_accounts_for_an_all_unverified_run():
+    from justai.orchestrator import run
+
+    results = [_result("unverified", title="Task 0")]
+    plan = _Plan(goal="g", tasks=[_task("Task 0")], session_ref="t")
+    traces, trace_generation = _trace_capture()
+
+    with _orchestrated_run(
+        plan,
+        escalate_plan=MagicMock(return_value=results),
+        trace_generation=trace_generation,
+    ):
+        run("goal", session_ref="t", auto=True, local=True)
+
+    metadata = traces["local"].end.call_args.kwargs["metadata"]
+    assert metadata == {
+        "done": 0,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unverified": 1,
+        "total": 1,
+    }
+    assert sum(
+        metadata[key] for key in ("done", "failed", "skipped", "blocked", "unverified")
+    ) == metadata["total"]
+
+
 # ── Findings 3 + 6: dependency indexing fails closed; positions preserved ─────
 # depends_on / blocked_indices come from model-authored plans and checkpoint
 # decisions. An index that cannot name an already-decided task must fail its

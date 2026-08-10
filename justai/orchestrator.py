@@ -419,13 +419,19 @@ def _run_pipeline(
                 status="failed",
             )
 
-        done_count = exec_counts.done
-        failed_count = exec_counts.failed
+        execution_detail = f"{exec_counts.done}/{exec_counts.total} done"
         _t5.end(
-            output_text=f"{done_count}/{len(results)} done",
-            metadata={"done": done_count, "failed": failed_count, "total": len(results)},
+            output_text=execution_detail,
+            metadata={
+                "done": exec_counts.done,
+                "failed": exec_counts.failed,
+                "skipped": exec_counts.skipped,
+                "blocked": exec_counts.blocked,
+                "unverified": exec_counts.unverified,
+                "total": exec_counts.total,
+            },
         )
-    _hook.on_stage(stage5_name, f"{done_count}/{len(results)} done")
+    _hook.on_stage(stage5_name, execution_detail)
     _ledger.record(run_id=run_id, agent=session_ref, stage=stage5_name)
 
     # ── Stage 6: Intent-Fidelity Gate (A or better) ───────────────────────────
