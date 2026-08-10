@@ -221,6 +221,25 @@ def test_popen_startup_oserror_is_sandbox_unavailable(tmp_path):
             sb.run_sandboxed(["echo", "hi"], str(tmp_path), bwrap_path=FAKE_BWRAP)
 
 
+def test_status_pipe_creation_oserror_is_sandbox_unavailable(tmp_path):
+    import justai.sandbox as sb
+
+    with mock.patch.object(sb.os, "pipe", side_effect=OSError("too many open files")), \
+        mock.patch.object(sb.subprocess, "Popen") as popen:
+        with pytest.raises(sb.SandboxUnavailable, match="failed to create status pipe"):
+            sb.run_sandboxed(["echo", "hi"], str(tmp_path), bwrap_path=FAKE_BWRAP)
+    popen.assert_not_called()
+
+
+def test_popen_argv_value_error_is_sandbox_unavailable(tmp_path):
+    """A model can represent NUL in JSON, but exec cannot. It is a
+    pre-execution framework error, never an executed command failure."""
+    import justai.sandbox as sb
+
+    with pytest.raises(sb.SandboxUnavailable, match="failed to start bwrap"):
+        sb.run_sandboxed(["printf", "x\x00"], str(tmp_path), bwrap_path=FAKE_BWRAP)
+
+
 def test_timeout_before_child_launch_is_sandbox_unavailable(tmp_path):
     """Timeout with no child-pid event: sandbox construction stalled; the
     command never ran — fail closed, and still clean up the process group."""

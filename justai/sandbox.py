@@ -198,7 +198,10 @@ def run_sandboxed(
     # is actually forked. No such event after exit = the sandbox died during
     # setup and the command NEVER ran — that is SandboxUnavailable, never a
     # normal (executed) nonzero result.
-    read_fd, write_fd = os.pipe()
+    try:
+        read_fd, write_fd = os.pipe()
+    except OSError as exc:
+        raise SandboxUnavailable(f"failed to create status pipe: {exc}") from exc
     parent_write_open = True
     try:
         argv = build_bwrap_argv(
@@ -214,7 +217,7 @@ def run_sandboxed(
                 text=True,
                 pass_fds=(write_fd,),
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             raise SandboxUnavailable(f"failed to start bwrap: {exc}") from exc
         os.close(write_fd)  # child holds its own copy; EOF needs ours closed
         parent_write_open = False
