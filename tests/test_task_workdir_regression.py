@@ -53,3 +53,56 @@ def test_write_outside_the_workdir_explains_the_boundary(tmp_path, monkeypatch):
     assert ok is False
     assert "sandbox" in out.lower(), f"failure must name the boundary, got: {out}"
     assert str(workdir) in out, f"failure should name the writable workdir, got: {out}"
+
+
+# --- The workdir is bound read-write, so a too-broad choice must be refused
+#     loudly. Silently substituting a scratch dir is the original bug. ---
+
+def test_home_directory_is_refused(monkeypatch, tmp_path):
+    from justai.sandbox import SandboxUnavailable
+    monkeypatch.delenv("JUSTAI_TASK_WORKDIR", raising=False)
+    monkeypatch.setattr(ad.os, "getcwd", lambda: os.path.expanduser("~"))
+    with pytest.raises(SandboxUnavailable, match="home directory"):
+        ad._task_workdir()
+
+
+def test_filesystem_root_is_refused_not_silently_swapped(monkeypatch):
+    from justai.sandbox import SandboxUnavailable
+    monkeypatch.delenv("JUSTAI_TASK_WORKDIR", raising=False)
+    monkeypatch.setattr(ad.os, "getcwd", lambda: "/")
+    with pytest.raises(SandboxUnavailable):
+        ad._task_workdir()
+
+
+def test_configured_workdir_is_validated_too(monkeypatch):
+    from justai.sandbox import SandboxUnavailable
+    monkeypatch.setenv("JUSTAI_TASK_WORKDIR", "/")
+    with pytest.raises(SandboxUnavailable):
+        ad._task_workdir()
+
+
+def test_deleted_working_directory_fails_closed(monkeypatch):
+    from justai.sandbox import SandboxUnavailable
+    def gone():
+        raise FileNotFoundError("cwd removed")
+    monkeypatch.delenv("JUSTAI_TASK_WORKDIR", raising=False)
+    monkeypatch.setattr(ad.os, "getcwd", gone)
+    with pytest.raises(SandboxUnavailable, match="working directory"):
+        ad._task_workdir()
+
+
+def test_hint_ignores_regex_and_url_noise(tmp_path):
+    # s/a/b/, https://x/y, 24/7 and ~/notes.txt must not be reported as paths.
+    noise = "sed s/a/b/ && curl https://x/y && echo 24/7 && cat ~/notes.txt"
+    assert ad._outside_workdir_paths(noise, str(tmp_path)) == []
+
+
+def test_hint_reports_a_real_outside_path(tmp_path):
+    found = ad._outside_workdir_paths("printf x > /etc/nope.txt", str(tmp_path))
+    assert found == ["/etc/nope.txt"]
+
+
+def test_hint_does_not_report_paths_inside_the_workdir(tmp_path):
+    inside = tmp_path / "sub"
+    inside.mkdir()
+    assert ad._outside_workdir_paths(f"printf x > {inside}/a.txt", str(tmp_path)) == []
