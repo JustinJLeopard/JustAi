@@ -39,6 +39,21 @@ def test_flags_fabricated_input_precondition():
     assert any("fabricate" in f.lower() or "manufactur" in f.lower() for f in result.feedback), result.feedback
 
 
+def test_flags_quoted_fabricated_input_precondition():
+    plan = Plan(
+        goal="Convert /data/report.csv to /backup/report.json",
+        tasks=[
+            _task("Create source", 'touch "/data/report.csv"', "test -f /data/report.csv"),
+            _task("Convert it", "python convert.py /data/report.csv > /backup/report.json",
+                  "test -s /backup/report.json", depends_on=[0]),
+        ],
+        session_ref="t",
+    )
+    result = _heuristic_review(plan)
+    assert result.approved is False
+    assert any("fabricate" in f.lower() or "manufactur" in f.lower() for f in result.feedback), result.feedback
+
+
 def test_allows_creation_when_goal_introduces_the_path_as_output():
     # Consumer verb present (so the check runs) AND the path is introduced as an
     # output by "generate <path>", so creating it is correct, not fabricated.

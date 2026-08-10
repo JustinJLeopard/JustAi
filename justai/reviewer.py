@@ -166,9 +166,14 @@ def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
     # Trailing boundary so a goal path that is a prefix of a longer path
     # (report.csv vs report.csv.lock) does not match.
     ep = re.escape(path_lower) + r"(?![\w./~-])"
+    # Shell users commonly quote paths or terminate options before a path.
+    # Normalize only those two unambiguous forms; this remains a conservative
+    # heuristic rather than attempting to parse arbitrary shell syntax.
+    path_argument = r"(?:--\s+)?(?:['\"])?" + ep + r"(?:['\"])?"
+    redirection_path = r"(?:['\"])?" + ep + r"(?:['\"])?"
     return bool(
-        re.search(r"(?:\btouch\b|\bmkdir\b(?:\s+-p)?|\binstall\s+-d\b|\btee\b)\s+" + ep, blob_lower)
-        or re.search(r">>?\s*" + ep, blob_lower)
+        re.search(r"(?:\btouch\b|\bmkdir\b(?:\s+-p)?|\binstall\s+-d\b|\btee\b)\s+" + path_argument, blob_lower)
+        or re.search(r">>?\s*" + redirection_path, blob_lower)
     )
 
 
