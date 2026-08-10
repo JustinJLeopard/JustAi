@@ -614,9 +614,11 @@ _ACTION_SYSTEM = (
     "double quotes): {'command': '<one bash command; && and pipes allowed>'} "
     "or {'skip_reason': '<why no shell command should run>'} when the task needs "
     "no shell action or would be unsafe. The command runs under bash -o pipefail. "
-    "When writing to a path whose parent directory may not exist yet, create it "
-    "first in the same command (mkdir -p \"$(dirname <path>)\" && ...); a plain "
-    "redirect into a missing directory fails."
+    "Bash does not create parent directories for a redirect, so when the command "
+    "writes to a path whose parent may not exist, create it in the same command, "
+    "e.g. mkdir -p \"$(dirname '/work/sub/d.txt')\" && printf %s NESTED > "
+    "'/work/sub/d.txt'. Do that only for paths this command itself writes; never "
+    "create a file or directory the goal treats as already existing."
 )
 
 # A floor, not a sandbox: refuse a few unambiguously catastrophic commands so a
