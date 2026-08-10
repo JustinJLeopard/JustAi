@@ -613,7 +613,10 @@ _ACTION_SYSTEM = (
     "no prose and no markdown fences. Use one of these shapes (real JSON uses "
     "double quotes): {'command': '<one bash command; && and pipes allowed>'} "
     "or {'skip_reason': '<why no shell command should run>'} when the task needs "
-    "no shell action or would be unsafe. The command runs under bash -o pipefail."
+    "no shell action or would be unsafe. The command runs under bash -o pipefail. "
+    "When writing to a path whose parent directory may not exist yet, create it "
+    "first in the same command (mkdir -p \"$(dirname <path>)\" && ...); a plain "
+    "redirect into a missing directory fails."
 )
 
 # A floor, not a sandbox: refuse a few unambiguously catastrophic commands so a
