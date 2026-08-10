@@ -143,22 +143,29 @@ _CONSUMER_VERBS = (
     "parse", "convert", "backup", "compress", "translat", "extract",
     "deduplicat", "ingest",
 )
-# When the goal itself asks to create the path, creating it is correct.
-_GOAL_CREATE_VERBS_RE = r"(?:create|generat\w*|writ\w*|produc\w*|mak\w*|build\w*|new)"
+# Destination cues: when the goal introduces a path as an output/destination,
+# a task creating it is correct, not a fabricated precondition. Kept liberal on
+# purpose -- misclassifying an input as an output only costs a missed flag,
+# never a blocked good plan (false positives are the worse failure here).
+_DEST_CUE_RE = (
+    r"(?:\bto|\binto|\bonto|\bas|\boutput|\bsave|\bexport|\bdump|\brender|"
+    r"\bwrit\w*|\bgenerat\w*|\bcreat\w*|\bproduc\w*|-o)\s+"
+)
 
 
 def _has_consumer_verb(goal_lower: str) -> bool:
     return any(re.search(r"\b" + re.escape(v), goal_lower) for v in _CONSUMER_VERBS)
 
 
-def _goal_wants_to_create(goal_lower: str, path_lower: str) -> bool:
-    return bool(
-        re.search(_GOAL_CREATE_VERBS_RE + r"\s+[^\n]{0,40}" + re.escape(path_lower), goal_lower)
-    )
+def _is_goal_output_path(goal_lower: str, path_lower: str) -> bool:
+    """True if the goal introduces this path as an output/destination."""
+    return bool(re.search(_DEST_CUE_RE + re.escape(path_lower), goal_lower))
 
 
 def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
-    ep = re.escape(path_lower)
+    # Trailing boundary so a goal path that is a prefix of a longer path
+    # (report.csv vs report.csv.lock) does not match.
+    ep = re.escape(path_lower) + r"(?![\w./~-])"
     return bool(
         re.search(r"(?:\btouch\b|\bmkdir\b(?:\s+-p)?|\binstall\s+-d\b|\btee\b)\s+" + ep, blob_lower)
         or re.search(r">>?\s*" + ep, blob_lower)
@@ -170,21 +177,22 @@ def _fabricated_preconditions(plan: Plan) -> list[str]:
 
     A goal that CONSUMES an input (copy/summarize/convert X) must not be
     satisfied against an X the plan itself created -- that is a false completion.
-    Conservative: only fires when the goal names a concrete file-like input it
-    does not ask to create, and a task creates that exact path.
+    Conservative: only fires when the goal names a concrete file-like input that
+    it does NOT introduce as an output, and a task creates that exact path. Errs
+    toward NOT flagging (a missed case is cheaper than blocking a good plan).
     """
-    goal_lower = plan.goal.lower()
+    goal_lower = (plan.goal or "").lower()
     if not _has_consumer_verb(goal_lower):
         return []
-    goal_paths = set(re.findall(r"[\w./~-]*\.[A-Za-z0-9]{1,6}\b", plan.goal))
+    goal_paths = set(re.findall(r"[\w./~-]*\.[A-Za-z0-9]{1,6}\b", plan.goal or ""))
     issues: list[str] = []
     seen: set[tuple[int, str]] = set()
-    for path in goal_paths:
+    for path in sorted(goal_paths):
         pl = path.lower()
-        if _goal_wants_to_create(goal_lower, pl):
+        if _is_goal_output_path(goal_lower, pl):
             continue
         for i, t in enumerate(plan.tasks):
-            blob = (t.description + " " + t.success_criteria).lower()
+            blob = ((t.title or "") + " " + (t.description or "") + " " + (t.success_criteria or "")).lower()
             if _task_creates_path(blob, pl) and (i, pl) not in seen:
                 seen.add((i, pl))
                 issues.append(

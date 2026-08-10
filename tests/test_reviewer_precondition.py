@@ -39,12 +39,40 @@ def test_flags_fabricated_input_precondition():
     assert any("fabricate" in f.lower() or "manufactur" in f.lower() for f in result.feedback), result.feedback
 
 
-def test_allows_creation_when_goal_asks_to_create():
+def test_allows_creation_when_goal_introduces_the_path_as_output():
+    # Consumer verb present (so the check runs) AND the path is introduced as an
+    # output by "generate <path>", so creating it is correct, not fabricated.
     plan = Plan(
-        goal="Create /data/report.csv with a header row",
+        goal="Generate /data/report.csv, then compress /data/report.csv",
         tasks=[
             _task("Create file", "touch /data/report.csv and add header",
                   "test -f /data/report.csv"),
+        ],
+        session_ref="t",
+    )
+    result = _heuristic_review(plan)
+    assert result.approved is True, result.feedback
+
+
+def test_allows_output_path_created_by_task():
+    # "convert IN to OUT" — OUT is a destination; a task writing it must not flag.
+    plan = Plan(
+        goal="Convert /data/in.csv to /data/out.json",
+        tasks=[
+            _task("Convert", "jq . /data/in.csv > /data/out.json", "test -s /data/out.json"),
+        ],
+        session_ref="t",
+    )
+    result = _heuristic_review(plan)
+    assert result.approved is True, result.feedback
+
+
+def test_does_not_flag_prefix_path_collision():
+    # touching report.csv.lock must not match the goal input report.csv.
+    plan = Plan(
+        goal="Summarize /data/report.csv",
+        tasks=[
+            _task("Lock", "touch /data/report.csv.lock", "test -f /data/report.csv.lock"),
         ],
         session_ref="t",
     )
