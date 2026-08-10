@@ -1,6 +1,6 @@
 # JustAi Architecture
 
-JustAi is a thin project-orchestration control plane around safe-mini, the substrate that makes mini-swe-agent's bash-action loop trustworthy on private repos.
+JustAi is a thin project-orchestration control plane around SafeMini's runner contract. The explicit SafeMini adapter applies JustAi's Bubblewrap boundary; SafeMini's built-in policies are not host isolation.
 
 This document describes the post-amputation architecture. It does not describe the original v1.0.0 delegation stack.
 
@@ -24,12 +24,11 @@ JustAi control plane
         v
 safe-mini substrate (separate repository)
   - mini-style bash-action loop
-  - worktree isolation
+  - copied worktree
   - env scrubbing
   - command/path guard
   - observation policy
-  - incident artifacts
-  - trajectory + ledger
+  - in-memory run transcript
   - failure classifier
         |
         v
@@ -64,7 +63,7 @@ The substrate is the load-bearing runtime around a mini-swe-agent-style loop:
 - observation policies: full, tail, headtail, structured, structured plus raw tail
 - worktree provisioner: copied repo, scoped HOME, sanitized PATH
 - command/path guard: denylisted commands and sensitive paths
-- incident artifact: full transcript saved for audit
+- in-memory transcript: per-step run records in `RunResult`
 
 JustAi should consume this as an imported dependency, not own it forever.
 
@@ -72,7 +71,7 @@ JustAi should consume this as an imported dependency, not own it forever.
 
 Guardrails and failure classification also belong in safe-mini.
 
-JustAi needs structured failure information from the runner so it can decide whether to re-scope, retry, escalate, or stop. That means the runtime should report failure class, trajectory, budget usage, and relevant incident artifacts in its `RunResult`.
+JustAi needs structured failure information from the runner so it can decide whether to re-scope, retry, escalate, or stop. That means the runtime should report failure class, transcript, and budget usage in its `RunResult`.
 
 ## Three Repos
 
@@ -184,7 +183,7 @@ Default delegated mode is intentionally not a live backend right now. It returns
 The live architectural boundary is the control-plane / substrate split:
 
 - JustAi owns project orchestration, chunk sizing, checkpoints, dashboards, and synthesis.
-- safe-mini owns the bash-action runner, executor policy, observation policy, worktree isolation, guards, incident artifacts, trajectory recording, ledger, and failure classifier.
+- safe-mini owns the bash-action runner, executor policy, observation policy, copied worktree, guards, in-memory transcript, and failure classifier. The JustAi adapter owns the Bubblewrap execution boundary.
 - local-resident owns the private benchmark and calibration loop that proves whether the orchestration layer adds value.
 
 Historical sprint-era designs now live under `docs/archive/` when they are still useful as evidence. They are not current product contracts.
@@ -198,10 +197,8 @@ Follow-on migration scope, if an implementation need arises:
 - observation policy types
 - worktree provisioner
 - command/path guard
-- incident artifact writer
+- in-memory transcript representation
 - failure classifier
-- trajectory recorder
-- run ledger
 - canonical `Chunk`, `Budget`, `RunResult`, `FailureClass`, `ObservationPolicy`, and `ExecutorPolicy` types
 - `AgentRunner` Protocol/ABC
 
