@@ -248,6 +248,21 @@ def _heuristic_review(plan: Plan) -> ReviewResult:
     return ReviewResult(approved=len(issues) == 0, feedback=issues)
 
 
+def _as_feedback_list(value) -> list[str]:
+    """Coerce a model feedback field to a list without shredding a string.
+
+    A model that returns "plan is fine" instead of ["plan is fine"] must not be
+    turned into 12 single-character items by list().
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [v if isinstance(v, str) else str(v) for v in value]
+    return [str(value)]
+
+
 def review(plan: Plan) -> ReviewResult:
     """
     Review a Plan before execution.
@@ -266,7 +281,7 @@ def review(plan: Plan) -> ReviewResult:
         plan_json = _format_plan_for_review(plan)
         raw = _call_litellm(plan_json)
         llm_approved = bool(raw.get("approved", False))
-        feedback = list(raw.get("feedback", []) or []) + list(raw.get("suggestions", []) or [])
+        feedback = _as_feedback_list(raw.get("feedback")) + _as_feedback_list(raw.get("suggestions"))
         if fabricated:
             # Preserve the disagreement: when the model approved a plan the
             # deterministic check rejects, say so explicitly and keep the
@@ -282,9 +297,16 @@ def review(plan: Plan) -> ReviewResult:
         # LiteLLM unavailable — fall back to heuristic (which already includes
         # the fabricated-precondition check, so no double-count here).
         result = _heuristic_review(plan)
-        if result.feedback:
-            result.feedback.insert(0, f"[heuristic review: {e.__class__.__name__}]")
-        return result
+        # Always surface that the model reviewer failed -- even on a clean
+        # approval, an operator must not read a heuristic-only pass as a full
+        # review. Rebind rather than mutate so a non-list field cannot throw
+        # inside the handler and lose the original error.
+        marker = f"[heuristic review: model reviewer unavailable: {e.__class__.__name__}: {str(e)[:120]}]"
+        return ReviewResult(
+            approved=result.approved,
+            feedback=[marker] + _as_feedback_list(result.feedback),
+            revised_tasks=result.revised_tasks,
+        )
 
 
 if __name__ == "__main__":

@@ -281,3 +281,25 @@ def test_no_override_label_when_both_reject(monkeypatch):
     blob = " ".join(result.feedback).lower()
     assert "override" not in blob, "no disagreement to report when both reject"
     assert "task too large" in blob and any("fabricat" in f.lower() for f in result.feedback)
+
+
+def test_string_feedback_is_not_shredded_into_characters(monkeypatch):
+    from justai import reviewer as R
+    plan = Plan(goal="Summarize /d/r.csv into /o/s.txt",
+                tasks=[_task("S", "read /d/r.csv write /o/s.txt", "test -s /o/s.txt")], session_ref="t")
+    monkeypatch.setattr(R, "_call_litellm", lambda pj: {"approved": True, "feedback": "plan is fine", "suggestions": None})
+    result = R.review(plan)
+    assert result.feedback == ["plan is fine"], result.feedback
+
+
+def test_model_failure_is_reported_even_on_clean_approval(monkeypatch):
+    from justai import reviewer as R
+    def boom(pj):
+        raise TimeoutError("read timed out")
+    plan = Plan(goal="Summarize /d/r.csv into /o/s.txt",
+                tasks=[_task("S", "read /d/r.csv write /o/s.txt", "test -s /o/s.txt")], session_ref="t")
+    monkeypatch.setattr(R, "_call_litellm", boom)
+    result = R.review(plan)
+    assert result.approved is True
+    assert result.feedback and "model reviewer unavailable" in result.feedback[0].lower()
+    assert "TimeoutError" in result.feedback[0]
