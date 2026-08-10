@@ -492,3 +492,16 @@ def test_live_workdir_and_tmp_writes_still_work(tmp_path):
     )
     assert res.returncode == 0, res.stderr
     assert (tmp_path / "inside.txt").read_text() == "y"
+
+
+@needs_bwrap
+def test_live_ephemeral_scratch_dirs_remain_writable(tmp_path):
+    """TMPDIR-unaware tools reach for /var/tmp and /run; the read-only root
+    must not turn their scratch writes into hard failures."""
+    from justai.sandbox import run_sandboxed
+
+    res = run_sandboxed(
+        ["bash", "-c", "printf a > /var/tmp/s.txt && printf b > /run/s.txt && test -s /var/tmp/s.txt"],
+        str(tmp_path), timeout=30,
+    )
+    assert res.returncode == 0, res.stderr

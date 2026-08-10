@@ -128,12 +128,23 @@ def build_bwrap_argv(
         "/dev",
         "--tmpfs",
         "/tmp",
+        # Ephemeral scratch that TMPDIR-unaware tools reach for. Without these,
+        # remounting the root read-only turns their scratch writes into hard
+        # EROFS failures, which buys no correctness -- the intent there is
+        # already ephemeral.
+        "--tmpfs",
+        "/var/tmp",
+        "--tmpfs",
+        "/run",
     ]
     if status_fd is not None:
         argv += ["--json-status-fd", str(status_fd)]
     for p in ro_system_paths:
         argv += ["--ro-bind-try", p, p]
     argv += ["--bind", wd, wd]
+    # NOTE: every filesystem op must stay ABOVE the remount below. bwrap applies
+    # them in argv order; a bind placed after it fails to mkdir on the read-only
+    # root and the sandbox refuses to start.
     # Remount the ephemeral root read-only AFTER every bind. Without this a
     # write to an unbound path (say /etc/x) lands on the sandbox's own tmpfs
     # root, exits 0, and vanishes -- the command reports success for an effect
