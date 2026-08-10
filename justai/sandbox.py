@@ -29,6 +29,7 @@ creation) run only where bwrap exists.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -98,8 +99,15 @@ def build_bwrap_argv(
     bwrap_path: str,
     env: Mapping[str, str],
     ro_system_paths: Sequence[str] = _RO_SYSTEM_PATHS,
+    status_fd: int | None = None,
 ) -> list[str]:
-    """Pure argv builder — the unit CI asserts on; launches nothing."""
+    """Pure argv builder — the unit CI asserts on; launches nothing.
+
+    ``status_fd``: when given, bwrap writes JSON status events to that fd —
+    ``{"child-pid": N}`` once the command process is actually launched. Its
+    absence after exit is how setup failure is distinguished from a launched
+    command's own nonzero exit.
+    """
     if not command:
         raise ValueError("command must be a non-empty argv sequence")
     wd = str(Path(workdir).resolve())
@@ -119,6 +127,8 @@ def build_bwrap_argv(
         "--tmpfs",
         "/tmp",
     ]
+    if status_fd is not None:
+        argv += ["--json-status-fd", str(status_fd)]
     for p in ro_system_paths:
         argv += ["--ro-bind-try", p, p]
     argv += ["--bind", wd, wd, "--chdir", wd]
@@ -126,6 +136,28 @@ def build_bwrap_argv(
         argv += ["--setenv", key, env[key]]
     argv += ["--", *command]
     return argv
+
+
+def _read_status_events(fd: int) -> list[dict]:
+    """Drain bwrap's JSON status pipe (one JSON object per line) to EOF."""
+    chunks: list[bytes] = []
+    while True:
+        block = os.read(fd, 4096)
+        if not block:
+            break
+        chunks.append(block)
+    events: list[dict] = []
+    for line in b"".join(chunks).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            events.append(obj)
+    return events
 
 
 def _kill_process_group(pid: int) -> None:
@@ -161,25 +193,61 @@ def run_sandboxed(
             f"workdir {str(wd)!r} does not exist or is not a directory"
         )
     guest_env = build_guest_env(str(wd), allowlist=env_allowlist, host_env=host_env)
-    argv = build_bwrap_argv(command, str(wd), bwrap_path=resolved, env=guest_env)
 
-    proc = subprocess.Popen(
-        argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-        text=True,
-    )
+    # Status pipe: bwrap writes {"child-pid": N} only once the command process
+    # is actually forked. No such event after exit = the sandbox died during
+    # setup and the command NEVER ran — that is SandboxUnavailable, never a
+    # normal (executed) nonzero result.
+    read_fd, write_fd = os.pipe()
+    parent_write_open = True
     try:
-        out, err = proc.communicate(timeout=timeout)
-        return SandboxResult(proc.returncode, out, err, timed_out=False)
-    except subprocess.TimeoutExpired:
-        _kill_process_group(proc.pid)
+        argv = build_bwrap_argv(
+            command, str(wd), bwrap_path=resolved, env=guest_env, status_fd=write_fd
+        )
         try:
-            out, err = proc.communicate(timeout=5)
+            proc = subprocess.Popen(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                text=True,
+                pass_fds=(write_fd,),
+            )
+        except OSError as exc:
+            raise SandboxUnavailable(f"failed to start bwrap: {exc}") from exc
+        os.close(write_fd)  # child holds its own copy; EOF needs ours closed
+        parent_write_open = False
+        try:
+            out, err = proc.communicate(timeout=timeout)
+            timed_out = False
         except subprocess.TimeoutExpired:
-            proc.kill()
-            out, err = proc.communicate()
+            _kill_process_group(proc.pid)
+            try:
+                out, err = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, err = proc.communicate()
+            timed_out = True
+        events = _read_status_events(read_fd)
+    finally:
+        if parent_write_open:
+            os.close(write_fd)
+        os.close(read_fd)
+
+    child_started = any("child-pid" in e for e in events)
+    if timed_out:
+        if not child_started:
+            raise SandboxUnavailable(
+                "bwrap did not launch the command before the timeout; "
+                "sandbox construction stalled or failed"
+            )
         rc = proc.returncode if proc.returncode is not None else -signal.SIGKILL
         return SandboxResult(rc, out or "", err or "", timed_out=True)
+    if not child_started:
+        tail = (err or "").strip()[-300:]
+        raise SandboxUnavailable(
+            f"bwrap exited (code {proc.returncode}) during sandbox setup, "
+            f"before launching the command: {tail or 'no stderr'}"
+        )
+    return SandboxResult(proc.returncode, out, err, timed_out=False)

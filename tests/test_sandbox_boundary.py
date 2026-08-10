@@ -150,6 +150,7 @@ def test_timeout_kills_the_process_group(tmp_path):
         ("", ""),
     ]
     with mock.patch.object(sb.subprocess, "Popen", return_value=proc) as popen, \
+        mock.patch.object(sb, "_read_status_events", return_value=[{"child-pid": 4242}]), \
         mock.patch.object(sb.os, "getpgid", return_value=9999) as getpgid, \
         mock.patch.object(sb.os, "killpg") as killpg:
         res = sb.run_sandboxed(
@@ -159,6 +160,99 @@ def test_timeout_kills_the_process_group(tmp_path):
     assert popen.call_args.kwargs["start_new_session"] is True
     getpgid.assert_called_once_with(4242)
     assert killpg.called
+
+
+# ── P2 (Codex 0106): setup failure vs launched-command exit ──────────────────
+
+
+def test_argv_includes_status_fd_when_given(tmp_path):
+    from justai.sandbox import build_bwrap_argv, build_guest_env
+
+    argv = build_bwrap_argv(
+        ["echo", "hi"], str(tmp_path), bwrap_path="/usr/bin/bwrap",
+        env=build_guest_env(str(tmp_path)), status_fd=42,
+    )
+    i = argv.index("--json-status-fd")
+    assert argv[i + 1] == "42"
+    assert i < argv.index("--"), "status fd must be a bwrap option, not command"
+
+
+def test_setup_failure_before_child_launch_is_sandbox_unavailable(tmp_path):
+    """bwrap started but died during namespace/mount setup: no child-pid event.
+    That must be SandboxUnavailable (the command never ran), NOT a normal
+    nonzero result that dispatch would mislabel executed_failed."""
+    import justai.sandbox as sb
+
+    proc = mock.Mock()
+    proc.pid = 4242
+    proc.returncode = 1
+    proc.communicate.return_value = ("", "bwrap: setting up uid map: Permission denied")
+    with mock.patch.object(sb.subprocess, "Popen", return_value=proc), \
+        mock.patch.object(sb, "_read_status_events", return_value=[]):
+        with pytest.raises(sb.SandboxUnavailable, match="before launching"):
+            sb.run_sandboxed(["echo", "hi"], str(tmp_path), bwrap_path=FAKE_BWRAP)
+
+
+def test_nonzero_exit_after_child_launch_stays_an_executed_result(tmp_path):
+    """Contrast: the command really ran and exited 7 — a genuine executed
+    failure, preserved as a normal SandboxResult."""
+    import justai.sandbox as sb
+
+    proc = mock.Mock()
+    proc.pid = 4242
+    proc.returncode = 7
+    proc.communicate.return_value = ("out", "err")
+    with mock.patch.object(sb.subprocess, "Popen", return_value=proc), \
+        mock.patch.object(
+            sb, "_read_status_events",
+            return_value=[{"child-pid": 5}, {"exit-code": 7}],
+        ):
+        res = sb.run_sandboxed(["false"], str(tmp_path), bwrap_path=FAKE_BWRAP)
+    assert res.returncode == 7 and res.timed_out is False
+
+
+def test_popen_startup_oserror_is_sandbox_unavailable(tmp_path):
+    import justai.sandbox as sb
+
+    with mock.patch.object(
+        sb.subprocess, "Popen", side_effect=OSError("cannot allocate memory")
+    ):
+        with pytest.raises(sb.SandboxUnavailable, match="failed to start bwrap"):
+            sb.run_sandboxed(["echo", "hi"], str(tmp_path), bwrap_path=FAKE_BWRAP)
+
+
+def test_timeout_before_child_launch_is_sandbox_unavailable(tmp_path):
+    """Timeout with no child-pid event: sandbox construction stalled; the
+    command never ran — fail closed, and still clean up the process group."""
+    import justai.sandbox as sb
+
+    proc = mock.Mock()
+    proc.pid = 4242
+    proc.returncode = None
+    proc.communicate.side_effect = [
+        subprocess.TimeoutExpired(cmd="bwrap", timeout=1),
+        ("", ""),
+    ]
+    with mock.patch.object(sb.subprocess, "Popen", return_value=proc), \
+        mock.patch.object(sb, "_read_status_events", return_value=[]), \
+        mock.patch.object(sb.os, "getpgid", return_value=9999), \
+        mock.patch.object(sb.os, "killpg") as killpg:
+        with pytest.raises(sb.SandboxUnavailable, match="before the timeout"):
+            sb.run_sandboxed(
+                ["sleep", "99"], str(tmp_path), bwrap_path=FAKE_BWRAP, timeout=0.01
+            )
+    assert killpg.called
+
+
+def test_live_executable_but_unusable_bwrap_is_sandbox_unavailable(tmp_path):
+    """Live, no mocks: an executable that exits without ever launching the
+    command (and never emits a child-pid event) must be SandboxUnavailable —
+    both the nonzero and the zero-exit impostor."""
+    import justai.sandbox as sb
+
+    for impostor in ("/bin/false", "/bin/true"):
+        with pytest.raises(sb.SandboxUnavailable):
+            sb.run_sandboxed(["echo", "hi"], str(tmp_path), bwrap_path=impostor)
 
 
 # ── dispatch wiring: the executor path goes THROUGH the boundary ─────────────
