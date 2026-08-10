@@ -19,6 +19,8 @@ Isolation contract (Codex 2026-08-09 18:16, accepted):
     THROUGH it — a narrow ro slice, never a blanket /etc bind).
   * Fresh /proc, minimal /dev, tmpfs /tmp.
   * Exactly ONE writable window into the real filesystem: the task workdir.
+  * The ephemeral root is remounted read-only after the binds, so a write to
+    an unbound path fails with EROFS instead of silently vanishing.
   * Timeout with process-group cleanup: bwrap leads a new session; on timeout
     the whole group is killed (TERM then KILL) — no leaked children.
 
@@ -126,12 +128,31 @@ def build_bwrap_argv(
         "/dev",
         "--tmpfs",
         "/tmp",
+        # Ephemeral scratch that TMPDIR-unaware tools reach for. Without these,
+        # remounting the root read-only turns their scratch writes into hard
+        # EROFS failures, which buys no correctness -- the intent there is
+        # already ephemeral.
+        "--tmpfs",
+        "/var/tmp",
+        "--tmpfs",
+        "/run",
     ]
     if status_fd is not None:
         argv += ["--json-status-fd", str(status_fd)]
     for p in ro_system_paths:
         argv += ["--ro-bind-try", p, p]
-    argv += ["--bind", wd, wd, "--chdir", wd]
+    argv += ["--bind", wd, wd]
+    # NOTE: every filesystem op must stay ABOVE the remount below. bwrap applies
+    # them in argv order; a bind placed after it fails to mkdir on the read-only
+    # root and the sandbox refuses to start.
+    # Remount the ephemeral root read-only AFTER every bind. Without this a
+    # write to an unbound path (say /etc/x) lands on the sandbox's own tmpfs
+    # root, exits 0, and vanishes -- the command reports success for an effect
+    # that never existed. Read-only makes that fail honestly with EROFS.
+    # Submounts keep their own flags, so the workdir bind, tmpfs /tmp, /proc
+    # and /dev stay writable/usable.
+    argv += ["--remount-ro", "/"]
+    argv += ["--chdir", wd]
     for key in sorted(env):
         argv += ["--setenv", key, env[key]]
     argv += ["--", *command]
