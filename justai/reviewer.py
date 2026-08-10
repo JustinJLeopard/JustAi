@@ -342,8 +342,8 @@ def review(plan: Plan) -> ReviewResult:
             # model's own verdict visible, so an operator can see both.
             if llm_approved:
                 feedback.append(
-                    "[deterministic override] The model reviewer APPROVED this plan; the "
-                    "precondition-fabrication check overrode that approval for the reason(s) below."
+                    "[deterministic override] The model reviewer APPROVED this plan; a "
+                    "deterministic check overrode that approval for the reason(s) below."
                 )
             feedback.extend(fabricated)
         return ReviewResult(approved=llm_approved and not fabricated, feedback=feedback)

@@ -97,9 +97,18 @@ Respond with JSON only, no prose, no markdown fences:
       "description": "<full task text that will be sent verbatim to mini-swe-agent>",
       "agent": "<mini|researcher>",
       "risk": "<R0|R1|R2|R3>",
-      "success_criteria": "<bash command that exits 0 on success>",
+      "success_criteria": "<bash command that exits 0 on success and NON-ZERO on failure>",
       "depends_on": [<list of 0-based indices of tasks this depends on>]
     }
+
+success_criteria MUST be falsifiable: it has to exit non-zero when the work did
+not happen. Never end it with "|| echo ...", "|| true", "|| :" or "; true", and
+never make it a bare "echo ..." -- those exit 0 whichever branch runs, so the
+task would be marked done without verifying anything. Write the check itself:
+  good: grep -Fxq 'Hello' greeting.py
+  good: test -s out.json && python3 -c "import json;json.load(open('out.json'))"
+  bad:  grep -Fxq 'Hello' greeting.py && echo 'success' || echo 'failure'
+
   ]
 }
 
