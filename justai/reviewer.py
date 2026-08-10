@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 from dataclasses import dataclass
 
@@ -57,6 +58,10 @@ Check each task for:
    or similar placeholders)? Flag missing criteria.
 5. SCOPE — Does any task try to do too many things? "Add endpoint AND write tests
    AND update README" in one task is too much. Flag it.
+6. PRECONDITION FABRICATION -- Does any task CREATE or generate an input the
+   goal treats as already existing (e.g., goal "summarize report.csv" but a
+   task runs "touch report.csv")? Inputs the goal names as existing must not
+   be manufactured by the plan; that yields false success. Flag it.
 
 Respond with JSON only:
 {
@@ -131,6 +136,65 @@ def _call_litellm(plan_json: str) -> dict:
     return json.loads(content)
 
 
+# Verbs that CONSUME a pre-existing input, matched at a word boundary (prefix)
+# so "summariz" covers summarize/summarizing.
+_CONSUMER_VERBS = (
+    "copy", "copies", "move", "moves", "rename", "summariz", "analyz",
+    "parse", "convert", "backup", "compress", "translat", "extract",
+    "deduplicat", "ingest",
+)
+# When the goal itself asks to create the path, creating it is correct.
+_GOAL_CREATE_VERBS_RE = r"(?:create|generat\w*|writ\w*|produc\w*|mak\w*|build\w*|new)"
+
+
+def _has_consumer_verb(goal_lower: str) -> bool:
+    return any(re.search(r"\b" + re.escape(v), goal_lower) for v in _CONSUMER_VERBS)
+
+
+def _goal_wants_to_create(goal_lower: str, path_lower: str) -> bool:
+    return bool(
+        re.search(_GOAL_CREATE_VERBS_RE + r"\s+[^\n]{0,40}" + re.escape(path_lower), goal_lower)
+    )
+
+
+def _task_creates_path(blob_lower: str, path_lower: str) -> bool:
+    ep = re.escape(path_lower)
+    return bool(
+        re.search(r"(?:\btouch\b|\bmkdir\b(?:\s+-p)?|\binstall\s+-d\b|\btee\b)\s+" + ep, blob_lower)
+        or re.search(r">>?\s*" + ep, blob_lower)
+    )
+
+
+def _fabricated_preconditions(plan: Plan) -> list[str]:
+    """Flag tasks that manufacture an input the goal assumes already exists.
+
+    A goal that CONSUMES an input (copy/summarize/convert X) must not be
+    satisfied against an X the plan itself created -- that is a false completion.
+    Conservative: only fires when the goal names a concrete file-like input it
+    does not ask to create, and a task creates that exact path.
+    """
+    goal_lower = plan.goal.lower()
+    if not _has_consumer_verb(goal_lower):
+        return []
+    goal_paths = set(re.findall(r"[\w./~-]*\.[A-Za-z0-9]{1,6}\b", plan.goal))
+    issues: list[str] = []
+    seen: set[tuple[int, str]] = set()
+    for path in goal_paths:
+        pl = path.lower()
+        if _goal_wants_to_create(goal_lower, pl):
+            continue
+        for i, t in enumerate(plan.tasks):
+            blob = (t.description + " " + t.success_criteria).lower()
+            if _task_creates_path(blob, pl) and (i, pl) not in seen:
+                seen.add((i, pl))
+                issues.append(
+                    f"Task [{i}] '{t.title}': plan manufactures '{path}', which the goal "
+                    f"treats as an existing input (fabricated precondition -- goal may be "
+                    f"satisfied against a file the plan created, not the real one)"
+                )
+    return issues
+
+
 def _heuristic_review(plan: Plan) -> ReviewResult:
     """Fast rule-based review when LiteLLM is unavailable."""
     issues = []
@@ -145,6 +209,8 @@ def _heuristic_review(plan: Plan) -> ReviewResult:
         for dep in task.depends_on:
             if dep >= i:
                 issues.append(f"Task [{i}] '{task.title}': depends_on [{dep}] which comes after it")
+
+    issues.extend(_fabricated_preconditions(plan))
 
     return ReviewResult(approved=len(issues) == 0, feedback=issues)
 
