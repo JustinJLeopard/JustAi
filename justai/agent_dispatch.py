@@ -38,7 +38,7 @@ import re
 import subprocess
 import tempfile
 
-from justai.sandbox import SandboxUnavailable, run_sandboxed
+from justai.sandbox import _RO_SYSTEM_PATHS, SandboxUnavailable, run_sandboxed
 import time
 import urllib.parse
 import urllib.request
@@ -534,15 +534,18 @@ def _task_workdir() -> str:
 
 
 def _outside_workdir_paths(command: str, workdir: str) -> list[str]:
-    """Absolute paths in the command that fall outside the sandbox window.
+    """Absolute paths in the command that are not reachable inside the sandbox.
 
-    Only the workdir and a few read-only system roots are bound, so a path
-    outside them is neither readable nor writable inside the sandbox -- which
-    surfaces as "No such file or directory" for a path that exists on the host.
-    Filters regex noise ("s/a/b/", "https://x/y", "24/7", "~/notes.txt") by
-    requiring at least two components whose first component is a real directory.
+    Only the workdir (read-write) and a few system roots (read-only) are bound,
+    so anything else is invisible in there -- which surfaces as "No such file or
+    directory" for a path that exists on the host. The read-only roots are
+    excluded because they ARE reachable; reporting /usr/bin/python3 as missing
+    would blame the boundary for an ordinary command failure. Regex noise
+    ("s/a/b/", "https://x/y", "24/7", "~/notes.txt") is dropped by requiring at
+    least two components whose first component is a real directory.
     """
     root = os.path.realpath(workdir)  # run_sandboxed resolves the bind the same way
+    reachable = [root] + [os.path.realpath(p) for p in _RO_SYSTEM_PATHS if os.path.exists(p)]
     out: list[str] = []
     seen: set[str] = set()
     for cand in re.findall(r"/[\w./~-]+", command):
@@ -550,7 +553,9 @@ def _outside_workdir_paths(command: str, workdir: str) -> list[str]:
         if len(parts) < 2 or not os.path.isdir(os.sep + parts[0]):
             continue
         rp = os.path.realpath(cand)
-        if rp in seen or rp == root or rp.startswith(root.rstrip(os.sep) + os.sep):
+        if rp in seen:
+            continue
+        if any(rp == r or rp.startswith(r.rstrip(os.sep) + os.sep) for r in reachable):
             continue
         seen.add(rp)
         out.append(cand)
@@ -567,9 +572,13 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         return None, "no automated verification (task not confirmed done)"
 
     try:
+        # Inside the try: _task_workdir() can raise SandboxUnavailable, which
+        # must become a (False, reason) verification failure, not an exception
+        # escaping to a caller that only understands (bool, str).
+        workdir = _task_workdir()
         result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", criteria],
-            _task_workdir(),
+            workdir,
             timeout=30,
         )
     except SandboxUnavailable as exc:
@@ -581,7 +590,20 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         return False, "verification command timed out"
     if result.returncode == 0:
         return True, result.stdout[:500]
-    return False, f"exit {result.returncode}: {result.stderr[:300]}"
+    output = (result.stderr or "").strip() or (result.stdout or "").strip()
+    # A criterion naming a path the sandbox cannot reach can never pass, even
+    # though the path exists on the host. Lead with that: callers truncate this
+    # detail, and a note appended after the output is the first thing dropped.
+    outside = _outside_workdir_paths(criteria, workdir)
+    note = ""
+    if outside:
+        note = (
+            f"[sandbox: verification only sees {workdir}; not visible: "
+            + ", ".join(outside[:3])
+            + (f" (+{len(outside) - 3} more)" if len(outside) > 3 else "")
+            + "] "
+        )
+    return False, f"{note}exit {result.returncode}: {output}".rstrip()
 
 
 LOCAL_EXEC_TIMEOUT = int(os.environ.get("JUSTAI_LOCAL_EXEC_TIMEOUT", "60"))

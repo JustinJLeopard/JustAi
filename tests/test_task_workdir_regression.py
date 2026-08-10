@@ -106,3 +106,52 @@ def test_hint_does_not_report_paths_inside_the_workdir(tmp_path):
     inside = tmp_path / "sub"
     inside.mkdir()
     assert ad._outside_workdir_paths(f"printf x > {inside}/a.txt", str(tmp_path)) == []
+
+
+# --- A verification that fails because its path is not visible inside the
+#     sandbox must say so. Otherwise the operator sees a bare "exit 1" and
+#     debugs a missing file that exists on the host. ---
+
+@needs_bwrap
+def test_verify_failure_outside_the_workdir_names_the_boundary(tmp_path, monkeypatch):
+    from justai.scope_planner import AgentType, RiskLevel, Task
+
+    monkeypatch.setenv("JUSTAI_TASK_WORKDIR", str(tmp_path))
+    task = Task(title="t", description="d", agent=AgentType.MINI, risk=RiskLevel.R1,
+                success_criteria="test -f /tmp/not-visible-here.txt", depends_on=[])
+    passed, out = ad._verify_task(task)
+    assert passed is False
+    assert "sandbox" in out.lower(), f"boundary must be named, got: {out!r}"
+    assert "/tmp/not-visible-here.txt" in out, out
+
+
+@needs_bwrap
+def test_verify_failure_inside_the_workdir_has_no_boundary_note(tmp_path, monkeypatch):
+    from justai.scope_planner import AgentType, RiskLevel, Task
+
+    monkeypatch.setenv("JUSTAI_TASK_WORKDIR", str(tmp_path))
+    task = Task(title="t", description="d", agent=AgentType.MINI, risk=RiskLevel.R1,
+                success_criteria=f"test -f {tmp_path}/absent.txt", depends_on=[])
+    passed, out = ad._verify_task(task)
+    assert passed is False
+    assert "sandbox" not in out.lower(), f"no boundary involved, got: {out!r}"
+
+
+def test_readonly_system_paths_are_not_reported_as_unreachable(tmp_path):
+    # /usr/bin/python3 IS bound read-only; blaming the boundary for an ordinary
+    # command failure would send the repair in the wrong direction.
+    assert ad._outside_workdir_paths("/usr/bin/python3 -m pytest -q", str(tmp_path)) == []
+    assert ad._outside_workdir_paths("/bin/sh -c true", str(tmp_path)) == []
+
+
+def test_verify_sandbox_unavailable_does_not_escape(tmp_path, monkeypatch):
+    from justai.scope_planner import AgentType, RiskLevel, Task
+    from justai.sandbox import SandboxUnavailable
+
+    def boom():
+        raise SandboxUnavailable("no workdir")
+    monkeypatch.setattr(ad, "_task_workdir", boom)
+    task = Task(title="t", description="d", agent=AgentType.MINI, risk=RiskLevel.R1,
+                success_criteria="true", depends_on=[])
+    passed, out = ad._verify_task(task)   # must not raise
+    assert passed is False and "sandbox unavailable" in out.lower()
