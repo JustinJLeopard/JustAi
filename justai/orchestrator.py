@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -54,6 +55,10 @@ LOCAL_EXEC = os.environ.get("JUSTAI_LOCAL_EXEC", "").lower() in ("1", "true", "y
 SWARM_MODE = os.environ.get("JUSTAI_SWARM_MODE", "").lower() in ("1", "true", "yes")
 # Intent-fidelity gate: on by default; set JUSTAI_FIDELITY_GATE=0 to disable.
 FIDELITY_GATE_ENABLED = os.environ.get("JUSTAI_FIDELITY_GATE", "1").lower() in ("1", "true", "yes")
+
+# Serializes the JUSTAI_AUTO_MODE export around a run so overlapping runs cannot
+# corrupt the shared variable. Reentrant so a nested run on the same thread works.
+_RUN_ENV_LOCK = threading.RLock()
 
 
 @dataclass
@@ -145,24 +150,30 @@ def run(
 ) -> OrchestrationResult:
     """Full orchestration pipeline for a given goal.
 
-    Thin wrapper that scopes the ``JUSTAI_AUTO_MODE`` export to THIS run and
-    restores the prior environment state afterward. Without this, an
-    ``auto=True`` run left the variable set process-wide, so a later
-    ``auto=False`` run inherited auto approval and silently skipped its R1
-    checkpoint waits.
+    Thin wrapper that makes ``auto`` AUTHORITATIVE for this run's checkpoint
+    reads and cannot leak or race:
+
+    - It sets ``JUSTAI_AUTO_MODE`` to reflect ``auto`` for the whole run — "1"
+      when auto, "0" when not — so an explicit ``auto=False`` overrides any
+      inherited "1" (checkpoint reads auto OFF), not just when auto is True.
+    - It restores the exact prior environment state afterward (delete if it was
+      absent) across every return path.
+    - The env-dependent run is serialized under a reentrant lock so overlapping
+      runs cannot interleave their save/restore and corrupt the shared variable
+      (reentrant so a nested run on the same thread still works).
     """
-    prior_auto = os.environ.get("JUSTAI_AUTO_MODE")
-    if auto:
-        os.environ["JUSTAI_AUTO_MODE"] = "1"
-    try:
-        return _run_pipeline(
-            goal, session_ref=session_ref, auto=auto, local=local, swarm=swarm
-        )
-    finally:
-        if prior_auto is None:
-            os.environ.pop("JUSTAI_AUTO_MODE", None)
-        else:
-            os.environ["JUSTAI_AUTO_MODE"] = prior_auto
+    with _RUN_ENV_LOCK:
+        prior_auto = os.environ.get("JUSTAI_AUTO_MODE")
+        os.environ["JUSTAI_AUTO_MODE"] = "1" if auto else "0"
+        try:
+            return _run_pipeline(
+                goal, session_ref=session_ref, auto=auto, local=local, swarm=swarm
+            )
+        finally:
+            if prior_auto is None:
+                os.environ.pop("JUSTAI_AUTO_MODE", None)
+            else:
+                os.environ["JUSTAI_AUTO_MODE"] = prior_auto
 
 
 def _run_pipeline(

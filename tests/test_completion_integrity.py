@@ -679,3 +679,30 @@ def test_blocked_dependency_does_not_let_its_dependent_run():
         "Task 1 depends on a task the checkpoint blocked and must not be dispatched"
     )
     assert result.status != "complete"
+
+
+# ── PR #32 P2 follow-up: blocked_indices type discipline (Codex 2250) ─────────
+# Only None means "omitted". A falsy malformed value must not be silently read
+# as "nothing blocked", and an unsupported iterable must not be accepted.
+
+from justai.agent_dispatch import _normalize_blocked_indices as _norm_blocked
+
+
+@_pytest.mark.parametrize("bad", [False, 0, "", [], (), [1], (1,), "01"])
+def test_blocked_indices_must_be_a_set_or_dict(bad):
+    with _pytest.raises(ValueError, match="set or"):
+        _norm_blocked(bad, 3)
+
+
+def test_blocked_indices_none_means_omitted():
+    assert _norm_blocked(None, 3) == {}
+
+
+def test_empty_set_or_dict_means_nothing_blocked():
+    assert _norm_blocked(set(), 3) == {}
+    assert _norm_blocked({}, 3) == {}
+
+
+def test_valid_set_and_dict_blocked_indices_normalize():
+    assert _norm_blocked({1}, 3) == {1: "vetoed"}
+    assert _norm_blocked({0: "checkpoint said no"}, 3) == {0: "checkpoint said no"}
