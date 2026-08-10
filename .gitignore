@@ -43,3 +43,8 @@ dashboard-*.png
 
 # Claude Code local settings (per-machine, not for repo)
 .claude/
+
+# Python build artifacts (pip install / build from the checkout regenerates these)
+build/
+dist/
+*.egg-info/
