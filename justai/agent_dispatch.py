@@ -566,10 +566,11 @@ def _verify_task(task: Task) -> tuple[bool, str]:
     ):
         return None, "no automated verification (task not confirmed done)"
 
+    workdir = _task_workdir()
     try:
         result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", criteria],
-            _task_workdir(),
+            workdir,
             timeout=30,
         )
     except SandboxUnavailable as exc:
@@ -581,7 +582,18 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         return False, "verification command timed out"
     if result.returncode == 0:
         return True, result.stdout[:500]
-    return False, f"exit {result.returncode}: {result.stderr[:300]}"
+    detail = f"exit {result.returncode}: {(result.stderr or result.stdout)[:300]}".rstrip()
+    # A criterion naming a path outside the sandbox window can never pass: the
+    # path is not visible in there even though it exists on the host. Say so, or
+    # this reads as a plain missing artifact and the real cause stays hidden.
+    outside = _outside_workdir_paths(criteria, workdir)
+    if outside:
+        detail += (
+            f" [sandbox: verification only sees {workdir}; not visible: "
+            + ", ".join(outside[:3])
+            + "]"
+        )
+    return False, detail
 
 
 LOCAL_EXEC_TIMEOUT = int(os.environ.get("JUSTAI_LOCAL_EXEC_TIMEOUT", "60"))
