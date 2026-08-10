@@ -44,10 +44,18 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from justai.results import DelegationResult
 from justai.runner_protocol import (
-    AgentRunner,  # noqa: F401  # stub; full integration post-safe-mini
+    ActionRecord,
+    Budget,
+    Chunk,
+    ExecutorPolicy,
+    FailureClass,
+    ObservationPolicy,
+    ResultRecord,
+    RunResult,
 )
 from justai.scope_planner import Task
 
@@ -508,6 +516,56 @@ def _validated_workdir(path: str, source: str) -> str:
         )
     return resolved
 
+# The legacy local executor always performs at most one model-directed shell
+# action. These bounds make that existing behavior explicit when adapting a
+# Task to the substrate Chunk; they are not a new permissive default.
+_LOCAL_CHUNK_MOVE_BUDGET = 1
+_LOCAL_CHUNK_OBSERVATION_BUDGET = 1200
+_TRANSCRIPT_FIELD_LIMIT = 1200
+
+
+@dataclass(frozen=True)
+class _ActionExecution:
+    outcome: str
+    detail: str
+    action: ActionRecord | None = None
+    result_status: Literal["ok", "fail", "timeout"] | None = None
+
+
+@dataclass(frozen=True)
+class _Verification:
+    passed: bool | None
+    detail: str
+    result_status: Literal["ok", "fail", "timeout"] | None = None
+    ran: bool = False
+
+
+@dataclass
+class _LocalRunResult(RunResult):
+    """JustAi-local evidence used to map a substrate run back to task status.
+
+    The generic RunResult remains unchanged. These fields preserve the
+    executor and verification facts separately so an orchestration caller
+    cannot turn a merely executed action into a completed task.
+    """
+
+    execution_outcome: str = "error"
+    execution_detail: str = ""
+    verification_passed: bool | None = None
+    verification_detail: str = ""
+
+
+def _chunk_for_task(task: Task) -> Chunk:
+    """Convert one existing Task into the one-action local executor contract."""
+    return Chunk(
+        goal=f"{task.title}\n\n{task.description}",
+        success_criteria=task.success_criteria,
+        budget=Budget(
+            move_budget=_LOCAL_CHUNK_MOVE_BUDGET,
+            observation_budget=_LOCAL_CHUNK_OBSERVATION_BUDGET,
+        ),
+    )
+
 
 def _task_workdir() -> str:
     """The ONLY writable window the sandboxed executor gets (Atom C).
@@ -562,14 +620,14 @@ def _outside_workdir_paths(command: str, workdir: str) -> list[str]:
     return out
 
 
-def _verify_task(task: Task) -> tuple[bool, str]:
-    """Run the task's success criteria and return (passed, output)."""
-    criteria = task.success_criteria
+def _verify_chunk(chunk: Chunk) -> _Verification:
+    """Run one Chunk's success criterion through the same bwrap boundary."""
+    criteria = chunk.success_criteria
     if not criteria or criteria.strip() in (
         "echo 'verify manually'",
         "echo 'task completed -- verify manually'",
     ):
-        return None, "no automated verification (task not confirmed done)"
+        return _Verification(None, "no automated verification (task not confirmed done)")
 
     try:
         # Inside the try: _task_workdir() can raise SandboxUnavailable, which
@@ -583,13 +641,20 @@ def _verify_task(task: Task) -> tuple[bool, str]:
         )
     except SandboxUnavailable as exc:
         # Fail closed: verification did not run, so the task cannot pass.
-        return False, f"verification not run, sandbox unavailable: {str(exc)[:200]}"
+        return _Verification(
+            False,
+            f"verification not run, sandbox unavailable: {str(exc)[:200]}",
+            "fail",
+        )
     except Exception as exc:
-        return False, str(exc)[:200]
+        return _Verification(False, str(exc)[:200], "fail")
     if result.timed_out:
-        return False, "verification command timed out"
+        return _Verification(False, "verification command timed out", "timeout", True)
     if result.returncode == 0:
-        return True, result.stdout[:500]
+        # Keep the raw result until the runner applies the Chunk's bounded
+        # structured-tail observation policy. Pre-slicing here would silently
+        # discard the useful tail before it can be marked as truncated.
+        return _Verification(True, result.stdout, "ok", True)
     output = (result.stderr or "").strip() or (result.stdout or "").strip()
     # A criterion naming a path the sandbox cannot reach can never pass, even
     # though the path exists on the host. Lead with that: callers truncate this
@@ -603,7 +668,18 @@ def _verify_task(task: Task) -> tuple[bool, str]:
             + (f" (+{len(outside) - 3} more)" if len(outside) > 3 else "")
             + "] "
         )
-    return False, f"{note}exit {result.returncode}: {output}".rstrip()
+    # Preserve the failed verifier's raw tail until the runner renders the
+    # Chunk-bounded observation. The boundary note comes first because callers
+    # may bound the detail before they see a trailing hint.
+    return _Verification(
+        False, f"{note}exit {result.returncode}: {output}".rstrip(), "fail", True
+    )
+
+
+def _verify_task(task: Task) -> tuple[bool | None, str]:
+    """Compatibility wrapper for callers that still hold an orchestration Task."""
+    verification = _verify_chunk(_chunk_for_task(task))
+    return verification.passed, verification.detail
 
 
 LOCAL_EXEC_TIMEOUT = int(os.environ.get("JUSTAI_LOCAL_EXEC_TIMEOUT", "60"))
@@ -700,13 +776,10 @@ def _parse_action(raw: str) -> dict:
     return {"skip_reason": "executor contract violated: response was not a JSON action object"}
 
 
-def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple[bool, str]:
-    """Run one bash command INSIDE the bwrap boundary; return (ok, receipts).
-
-    Raises ``SandboxUnavailable`` when the boundary cannot be constructed: the
-    command did not and will not run (fail closed). Callers surface that as a
-    pre-execution error, never as an executed failure.
-    """
+def _run_local_command_result(
+    command: str, timeout: int = LOCAL_EXEC_TIMEOUT
+) -> tuple[Literal["ok", "fail", "timeout"], str]:
+    """Run one shell command through bwrap and retain its structured outcome."""
     workdir = _task_workdir()
     try:
         result = run_sandboxed(
@@ -717,12 +790,11 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
     except SandboxUnavailable:
         raise
     except Exception as exc:
-        return False, str(exc)[:200]
+        return "fail", str(exc)[:200]
     if result.timed_out:
-        return False, "execution timed out (exit: timeout)"
+        return "timeout", "execution timed out (exit: timeout)"
     out = (result.stdout[-800:] + result.stderr[-400:]).strip()
-    ok = result.returncode == 0
-    if not ok:
+    if result.returncode != 0:
         out = (out + f" (exit {result.returncode})").strip()
         # A path outside the writable window reports "No such file or
         # directory" even though it exists on the host. Say so, or the operator
@@ -736,11 +808,18 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
                 + (f" (+{len(outside) - 3} more)" if len(outside) > 3 else "")
                 + "]"
             )
-    return ok, out or f"(exit {result.returncode})"
+        return "fail", out or f"(exit {result.returncode})"
+    return "ok", out or "(exit 0)"
 
 
-def _perform_task_action(task: Task) -> tuple[str, str]:
-    """Execute the task via the active model's shell action.
+def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple[bool, str]:
+    """Compatibility wrapper for callers that only need a Boolean outcome."""
+    status, out = _run_local_command_result(command, timeout)
+    return status == "ok", out
+
+
+def _perform_chunk_action(chunk: Chunk) -> _ActionExecution:
+    """Execute one Chunk through the existing model JSON action seam.
 
     Returns (outcome, detail); outcome is one of
     executed | executed_failed | no_backend | refused | blocked | error.
@@ -763,67 +842,310 @@ def _perform_task_action(task: Task) -> tuple[str, str]:
         # follows an off-box ambient LITELLM_BASE_URL (fail-closed).
         action_base_url = _execution_endpoint()
     prompt = (
-        "Task: " + task.title + chr(10) + chr(10) + task.description
+        "Task: " + chunk.goal
         + chr(10) + chr(10) + "Produce the shell command."
     )
     try:
         raw = _llm_call(model, prompt, system=_ACTION_SYSTEM, base_url=action_base_url)
     except Exception as exc:
-        return "no_backend", f"execution model unavailable: {str(exc)[:160]}"
+        return _ActionExecution(
+            "no_backend", f"execution model unavailable: {str(exc)[:160]}"
+        )
     action = _parse_action(raw)
     if action.get("skip_reason"):
-        return "refused", str(action["skip_reason"])[:200]
+        return _ActionExecution("refused", str(action["skip_reason"])[:200])
     command = str(action.get("command", "")).strip()
     if not command:
-        return "error", "model returned no command"
+        return _ActionExecution("error", "model returned no command")
     if _is_catastrophic(command):
-        return "blocked", f"refused catastrophic command: {command[:120]}"
+        return _ActionExecution(
+            "blocked", f"refused catastrophic command: {command[:120]}"
+        )
+    action_record = ActionRecord.create("bash", {"command": command})
     try:
-        ok, out = _run_local_command(command)
+        command_status, out = _run_local_command_result(command)
     except SandboxUnavailable as exc:
         # Fail closed at the operator surface: the command was never executed.
-        return "error", f"sandbox unavailable, command not executed: {str(exc)[:200]}"
-    outcome = "executed" if ok else "executed_failed"
-    return outcome, "$ " + command[:160] + chr(10) + out[:400]
+        return _ActionExecution(
+            "error",
+            f"sandbox unavailable, command not executed: {str(exc)[:200]}",
+        )
+    outcome = "executed" if command_status == "ok" else "executed_failed"
+    return _ActionExecution(
+        outcome,
+        "$ " + _bounded_observation_value(command, 160) + chr(10) + out,
+        action_record,
+        command_status,
+    )
+
+
+def _perform_task_action(task: Task) -> tuple[str, str]:
+    """Compatibility wrapper for the legacy Task-shaped local executor."""
+    execution = _perform_chunk_action(_chunk_for_task(task))
+    return execution.outcome, execution.detail
+
+
+def _failure_class_for_execution(execution: _ActionExecution) -> FailureClass | None:
+    if execution.outcome == "executed":
+        return None
+    if execution.outcome == "blocked":
+        return FailureClass.SAFETY_VIOLATION
+    if execution.outcome == "refused":
+        return FailureClass.ACTION_PROTOCOL_VIOLATION
+    return FailureClass.EMBODIMENT_FAILURE
+
+
+def _bounded_observation_value(value: object, limit: int, *, tail: bool = False) -> str:
+    """Bound an observation while making every loss of content explicit."""
+    text = str(value)
+    if len(text) <= limit:
+        return text
+    # Even the smallest accepted observation budget must not make a shortened
+    # value look exact. A one-character ellipsis fits every positive budget.
+    marker = "…"
+    if limit <= 0:
+        return ""
+    if limit == len(marker):
+        return marker
+    kept = limit - len(marker)
+    if tail:
+        return marker + text[-kept:]
+    return text[:kept] + marker
+
+
+def _write_run_transcript(
+    run: _LocalRunResult,
+) -> str:
+    """Write bounded local evidence without changing a completed task outcome.
+
+    The transcript is an observation artifact. A filesystem failure makes it
+    unavailable, but does not rewrite what the bwrap action and verification
+    actually did.
+    """
+    path = ""
+    limit = min(_TRANSCRIPT_FIELD_LIMIT, run.chunk.budget.observation_budget)
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="justai-run-",
+            suffix=".jsonl",
+            delete=False,
+        ) as handle:
+            path = handle.name
+            for result in run.results:
+                result.evidence_ref = path
+            payload = {
+                "kind": "justai-local-run",
+                "goal": _bounded_observation_value(run.chunk.goal, limit),
+                "success_criteria": _bounded_observation_value(
+                    run.chunk.success_criteria, limit
+                ),
+                "success": run.success,
+                "failure_class": run.failure_class,
+                "execution": {
+                    "outcome": run.execution_outcome,
+                    "detail": _bounded_observation_value(
+                        run.execution_detail, limit, tail=True
+                    ),
+                },
+                "verification": {
+                    "passed": run.verification_passed,
+                    "detail": _bounded_observation_value(
+                        run.verification_detail, limit, tail=True
+                    ),
+                },
+                "actions": [
+                    {
+                        "id": str(action.action_id),
+                        "type": action.action_type,
+                        "args": {
+                            key: _bounded_observation_value(value, limit)
+                            for key, value in action.args.items()
+                        },
+                        "issued_at": action.issued_at.isoformat(),
+                    }
+                    for action in run.actions
+                ],
+                "results": [
+                    {
+                        "id": str(result.result_id),
+                        "action_id": str(result.action_id),
+                        "status": result.status,
+                        "evidence_ref": result.evidence_ref,
+                        "finished_at": result.finished_at.isoformat(),
+                    }
+                    for result in run.results
+                ],
+            }
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + chr(10))
+        return path
+    except (OSError, TypeError, ValueError):
+        for result in run.results:
+            result.evidence_ref = None
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return ""
+
+
+class JustAiSandboxRunner:
+    """Concrete, one-action runner over JustAi's existing Bubblewrap executor."""
+
+    def _rejected(
+        self, chunk: Chunk, failure_class: FailureClass, started_at: float
+    ) -> _LocalRunResult:
+        return _LocalRunResult(
+            chunk=chunk,
+            success=False,
+            steps_used=0,
+            final_diff="",
+            transcript_path="",
+            failure_class=failure_class,
+            latency_seconds=time.monotonic() - started_at,
+        )
+
+    def run(
+        self,
+        chunk: Chunk,
+        observation_policy: ObservationPolicy = ObservationPolicy.STRUCTURED_RAW_TAIL,
+        executor_policy: ExecutorPolicy = ExecutorPolicy.SAFE,
+    ) -> RunResult:
+        """Run a Chunk only under the existing safe, bounded local contract."""
+        if not isinstance(chunk, Chunk):
+            raise TypeError("JustAiSandboxRunner.run requires a Chunk")
+        started_at = time.monotonic()
+
+        # These checks are deliberately before transcript creation, model calls,
+        # or bwrap. A non-safe or unknown policy gets no side effect.
+        if executor_policy is not ExecutorPolicy.SAFE:
+            return self._rejected(chunk, FailureClass.SAFETY_VIOLATION, started_at)
+        if observation_policy is not ObservationPolicy.STRUCTURED_RAW_TAIL:
+            return self._rejected(
+                chunk, FailureClass.ACTION_PROTOCOL_VIOLATION, started_at
+            )
+        if (
+            isinstance(chunk.budget.move_budget, bool)
+            or not isinstance(chunk.budget.move_budget, int)
+            or chunk.budget.move_budget < 1
+            or isinstance(chunk.budget.observation_budget, bool)
+            or not isinstance(chunk.budget.observation_budget, int)
+            or chunk.budget.observation_budget < 1
+        ):
+            return self._rejected(chunk, FailureClass.BUDGET_EXHAUSTED, started_at)
+
+        execution = _perform_chunk_action(chunk)
+        actions: list[ActionRecord] = []
+        results: list[ResultRecord] = []
+        if execution.action is not None and execution.result_status is not None:
+            actions.append(execution.action)
+            results.append(
+                ResultRecord.create(execution.action.action_id, execution.result_status)
+            )
+
+        # Preserve the previous executor's ordering: verification runs under
+        # bwrap even when the action did not run, but it cannot promote it to
+        # success because success below requires an executed action.
+        verification = _verify_chunk(chunk)
+        if verification.ran and verification.result_status is not None:
+            verify_action = ActionRecord.create(
+                "verify", {"command": chunk.success_criteria}
+            )
+            actions.append(verify_action)
+            results.append(
+                ResultRecord.create(verify_action.action_id, verification.result_status)
+            )
+
+        success = execution.outcome == "executed" and verification.passed is True
+        failure_class = _failure_class_for_execution(execution)
+        if execution.outcome == "executed" and verification.passed is None:
+            failure_class = None
+        elif execution.outcome == "executed" and verification.passed is False:
+            failure_class = FailureClass.EMBODIMENT_FAILURE
+        observation_limit = min(
+            _TRANSCRIPT_FIELD_LIMIT, chunk.budget.observation_budget
+        )
+
+        run = _LocalRunResult(
+            chunk=chunk,
+            success=success,
+            steps_used=1 if execution.action is not None else 0,
+            final_diff="",
+            transcript_path="",
+            failure_class=failure_class,
+            latency_seconds=time.monotonic() - started_at,
+            actions=actions,
+            results=results,
+            execution_outcome=execution.outcome,
+            execution_detail=_bounded_observation_value(
+                execution.detail, observation_limit, tail=True
+            ),
+            verification_passed=verification.passed,
+            verification_detail=_bounded_observation_value(
+                verification.detail, observation_limit, tail=True
+            ),
+        )
+        run.transcript_path = _write_run_transcript(run)
+        return run
+
+    def classify_failure(self, result: RunResult) -> FailureClass:
+        """Classify a failed run without fabricating a class for unverified work."""
+        if result.success or result.failure_class is None:
+            raise ValueError("only a failed, classified run can be classified")
+        return result.failure_class
 
 
 def _execute_single_local(task: Task, session_ref: str = "") -> DelegationResult:
-    """Execute a task's action locally (model-driven), then verify it.
+    """Run one Task through the owned runner and map evidence to task status.
 
     Honest 3-state: a task is ``done`` only when it BOTH executed and its
     success check passed. Execution without an automated check is
     ``unverified``; anything else (no backend, refusal, blocked command,
     non-zero exit, or a failed check) is ``failed`` -- never a silent success.
     """
-    start = time.time()
-    outcome, exec_detail = _perform_task_action(task)
-    executed = outcome == "executed"
-    passed, verify_output = _verify_task(task)
-
-    if executed and passed is True:
-        status = "done"
-        detail = verify_output[:200]
-    elif executed and passed is None:
-        status = "unverified"
-        detail = f"executed but no automated success check ran: {exec_detail[:150]}"
-    elif executed and passed is False:
+    run = JustAiSandboxRunner().run(_chunk_for_task(task))
+    if not isinstance(run, _LocalRunResult):
+        # A protocol-compatible foreign result lacks the local evidence needed
+        # to decide an orchestration Task. Never infer a completed task from it.
         status = "failed"
-        detail = f"executed, but verify failed: {verify_output[:150]}"
-    elif outcome == "executed_failed":
+        detail = "not executed (runner returned incomplete local evidence)"
+    elif (
+        run.success
+        and run.execution_outcome == "executed"
+        and run.verification_passed is True
+    ):
+        status = "done"
+        detail = run.verification_detail[:200]
+    elif (
+        run.execution_outcome == "executed"
+        and run.verification_passed is None
+        and run.failure_class is None
+    ):
+        status = "unverified"
+        detail = (
+            "executed but no automated success check ran: "
+            f"{run.execution_detail[:150]}"
+        )
+    elif run.execution_outcome == "executed":
+        status = "failed"
+        detail = f"executed, but verify failed: {run.verification_detail[:150]}"
+    elif run.execution_outcome == "executed_failed":
         # The command RAN and exited nonzero/timed out — an executed failure,
         # not a pre-execution ("not executed") failure.
         status = "failed"
-        detail = f"executed, but the command failed: {exec_detail[:170]}"
+        detail = f"executed, but the command failed: {run.execution_detail[:170]}"
     else:
         status = "failed"
-        detail = f"not executed ({outcome}): {exec_detail[:170]}"
+        detail = f"not executed ({run.execution_outcome}): {run.execution_detail[:170]}"
 
     return DelegationResult(
         task_id=f"local-{session_ref or 'task'}",
         title=task.title,
         status=status,
         result=detail,
-        duration_seconds=time.time() - start,
+        duration_seconds=run.latency_seconds,
     )
 
 

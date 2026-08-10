@@ -23,7 +23,9 @@ def _fake_resp():
     r = MagicMock()
     r.__enter__ = MagicMock(return_value=r)
     r.__exit__ = MagicMock(return_value=False)
-    r.read.return_value = json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode()
+    r.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": json.dumps({"command": "true"})}}]}
+    ).encode()
     return r
 
 
@@ -106,8 +108,12 @@ def test_local_escalation_uses_primary_not_executor(monkeypatch):
     monkeypatch.setenv("JUSTAI_EXECUTOR_BASE_URL", EXEC)
     # Force the first attempt to fail so escalation runs; keep it hermetic
     # (no real shell execution / verification).
-    monkeypatch.setattr(ad, "_run_local_command", lambda *a, **k: (False, "forced"))
-    monkeypatch.setattr(ad, "_verify_task", lambda task: (False, "n/a"))
+    monkeypatch.setattr(
+        ad, "_run_local_command_result", lambda *a, **k: ("fail", "forced")
+    )
+    monkeypatch.setattr(
+        ad, "_verify_chunk", lambda chunk: ad._Verification(False, "n/a", "fail", True)
+    )
 
     task = Task(
         title="t",
