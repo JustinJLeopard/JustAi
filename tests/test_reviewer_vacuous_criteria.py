@@ -49,3 +49,35 @@ def test_criteria_that_cannot_fail_are_rejected(criteria):
 def test_real_criteria_are_kept(criteria):
     result = _heuristic_review(_plan(criteria))
     assert result.approved is True, result.feedback
+
+
+@pytest.mark.parametrize("criteria", [
+    # A no-op fallback on a SETUP step, with a real check last: legitimate.
+    "mkdir -p out || true; test -f out/app.js",
+    "docker stop c || true && test -f result.txt",
+    "npm audit || echo 'warn' >&2; test -f dist/app.js",
+    # The idiom appears only inside a quoted search pattern: legitimate.
+    "grep -Fq '|| echo' deploy.sh",
+    "grep -q '|| true' Makefile",
+])
+def test_no_op_fallback_before_a_real_check_is_kept(criteria):
+    result = _heuristic_review(_plan(criteria))
+    assert result.approved is True, result.feedback
+
+
+@pytest.mark.parametrize("criteria", [
+    "echo done",
+    "true",
+    "printf 'ok'",
+    "pytest -q\nexit 0",
+    "if grep -q x f; then echo yes; else echo no; fi",
+])
+def test_other_always_zero_shapes_are_rejected(criteria):
+    result = _heuristic_review(_plan(criteria))
+    assert result.approved is False, criteria
+    assert any("cannot fail" in f.lower() for f in result.feedback), result.feedback
+
+
+def test_if_else_that_can_fail_is_kept():
+    result = _heuristic_review(_plan("if test -f a.txt; then echo ok; else exit 1; fi"))
+    assert result.approved is True, result.feedback

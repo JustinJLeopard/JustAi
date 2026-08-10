@@ -206,10 +206,22 @@ def _task_makes_exist(blob_lower: str, path_lower: str) -> bool:
 # exiting non-zero when the work did not happen. Observed in a real run --
 # "grep -Fxq ... && echo 'success' || echo 'failure'" printed "failure" and
 # still exited 0, so the task was marked done.
+#
+# Only the LAST command decides the exit status, so a no-op fallback is judged
+# only when nothing falsifiable follows it: "mkdir -p out || true; test -f out"
+# is a legitimate setup idiom and must not be flagged. Quoted spans are blanked
+# first so "grep -Fq '|| echo' deploy.sh" is not mistaken for the idiom itself.
+_QUOTED_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
 _CANNOT_FAIL_RE = re.compile(
-    r"\|\|\s*(?:true\b|:(?:\s|;|&|$)|echo\b|printf\b|exit\s+0\b)"
-    r"|;\s*(?:true\b|exit\s+0\b)\s*$"
+    r"\|\|\s*(?:true\b|:(?:\s|;|&|$)|echo\b|printf\b|exit\s+0\b)[^;&|\n]*$"
+    r"|(?:^|[;\n])\s*(?:true|:|exit\s+0)\s*$",
+    re.MULTILINE,
 )
+# A criterion that is nothing but an always-succeeding command.
+_ALWAYS_ZERO_RE = re.compile(r"^(?:true|:|echo\b.*|printf\b.*)$")
+# if/then/else where neither branch can fail -- the nearest neighbour of the
+# observed bug, reachable by a replanner told to stop using "|| echo".
+_IF_ELSE_ALWAYS_ZERO_RE = re.compile(r"^if\b.*\belse\b.*\bfi\b\s*$", re.DOTALL)
 
 
 def _unfalsifiable_criteria(plan: Plan) -> list[str]:
@@ -217,7 +229,15 @@ def _unfalsifiable_criteria(plan: Plan) -> list[str]:
     issues: list[str] = []
     for i, t in enumerate(plan.tasks):
         criteria = (t.success_criteria or "").strip()
-        if criteria and _CANNOT_FAIL_RE.search(criteria):
+        if not criteria:
+            continue
+        bare = _QUOTED_SPAN_RE.sub("''", criteria).strip()
+        cannot_fail = bool(_CANNOT_FAIL_RE.search(bare)) or bool(_ALWAYS_ZERO_RE.match(bare))
+        if not cannot_fail and _IF_ELSE_ALWAYS_ZERO_RE.match(bare):
+            # if/fi returns its last branch's status; without a failing exit or
+            # false in either branch it can only succeed.
+            cannot_fail = not re.search(r"\bexit\s+[1-9]|\bfalse\b|\breturn\s+[1-9]", bare)
+        if cannot_fail:
             issues.append(
                 f"Task [{i}] '{t.title}': success criteria cannot fail -- "
                 f"{criteria[:80]!r} exits 0 whichever branch runs, so verification "
