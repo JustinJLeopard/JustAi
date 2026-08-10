@@ -27,7 +27,7 @@ def test_failed_learning_write_is_reported(capsys):
 
     rec.assert_called_once()
     assert result.status == "complete", "a lost learning record must not fail the run"
-    out = capsys.readouterr().out.lower()
+    out = capsys.readouterr().err.lower()
     assert "not recorded" in out, f"operator must see the lost record, got: {out[-300:]}"
 
 
@@ -38,7 +38,7 @@ def test_successful_learning_write_is_quiet(capsys):
         with patch("justai.orchestrator.record_run", return_value=True):
             run("a goal", session_ref="t")
 
-    assert "not recorded" not in capsys.readouterr().out.lower()
+    assert "not recorded" not in capsys.readouterr().err.lower()
 
 
 def test_failed_learning_write_on_the_fail_closed_path_is_reported(capsys):
@@ -50,4 +50,33 @@ def test_failed_learning_write_on_the_fail_closed_path_is_reported(capsys):
             result = run("a goal", session_ref="t")
 
     assert result.status == "failed"
-    assert "not recorded" in capsys.readouterr().out.lower()
+    assert "not recorded" in capsys.readouterr().err.lower()
+
+
+def test_reporting_never_fails_a_finished_run(monkeypatch):
+    """A broken stdout/hook/tracer must not turn a lost record into a lost run."""
+    import justai.orchestrator as O
+
+    def broken_print(*a, **k):
+        raise BrokenPipeError("stdout closed")
+    monkeypatch.setattr("builtins.print", broken_print)
+
+    hook = MagicMock()
+    hook.on_stage.side_effect = RuntimeError("notifier down")
+    monkeypatch.setattr(O, "_hook", hook, raising=False)
+    monkeypatch.setattr(O, "trace_event", MagicMock(side_effect=RuntimeError("tracer down")))
+
+    O._report_learning_write(False, "run-1", "sess")   # must not raise
+
+
+def test_lost_record_is_informational_not_an_error_page(monkeypatch):
+    """A backend that was simply never configured must not page per run."""
+    import justai.orchestrator as O
+
+    hook = MagicMock()
+    monkeypatch.setattr(O, "_hook", hook, raising=False)
+    monkeypatch.setattr(O, "trace_event", MagicMock())
+    O._report_learning_write(False, "run-1", "sess")
+
+    hook.on_error.assert_not_called()
+    hook.on_stage.assert_called_once()
