@@ -34,6 +34,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -478,23 +479,82 @@ def escalate_task(
     return escalation_result
 
 
-_FALLBACK_WORKDIR: list[str] = []
+def _validated_workdir(path: str, source: str) -> str:
+    """Accept a task workdir only if binding it read-write is defensible.
+
+    The sandbox binds this directory rw, so a home directory (or anything above
+    it) would expose ~/.ssh, credential files and shell rc files to every
+    model-produced command. Refuse loudly rather than silently substituting a
+    scratch directory: a silent substitute is the exact failure this replaced --
+    writes vanish and the operator debugs a phantom missing file.
+    """
+    resolved = os.path.realpath(os.path.abspath(os.path.expanduser(path)))
+    home = os.path.realpath(os.path.expanduser("~"))
+    too_broad = (
+        resolved == os.sep
+        or resolved == home
+        or home.startswith(resolved.rstrip(os.sep) + os.sep)
+    )
+    if too_broad:
+        raise SandboxUnavailable(
+            f"refusing to use {resolved!r} ({source}) as the task workdir: it is "
+            "the filesystem root, your home directory, or a parent of it, and the "
+            "sandbox would bind it read-write. Set JUSTAI_TASK_WORKDIR to a "
+            "specific project directory."
+        )
+    if not os.path.isdir(resolved):
+        raise SandboxUnavailable(
+            f"task workdir {resolved!r} ({source}) does not exist or is not a directory"
+        )
+    return resolved
 
 
 def _task_workdir() -> str:
     """The ONLY writable window the sandboxed executor gets (Atom C).
 
-    ``JUSTAI_TASK_WORKDIR`` when configured; otherwise one private per-process
-    scratch directory created on first use — stable across commands so a
-    create-then-verify sequence shares state. A configured path that does not
-    exist fails closed in ``run_sandboxed`` (the command does not run).
+    ``JUSTAI_TASK_WORKDIR`` when configured, otherwise the process working
+    directory -- which is where the executor ran before the sandbox landed.
+    Defaulting to a private scratch directory instead silently relocated every
+    run away from the workspace the operator was standing in, so goals writing
+    to real paths failed against a path that exists on the host. Both sources
+    go through the same validation.
     """
     configured = os.environ.get("JUSTAI_TASK_WORKDIR", "").strip()
     if configured:
-        return configured
-    if not _FALLBACK_WORKDIR:
-        _FALLBACK_WORKDIR.append(tempfile.mkdtemp(prefix="justai-work-"))
-    return _FALLBACK_WORKDIR[0]
+        return _validated_workdir(configured, "JUSTAI_TASK_WORKDIR")
+    try:
+        cwd = os.getcwd()
+    except OSError as exc:
+        # The working directory can be deleted out from under a long-lived run.
+        raise SandboxUnavailable(
+            f"cannot determine the working directory ({exc.__class__.__name__}); "
+            "set JUSTAI_TASK_WORKDIR"
+        ) from exc
+    return _validated_workdir(cwd, "working directory")
+
+
+def _outside_workdir_paths(command: str, workdir: str) -> list[str]:
+    """Absolute paths in the command that fall outside the sandbox window.
+
+    Only the workdir and a few read-only system roots are bound, so a path
+    outside them is neither readable nor writable inside the sandbox -- which
+    surfaces as "No such file or directory" for a path that exists on the host.
+    Filters regex noise ("s/a/b/", "https://x/y", "24/7", "~/notes.txt") by
+    requiring at least two components whose first component is a real directory.
+    """
+    root = os.path.realpath(workdir)  # run_sandboxed resolves the bind the same way
+    out: list[str] = []
+    seen: set[str] = set()
+    for cand in re.findall(r"/[\w./~-]+", command):
+        parts = [p for p in cand.split("/") if p]
+        if len(parts) < 2 or not os.path.isdir(os.sep + parts[0]):
+            continue
+        rp = os.path.realpath(cand)
+        if rp in seen or rp == root or rp.startswith(root.rstrip(os.sep) + os.sep):
+            continue
+        seen.add(rp)
+        out.append(cand)
+    return out
 
 
 def _verify_task(task: Task) -> tuple[bool, str]:
@@ -620,10 +680,11 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
     command did not and will not run (fail closed). Callers surface that as a
     pre-execution error, never as an executed failure.
     """
+    workdir = _task_workdir()
     try:
         result = run_sandboxed(
             ["bash", "-o", "pipefail", "-c", command],
-            _task_workdir(),
+            workdir,
             timeout=timeout,
         )
     except SandboxUnavailable:
@@ -636,6 +697,18 @@ def _run_local_command(command: str, timeout: int = LOCAL_EXEC_TIMEOUT) -> tuple
     ok = result.returncode == 0
     if not ok:
         out = (out + f" (exit {result.returncode})").strip()
+        # A path outside the writable window reports "No such file or
+        # directory" even though it exists on the host. Say so, or the operator
+        # debugs a phantom missing file.
+        outside = _outside_workdir_paths(command, workdir)
+        if outside:
+            out = (
+                out
+                + f" [sandbox: only {workdir} is available inside the sandbox; "
+                + f"outside it: {', '.join(outside[:3])}"
+                + (f" (+{len(outside) - 3} more)" if len(outside) > 3 else "")
+                + "]"
+            )
     return ok, out or f"(exit {result.returncode})"
 
 
