@@ -1,4 +1,11 @@
-# JustAi
+# JustAi — historical design note
+
+> This document preserves an earlier design and its reported research results;
+> it is not a current feature or execution-readiness reference. See the
+> [main README](../README.md) for current behavior: execution backends remain
+> unavailable and `run` fails closed. The public browser demo is a deterministic
+> simulation with fixture data. The historical results below have not been
+> revalidated by this documentation update.
 
 **A thin project-orchestration layer over a safe-by-construction local-execution substrate for mini-swe-agent–style coding agents.**
 
