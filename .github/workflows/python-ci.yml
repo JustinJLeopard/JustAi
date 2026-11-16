@@ -33,7 +33,8 @@ concurrency:
 jobs:
   test:
     name: pytest + ruff (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Explicit platform: see docs/ci-runner-policy.md for qualification and rollback.
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     strategy:
       # One version failing must not hide the other's result.

@@ -68,7 +68,8 @@ concurrency:
 jobs:
   build-and-test:
     name: build + test
-    runs-on: ubuntu-latest
+    # Explicit platform: see docs/ci-runner-policy.md for qualification and rollback.
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     defaults:
       run:
@@ -79,6 +80,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Qualify the reviewed head, not GitHub's synthetic merge preview.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           # No later step needs the token; don't leave it in .git/config.
           persist-credentials: false
 

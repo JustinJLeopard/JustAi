@@ -131,3 +131,25 @@ def test_dashboard_ci_is_untouched(python_ci: str) -> None:
         assert step in dashboard, f"Dashboard CI no longer runs {step}"
     for reference in PINNED_USES.findall(dashboard):
         assert SHA_PIN.match(reference), f"{reference} is not pinned to a commit SHA"
+
+
+@pytest.mark.parametrize("workflow", [PYTHON_CI, DASHBOARD_CI], ids=["python", "dashboard"])
+def test_product_ci_uses_explicit_qualified_runner(workflow: Path) -> None:
+    """A moving latest label must not silently change the qualified platform."""
+    labels = re.findall(r"^\s+runs-on:\s*(\S+)", workflow.read_text(), re.MULTILINE)
+    assert labels == ["ubuntu-26.04"]
+
+
+def test_both_declared_python_versions_stay_in_ci(python_ci: str) -> None:
+    assert "python-version: ['3.12', '3.13']" in python_ci
+
+
+def test_dashboard_uses_declared_node_and_exact_pr_head() -> None:
+    import json
+
+    dashboard = DASHBOARD_CI.read_text()
+    package = json.loads((REPO / "dashboard/package.json").read_text())
+    assert package["engines"]["node"] == "24.x"
+    assert "node-version-file: dashboard/package.json" in dashboard
+    assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in dashboard
+    assert "persist-credentials: false" in dashboard
