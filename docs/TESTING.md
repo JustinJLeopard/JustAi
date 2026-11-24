@@ -134,8 +134,20 @@ It does not prove:
 - **anything about the Python control plane.** That suite is separate, and is
   run by `python-ci.yml` above rather than by this workflow.
 
+## Native workbench qualification
+
+The proposed native workbench is not implemented yet. Its acceptance cases and milestone state live in [Delivery](DELIVERY.md#proof-that-matters); its product requirements live in [Product](PRODUCT.md). Existing Python/dashboard test results do not prove native rendering, real execution, Memory integration or recovery.
+
+Add reproducible native and integration commands here when the corresponding harness exists. Record the tested source and dependency revisions, target environment, workload, result and limitations. Use owner-authorized test instances for integration and failure injection; keep ordinary unit tests offline. Do not replace an unavailable integration with a mock and label the outcome integrated.
+
+For documentation-only changes, the existing relevant check is:
+
+```bash
+python -m pytest -q tests/test_docs_contract.py
+```
+
 ## Design Principles
 
-All tests run offline. External calls are mocked at the boundary: HTTP clients, subprocess calls, and optional observability clients.
+The existing unit suites run offline. External calls are mocked at the boundary: HTTP clients, subprocess calls, and optional observability clients. Separately qualified integration checks must identify the actual boundary they exercise.
 
 Every behavior change should include a focused regression test when it affects public CLI behavior, orchestration decisions, docs contracts, or run accounting.

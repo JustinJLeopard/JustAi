@@ -7,6 +7,18 @@ JustAi is a project-orchestration control-plane: it breaks engineering goals int
 
 [Live demo](https://justai-demo.vercel.app) · [Case study](https://www.delegateandorchestrate.com/work/justai) · [Portfolio](https://www.delegateandorchestrate.com) · [Safe execution substrate](https://github.com/JustinJLeopard/safe-mini)
 
+## Native workbench design draft
+
+The proposed next product is a native Rust workbench for continuing team work across development, execution, Memory and operations. This is a design draft; the current execution limitations below still apply.
+
+| Read next | Purpose |
+| --- | --- |
+| [Product and design questions](docs/PRODUCT.md) | User journeys, five views, required behavior and decisions that need human judgment. |
+| [Architecture](docs/ARCHITECTURE.md#native-workbench-design-draft) | Current implementation versus proposed components, source ownership and reusable additions. |
+| [Delivery and acceptance](docs/DELIVERY.md) | Milestones, evidence, progress and possible public/OpenAI distribution routes. |
+
+JustAI consumes maintained team capabilities. Private operating rules, identities and Memory remain with their owners; copies and derived views must identify their source. Public documentation contains portable design and synthetic examples.
+
 ## Status
 
 JustAi is public as the control-plane layer of a broader agent-infrastructure system. The current split is intentional: keep orchestration, execution safety, evaluation, and experiments auditable as separate surfaces instead of hiding them in one opaque agent repo.

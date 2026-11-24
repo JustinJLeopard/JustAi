@@ -2,7 +2,7 @@
 
 JustAi is a thin project-orchestration control plane around safe-mini, the substrate that makes mini-swe-agent's bash-action loop trustworthy on private repos.
 
-This document describes the post-amputation architecture. It does not describe the original v1.0.0 delegation stack.
+The existing implementation and backend migration are described first. The [native workbench design draft](#native-workbench-design-draft) is a proposed successor product surface; its presence does not claim that native execution or the client has shipped. Historical v1.0.0 designs remain archived.
 
 ## Current Shape
 
@@ -221,3 +221,86 @@ TBD post-JustAi-closure:
 - Do not reintroduce removed backends as documentation promises.
 - Keep safe-mini generic; it should not know JustAi-specific dashboards, Discord, auth, or learning aggregation.
 - Keep local-resident focused on experiment generation and calibration, not orchestration.
+
+## Native workbench design draft
+
+This section specifies the proposed native client and its integration boundaries. It does not describe delivered native code or change the current Python control-plane behavior above. Product requirements and design questions live in [Product](PRODUCT.md); progress and acceptance live in [Delivery](DELIVERY.md). The earlier safe-mini integration plan describes that specific existing backend path, not a requirement that every future native provider run through it.
+
+### Components and state ownership
+
+```mermaid
+flowchart TD
+    UI["Native JustAI client"] --> Core["Application and presentation logic"]
+    Core --> Adapters["Contract adapters"]
+    Adapters --> Work["Work and execution owner"]
+    Adapters --> Memory["Memory owner"]
+    Adapters --> Fabric["Capability fabric"]
+    Work --> Evidence["Source and result evidence"]
+    Memory --> Evidence
+    UI --> Drafts["Local drafts and derived cache"]
+```
+
+The client owns view state and drafts. An application layer composes approved operations through adapters. Each durable work item, effect, permission and accepted Memory record has an identified owner. Closing a client connection does not stop independently owned execution.
+
+| Concern | Authoritative home | JustAI behavior |
+| --- | --- | --- |
+| Team identity, operating policy and resource configuration | Operator's maintained identity/policy/deployment sources | Read the authorized profile and effective grants. A display, snapshot or name does not grant authority. |
+| Execution and sessions | Selected native runtime and its supported integration | Request supported operations and read their acknowledged state; retain provider/session attribution. |
+| Work lifecycle and external effects | The selected work/effect owner for that item | Present status and submit commands to that owner. Do not create a competing settlement journal. |
+| Memory semantics and accepted records | Existing Memory product and its designated writer | Retrieve, cite and propose corrections/learning through its contract; display its disposition. |
+| Capability discovery and composition | Existing capability fabric at its delivered scope | Discover and invoke advertised capabilities. MCP is an interface, not the Memory store or permission owner. |
+| UI, interaction rules and product-specific additions | JustAI repository | Specify, implement and verify those additions here. |
+| Reusable infrastructure introduced during product work | An existing suitable component, or an explicitly maintained new component | Consume one versioned implementation after extraction and migration. |
+
+The authority table defines responsibilities, not a new service or wire schema. Resolve concrete source locations, maintainer and supported revision when binding each deployment. Private operational bindings remain private. Public examples use synthetic identities and explicit configuration.
+
+### Stack and target decisions
+
+The primary client direction is Rust. [GPUI Kit](https://gpui-kit.com/docs/) is the leading renderer candidate; compare the representative workbench workload with [nanoui](https://github.com/justrach/nanoui) and retain [Slint](https://slint.dev/) as an alternative. nanoui is Zig; selecting it would require a deliberate UI-language or Rust/Zig integration decision. Selection remains open until M2 qualification. Pin the chosen dependency/toolchain revisions and check distribution terms at that decision.
+
+Share presentation-independent Rust code for protocol adaptation, event reduction, source references and interaction rules where it actually remains portable. Rendering, process/filesystem access, key storage, notifications and transport stay behind target-specific adapters. Tokio or an HTTP service is selected where the real integration needs it, not added to every client by default.
+
+The existing React/TypeScript/Vite dashboard remains the current implementation and visual evidence; it is not the selected production native renderer. Browser/WASM and ChatGPT plugin clients require their own support checks. A shared language or compiled WASM artifact does not establish platform parity.
+
+### Integration contracts to bind in M1
+
+For each real integration, record these details beside its adapter/configuration and tests, using the provider's existing schema wherever one exists:
+
+- The owning component and maintaining role; source/package version; supported protocol and feature set.
+- Work, session, principal and operation identity mapping. Keep these identities distinct.
+- Snapshot/event consistency, ordering, reconnect cursor and duplicate handling; freshness and unavailable states.
+- Command acknowledgement, authorization at execution, cancellation semantics, deadlines and idempotency or reconciliation support.
+- Persistence and recovery responsibility; permitted cache/draft data; account isolation and retention/deletion behavior.
+- Evidence references, error vocabulary and one representative consumer contract check.
+
+If a provider cannot supply a needed guarantee, expose that gap and qualify an adapter or owner-side change. Do not relabel a local optimistic event as confirmed remote state. Define a new contract only for a real uncovered behavior, with a maintaining owner and consumers.
+
+### References, copies and new behavior
+
+| Relationship | Meaning | Required provenance and update path |
+| --- | --- | --- |
+| Reference | A capability or decision owned elsewhere | Owner and authoritative source/contract. Change the owning source. |
+| Derived view or copy | Rendered status, cache, summary, fixture or public projection | Source, revision or observation time, transformation and freshness; label it as derived. Regenerate/update the view after source review. |
+| JustAI addition | Newly specified product behavior | Mark it as new, state its purpose and keep its contract here. It does not silently become team policy. |
+| Reusable addition | New behavior useful to other tools or the team | Name the proposed owning component and adoption state. Transfer the maintained implementation and use it as a dependency. |
+
+One authority means one accepted owner for each fact and contract. It permits separate databases, replicas, caches, deployments and clients with explicit responsibilities. A read model may be useful without becoming another accepted-record store.
+
+The private operator profile may follow evolving team practice. Public product defaults are deliberately selected and versioned; they do not automatically absorb private habits, experiments or environment-specific exceptions.
+
+### Change flow and extraction
+
+When an upstream source changes, inspect the relevant delta, assess the consumer contract, update pins/mappings and verify affected behavior. Show the consumed revision and stale/unsupported state where it affects a user's decision. Integrate this with existing repository checks and release work; a new synchronization controller is not implied.
+
+A reusable improvement first goes to an existing suitable owner. If it needs its own contract, maintainer and release lifecycle, establish a local source checkout, upstream repository, license, tests and release/install path. A maintaining seat is responsibility, not a requirement for an always-running new agent.
+
+Move or package the implementation with attributable history where practical. Change JustAI and the other intended consumer to import or call it; retire duplicate implementations or document their bounded migration. Verify useful use by the owner and consumers. A second repository containing a copy is not a completed extraction.
+
+Examples:
+
+- Navigation and a work-detail view remain JustAI product code.
+- A Memory correction capability belongs with the Memory contract and writer; JustAI owns the editor interaction.
+- General effect reconciliation belongs with the selected execution/effect owner, if that owner already covers it.
+- A reusable native component library may become a separate package/repository when other consumers and independent releases justify it.
+
+Private operator details must not enter public source as extraction metadata. Publish only the implementation/contracts and evidence that their owners have designated shareable.
