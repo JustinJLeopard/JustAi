@@ -1,25 +1,26 @@
 # JustAi Architecture
 
-JustAi is a thin project-orchestration control plane around safe-mini, the substrate that makes mini-swe-agent's bash-action loop trustworthy on private repos.
+The repository currently contains a Python planning and checkpointing prototype. It decomposes goals and applies gates scoped to its own runs; its execution backends remain unavailable.
 
-The existing implementation and backend migration are described first. The [native workbench design draft](#native-workbench-design-draft) is a proposed successor product surface; its presence does not claim that native execution or the client has shipped. Historical v1.0.0 designs remain archived.
+The sections before [Native workbench design draft](#native-workbench-design-draft) describe that implemented prototype and its proposed safe-mini integration. In those sections, orchestration, checkpoints, run identities, budgets and result records refer to prototype-managed runs. They do not assign ownership of an operator's existing team work, runtime, permissions or accepted Memory records to JustAI.
 
-## Current Shape
+The native workbench is a proposed product surface that consumes those existing owners' contracts. Its presence does not claim that native execution or the client has shipped. Historical v1.0.0 designs remain archived.
+
+## Current prototype shape
 
 ```text
-Orchestrator
-============
+Python prototype and proposed runner
 
 Human / agent operator
         |
         v
-JustAi control plane
+JustAi prototype control plane (own runs)
   - classify intent
   - decompose goal into chunks
   - review plan quality
   - apply R0-R3 checkpoints
   - dispatch remaining executable work
-  - synthesize results and memory
+  - synthesize prototype results and learning
         |
         v
 safe-mini substrate (separate repo; not yet wired here)
@@ -42,9 +43,9 @@ The control plane should stay small enough to reason about. The substrate should
 
 ### 1. Scope
 
-Scope lives in JustAi.
+Scope planning for the prototype's own runs lives in JustAi.
 
-`justai.scope_planner` turns a goal into bounded tasks with success criteria, dependencies, risk labels, and target agent hints. `justai.reviewer` checks whether the plan is coherent. `justai.checkpoint` applies R0-R3 gates before anything is allowed to run.
+`justai.scope_planner` turns a goal into bounded tasks with success criteria, dependencies, risk labels, and target agent hints. `justai.reviewer` checks whether the plan is coherent. `justai.checkpoint` applies R0-R3 gates before planned tasks reach this prototype's dispatch surface. These gates do not replace an external owner's admission or approval decision.
 
 The long-term job of this layer is to predict both budgets:
 
@@ -77,10 +78,10 @@ JustAi needs structured failure information from the runner so it can decide whe
 | Repo | Responsibility |
 | --- | --- |
 | `safe-mini` | Runtime foundation and public substrate API. |
-| `JustAi` | Project orchestration, chunk sizing, checkpoints, dashboard, synthesis. |
+| `JustAi` | Prototype-run planning, chunk sizing, run-scoped checkpoints, dashboard and synthesis. |
 | `local-resident` | Local experiment driver for private benchmark slices and calibration data. |
 
-Planned dependency graph:
+Planned dependency graph for the prototype backend:
 
 ```text
 JustAi -----------+
@@ -125,15 +126,15 @@ justai/
 
 Important boundaries:
 
-- `scope_planner.py` owns task decomposition and task data shapes for the current repo.
+- `scope_planner.py` owns task decomposition and task data shapes for the prototype's runs.
 - `agent_dispatch.py` is transitional. Local, delegated, and swarm modes return explicit unavailable-backend errors; planner-authored success criteria are not executed as task completion. `escalate_plan` returns one result per planned task at its original position, so `depends_on` indices stay meaningful; a dependency that cannot name an earlier task fails the task closed instead of dispatching it. The standalone `AgentDispatchPipeline` experiment is quarantined and its `run` raises — it held generated code as strings and never materialized it, so its test run described the launching checkout rather than anything it produced.
-- `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are control-plane gates. A blocked task keeps its position in the plan and is passed to dispatch as blocked, rather than being filtered out.
+- `checkpoint.py`, `reviewer.py`, and `intent_gate.py` are the prototype's control-plane gates. A blocked task keeps its position in the plan and is passed to dispatch as blocked, rather than being filtered out.
 - `run_identity.py` owns what tells one run from another. A run id is a UUID and is not derived from the session label, the clock, the process, or the goal — each of those collides between two runs started together — and it is never read from the environment, which would hand one run's identity to every later run in a long-lived interpreter such as the API server.
 - An approval gate belongs to one run: `checkpoint.py` scopes it to a `GateIdentity` of run id plus plan index and stores it at `gates/<run_id>/plan-<index>.json`. Everything about that path is load-bearing. A record that contradicts its own location is read as no decision rather than as an approval; the old `gates/gate_<session_ref>-plan-<index>.json` layout is not consulted at all, in either direction; and cleanup takes a run id and nothing else, so a finished run cannot delete a concurrent run's pending approval. `session_ref` remains a human label for tracing and memory — it is reused on purpose, it is usually empty, and it scopes nothing.
-- `results.py` owns the canonical status vocabulary and the single run verdict. `synthesizer.py` and `learning.py` both read it, so the run summary and the stored trajectory cannot disagree about what succeeded. Only a nonempty result set in which every task reported `done` is `complete`; an unrecognised status raises instead of falling through to a non-failure bucket.
+- `results.py` owns the prototype's status vocabulary and verdict for each of its runs. `synthesizer.py` and `learning.py` both read it, so the run summary and the stored trajectory cannot disagree about what succeeded. Only a nonempty result set in which every task reported `done` is `complete`; an unrecognised status raises instead of falling through to a non-failure bucket.
 - `exit_codes.py` documents the process exit codes. 0 means verified complete; an ambiguous goal exits `CLARIFICATION_REQUIRED`, and `justai status` exits `NOT_READY` on the same derivation the API reports as `all_ok`.
-- `trajectory.py` and `ledger.py` are the local result/accounting surface until safe-mini owns the canonical types.
-- `memory.py` is integration glue with the surrounding development memory system.
+- `trajectory.py` and `ledger.py` are the prototype's local result/accounting surface; their proposed safe-mini migration is scoped to this backend.
+- `memory.py` is the prototype's legacy claude-flow MCP/CLI bridge. It does not implement the native workbench's required Memory accepted-record contract.
 
 ## Failure Taxonomy
 
@@ -160,9 +161,9 @@ The architecture uses two budgets, not one:
 
 The lab evidence matters here: tiny observations can fail an otherwise solvable task even if the move budget is generous. Scope prediction must size both.
 
-## Runtime Data Flow
+## Prototype runtime data flow
 
-Current transitional flow:
+Current transitional flow for a prototype-managed run:
 
 ```text
 justai run --auto --local "goal"
@@ -181,21 +182,21 @@ justai run --auto --local "goal"
   -> exit_codes.for_run_status("failed") -> exit 1
 ```
 
-No execution mode is a live backend right now. Local mode stays exposed only as a transitional compatibility surface and fails closed until exact-pinned safe-mini execution plus goal-bound artifact acceptance are integrated.
+No Python prototype execution mode is a live backend right now. Local mode stays exposed only as a transitional compatibility surface and fails closed until exact-pinned safe-mini execution plus goal-bound artifact acceptance are integrated.
 
-## Current Boundary
+## Prototype boundary
 
-The live architectural boundary is the control-plane / substrate split:
+The implemented planning layer and proposed substrate integration have this split for prototype-managed runs:
 
-- JustAi owns project orchestration, chunk sizing, checkpoints, dashboards, and synthesis.
+- JustAi owns planning, chunk sizing, run-scoped checkpoints, dashboards and synthesis for those runs. This is not ownership of the operator's team queue, live runtime or accepted Memory.
 - safe-mini owns the bash-action runner, executor policy, observation policy, worktree isolation, guards, incident artifacts, trajectory recording, ledger, and failure classifier.
 - local-resident owns the private benchmark and calibration loop that proves whether the orchestration layer adds value.
 
 Historical sprint-era designs now live under `docs/archive/` when they are still useful as evidence. They are not current product contracts.
 
-## Migration Plan
+## Prototype backend migration plan
 
-When JustAi integrates safe-mini, remove or replace the remaining local placeholders and bind these pieces to the substrate's public API:
+If the prototype's safe-mini integration is pursued, remove or replace the remaining local placeholders and bind these pieces to the substrate's public API:
 
 - runner loop and action protocol
 - executor policy types
@@ -224,7 +225,7 @@ TBD post-JustAi-closure:
 
 ## Native workbench design draft
 
-This section specifies the proposed native client and its integration boundaries. It does not describe delivered native code or change the current Python control-plane behavior above. Product requirements and design questions live in [Product](PRODUCT.md); progress and acceptance live in [Delivery](DELIVERY.md). The earlier safe-mini integration plan describes that specific existing backend path, not a requirement that every future native provider run through it.
+This section specifies the proposed native client and its integration boundaries. It does not describe delivered native code or change the Python prototype's run-local behavior above. Product requirements and design questions live in [Product](PRODUCT.md); progress and acceptance live in [Delivery](DELIVERY.md). The earlier safe-mini integration plan describes that specific existing backend path, not a requirement that every future native provider run through it.
 
 ### Components and state ownership
 
@@ -244,6 +245,7 @@ The client owns view state and drafts. An application layer composes approved op
 
 | Concern | Authoritative home | JustAI behavior |
 | --- | --- | --- |
+| Source code, revisions, reviews and merge/check records | The repository, version control and owning review/check systems | Open exact revisions and their evidence. A client snapshot cannot declare a commit, merge or passing check. |
 | Team identity, operating policy and resource configuration | Operator's maintained identity/policy/deployment sources | Read the authorized profile and effective grants. A display, snapshot or name does not grant authority. |
 | Execution and sessions | Selected native runtime and its supported integration | Request supported operations and read their acknowledged state; retain provider/session attribution. |
 | Work lifecycle and external effects | The selected work/effect owner for that item | Present status and submit commands to that owner. Do not create a competing settlement journal. |
@@ -253,6 +255,14 @@ The client owns view state and drafts. An application layer composes approved op
 | Reusable infrastructure introduced during product work | An existing suitable component, or an explicitly maintained new component | Consume one versioned implementation after extraction and migration. |
 
 The authority table defines responsibilities, not a new service or wire schema. Resolve concrete source locations, maintainer and supported revision when binding each deployment. Private operational bindings remain private. Public examples use synthetic identities and explicit configuration.
+
+### Client checkpoints and new workflow ownership
+
+A client checkpoint may preserve view position, local drafts and dated observations linked to their exact owning sources. Cached observations retain source identity, revision where available and observation time; stale or unavailable sources stay visible. Before acting, reconcile current owner state and authorization. Restoring a screen does not restore an execution session or settle an uncertain effect.
+
+Accepted work, pending actions and external effects remain recoverable through their owners if JustAI is closed or removed. The client's derived cache must be rebuildable without reconstructing the team's authoritative state. Unsent drafts need their own clear recovery/export behavior; they cannot silently become accepted tasks or Memory records.
+
+JustAI can introduce useful new product workflows. Before giving one durable authority, record the behavior it owns, its maintained source and interface, how it relates to existing owners, and its migration/recovery and consumer acceptance criteria in the owning design. Reusable infrastructure follows the component-extraction rule below. A cache or UI convenience does not acquire authority merely because it is useful.
 
 ### Continuity within JustAI
 

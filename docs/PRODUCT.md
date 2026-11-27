@@ -4,7 +4,7 @@ Status: design draft for review, reconciled 2026-11-27 UTC. This specifies the p
 
 ## Product purpose
 
-Give a continuing human and AI team one place to understand, advance and recover its work. A person opening JustAI should be able to answer: what are we trying to accomplish, who owns the next action, what has actually happened, what needs judgment, and what evidence supports it?
+Give a continuing human and AI team one place to understand, advance and recover its work. A person opening JustAI should be able to answer: what are we trying to accomplish, what changed while I was away, why does it matter, who owns the next action, am I needed, and what evidence supports it? The product turns those answers into useful navigation, review and action through the responsible owners.
 
 The initial product direction is to improve the existing native team's ordinary work, with portable interfaces from the start. The accepted investment rule is a finite useful-work comparison, then an evidence-based choice to reuse, build or retire the optional JustAI addition. This rule evaluates the workbench's value; substantial Memory remains a required foundation under its existing project. An outside user's installation should supply its own identities, policies, runtimes and Memory service. A public demonstration uses synthetic records. Product behavior does not depend on importing the founding team's private history.
 
@@ -12,7 +12,9 @@ Native Rust is the selected implementation direction. Renderer selection remains
 
 ## Product boundaries
 
-JustAI owns navigation, interaction design, presentation and application-specific coordination. It consumes maintained execution, capability, work-state and Memory interfaces. Substantial persistent Memory is a required dependency; a transcript viewer or cache does not fulfill it. Memory implementation and accepted-record semantics belong to that product's owner.
+JustAI owns navigation, interaction design, presentation and composition of supported operations through owner contracts. It consumes maintained execution, capability, work-state and Memory interfaces. Git and the owning repository systems retain source/revision evidence; existing runtime and work owners retain live work; Memory retains accepted records. Substantial persistent Memory is a required dependency; a transcript viewer or cache does not fulfill it.
+
+Local drafts, view state and dated source-linked snapshots support the experience. Their status and freshness remain explicit. Closing or removing JustAI must leave accepted work recoverable through its existing owners. New product workflows remain in scope; any genuinely new durable authority needs an explicit ownership and integration decision under [Architecture](ARCHITECTURE.md#client-checkpoints-and-new-workflow-ownership).
 
 Continuing teammate identity, the current session, model, machine and authorization are distinct. The UI presents verified attribution and uncertainty. It does not infer subjective experience, manufacture a biography, or treat a display name or identifier as a permission.
 
