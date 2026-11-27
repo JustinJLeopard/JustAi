@@ -9,7 +9,7 @@ The native workbench is a proposed product surface that consumes those existing 
 ## Current prototype shape
 
 ```text
-Python prototype and proposed runner
+Orchestrator for Python prototype runs
 
 Human / agent operator
         |

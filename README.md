@@ -48,7 +48,7 @@ The proposed three-repo shape for that prototype backend is:
 | Repo | Role |
 | --- | --- |
 | `safe-mini` | Local execution substrate: runner loop, command/path guards, isolated worktrees, observation policy, incident artifacts, trajectory recording, and canonical execution types. |
-| `JustAi` | Prototype control-plane: goal decomposition, chunk sizing, run-scoped checkpoints, review, dashboard/API support and synthesis. |
+| `JustAi` | Control-plane for prototype runs: goal decomposition, chunk sizing, run-scoped checkpoints, review, dashboard/API support and synthesis. |
 | `local-resident` | Local experiment driver: private benchmark slices, calibration runs, and comparative evaluation. |
 
 ## CLI
