@@ -3,15 +3,27 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-JustAi is a project-orchestration control-plane: it breaks engineering goals into small, reviewable tasks, reviews the resulting plan, and applies risk checkpoints. It does not currently execute those tasks — no execution backend is wired, so `run` fails closed rather than reporting work it did not perform.
+The implemented Python prototype is a project-orchestration control-plane for its own runs: it breaks engineering goals into small, reviewable tasks, reviews the resulting plan, and applies run-scoped risk checkpoints. It does not currently execute those tasks — no execution backend is wired, so `run` fails closed rather than reporting work it did not perform.
 
 [Live demo](https://justai-demo.vercel.app) · [Case study](https://www.delegateandorchestrate.com/work/justai) · [Portfolio](https://www.delegateandorchestrate.com) · [Safe execution substrate](https://github.com/JustinJLeopard/safe-mini)
 
+## Native workbench design draft
+
+The proposed next product is a native Rust workbench for continuing team work across development, execution, Memory and operations. This is a design draft; the current execution limitations below still apply.
+
+| Read next | Purpose |
+| --- | --- |
+| [Product and design questions](docs/PRODUCT.md) | User journeys, five views, required behavior and decisions that need human judgment. |
+| [Architecture](docs/ARCHITECTURE.md#native-workbench-design-draft) | Current implementation versus proposed components, source ownership and reusable additions. |
+| [Delivery and acceptance](docs/DELIVERY.md) | Milestones, evidence, progress and possible public/OpenAI distribution routes. |
+
+JustAI consumes maintained team capabilities. The native design gives the workbench ownership of navigation, interaction and product experience; repositories, Memory and existing runtime/work owners retain their authoritative records and operations. The Python prototype's run-local orchestration does not transfer those responsibilities to the native client. Copies and derived views identify their source. Public documentation contains portable design and synthetic examples.
+
 ## Status
 
-JustAi is public as the control-plane layer of a broader agent-infrastructure system. The current split is intentional: keep orchestration, execution safety, evaluation, and experiments auditable as separate surfaces instead of hiding them in one opaque agent repo.
+The public implementation is a Python planning/checkpointing prototype with a dashboard. Its proposed backend split separates prototype orchestration, execution safety, evaluation and calibration. That split describes the existing implementation path; the native workbench's authority boundaries are specified separately above.
 
-- Current code is the JustAi control-plane layer.
+- Current code implements the prototype's control-plane layer.
 - The execution substrate exists separately as `safe-mini`, but this repository does not yet pin or invoke it.
 - The experiment/calibration driver is being separated into `local-resident`.
 - Some CLI paths still expose transitional behavior while the split finishes.
@@ -29,14 +41,14 @@ JustAi is public as the control-plane layer of a broader agent-infrastructure sy
 
 ## Architecture
 
-JustAi scopes a user goal into bounded tasks, reviews the plan, and applies risk checkpoints. Its execution backends are currently unavailable: the removed delegated path and the unwired local safe-mini path both fail closed instead of claiming task completion.
+The Python prototype scopes a user goal into bounded tasks, reviews the plan, and applies checkpoints to that run. Its execution backends are currently unavailable: the removed delegated path and the unwired local safe-mini path both fail closed instead of claiming task completion.
 
-The intended three-repo shape is:
+The proposed three-repo shape for that prototype backend is:
 
 | Repo | Role |
 | --- | --- |
 | `safe-mini` | Local execution substrate: runner loop, command/path guards, isolated worktrees, observation policy, incident artifacts, trajectory recording, and canonical execution types. |
-| `JustAi` | Control-plane: goal decomposition, chunk sizing, checkpoints, review, coordination, dashboard/API support, and synthesis. |
+| `JustAi` | Control-plane for prototype runs: goal decomposition, chunk sizing, run-scoped checkpoints, review, dashboard/API support and synthesis. |
 | `local-resident` | Local experiment driver: private benchmark slices, calibration runs, and comparative evaluation. |
 
 ## CLI
