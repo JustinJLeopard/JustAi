@@ -1,6 +1,6 @@
 # JustAI delivery and acceptance
 
-Status: proposed sequence, 2026-11-24 UTC. No implementation schedule or background worker is created by this document. [Product](PRODUCT.md) owns requirements and design questions; [Architecture](ARCHITECTURE.md#native-workbench-design-draft) owns the proposed component boundaries. Existing implementation checks remain in [Testing](TESTING.md).
+Status: proposed sequence, reconciled 2026-11-27 UTC. No implementation schedule or background worker is created by this document. [Product](PRODUCT.md) owns requirements and design questions; [Architecture](ARCHITECTURE.md#native-workbench-design-draft) owns the proposed component boundaries. Existing implementation checks remain in [Testing](TESTING.md).
 
 ## Milestones
 
@@ -8,14 +8,14 @@ A milestone closes when its outcome is demonstrated. Documentation, implementati
 
 | Milestone | Outcome and completion evidence | Dependencies and decisions | Current state |
 | --- | --- | --- | --- |
-| M1 Product and contracts | Agree the first complete job; specify lifecycle behavior; map every integration to an owner, supported contract and known gap. Record D1's disposition. | Product/architecture review and current provider/Memory contracts. | Draft specified; review and contract binding open. |
+| M1 Product and contracts | Qualify the first complete job and lifecycle; map every integration to an owner, supported revision, contract and precisely owned gap. | Accepted team-first direction; product/architecture review and current provider/Memory contracts. | D1 carried forward; storyboard and contract-readiness matrix drafted. Actual binding and representative task/owner selection remain open. |
 | M2 Native experience | Run the complete five-view task in a native client. Compare difficult text, input and recovery interactions; select renderer from evidence on declared targets. Synthetic data is clearly labeled. | M1 journey; D2 and D3. Can proceed alongside dependency delivery. | Not implemented. HTML interaction concept only. |
-| M3 Real integrated outcome | Use actual authorized Memory retrieval and native execution, deliver a checked repository change, survive interruption, and observe the Memory owner's decision on proposed learning. | M1 contracts; usable Memory and executor delivery under their existing owners; D4 and D5. | Not integrated. Existing services are inputs, not proof of this milestone. |
+| M3 Real integrated outcome | Use actual authorized Memory retrieval and native execution, deliver a checked repository change, survive interruption, and observe the Memory owner's decision on proposed learning. | M1 contracts; full required Memory acceptance and supported executor delivery under their existing owners; D4 and D5. | Not integrated. Existing services are inputs, not proof of this milestone. |
 | M4 Ordinary team use | Complete multiple distinct ordinary tasks across fresh sessions; operators can recover failures without reconstructing context or inventing status. Demonstrate upgrade, rollback and supported restore. | M3, representative adoption window and agreed usability budgets. | Not started. |
 | M5 Portable public product | A fresh operator installs and completes the supported workflow with synthetic/public data and their own dependencies. Ship accurate docs, license notices, support/data policies, versioned artifacts and removal procedure. | M4 evidence; D6; public support and distribution decisions. | Design preparation only. |
 | M6 External submission | Prepare the selected OpenAI package or program application, execute its required review cases, and make the exact submission reviewable by its publisher. | M5 for a product submission; route eligibility, publisher identity and explicit external-submission decision. | Opportunity researched; no application, upload or submission. |
 
-M2 does not wait for every infrastructure project to finish. M3 cannot claim substantial Memory is delivered merely because a fixture or older bounded service works. Browser, plugin and new-provider adapters can advance in parallel once their contracts are clear; each has its own support and acceptance scope.
+M2's native client and synthetic interaction trial can proceed alongside Memory delivery without taking its workers off their accepted work. Full Memory completion under the existing feature-to-proof plan and evidence-based exception rule remains the prerequisite for Continuity runtime implementation, live adoption and the integrated M3 claim. A fixture or older bounded service does not meet that prerequisite. Browser, plugin and new-provider adapters can advance in parallel once their contracts are clear; each has its own support and acceptance scope.
 
 ## Proof that matters
 
@@ -35,6 +35,19 @@ Use the existing test results, release/PR records and owning service evidence. K
 For A6 record total shipped/install size, cold/warm readiness, idle/active/peak memory, CPU/GPU and input/render behavior on the same representative workload. Set acceptable budgets after measurement and user-experience review; no fabricated performance threshold or comparison across unequal demos. A compiled binary alone does not establish this proof.
 
 For A3 and A5, exercise failure injection around command acknowledgement, reconnect, stale grants and duplicate delivery. Safety must come from the owning operation's contract, not a UI label or optimistic local state.
+
+## First-job trial and decision
+
+Use [Product's first complete job](PRODUCT.md#first-complete-job-for-the-design-trial) and [Architecture's contract-readiness matrix](ARCHITECTURE.md#first-job-contract-readiness) as the shared scenario. These steps produce different evidence:
+
+1. **M1 contract review:** preserve the accepted product direction; reconcile the exact native and Memory interfaces; select the representative repository task and its accountable owner.
+2. **M2 interaction trial:** run the five-view scenario with labeled synthetic records, including unavailable/stale data, a session transition and an uncertain action. Compare Work-first and Develop-first views on the same evidence. A renderer result establishes only its tested scope.
+3. **M3 integrated trial:** after dependency acceptance, revalidate the live task's eligibility, source and authorization, or select equivalent authorized work with the same journey; then exercise the actual path through delivery and Memory disposition. Check an interruption and a lost response without repeating an unsettled external effect.
+4. **M4 natural follow-through:** use a different ordinary task to assess reuse of learning, correction under contrary evidence and recovery without rebuilding a special demonstration. Observe benefit and maintenance cost against the ordinary assisted native/chat baseline.
+
+The finite-proof rule applies to optional JustAI product additions. Continue a useful capability, repair a concrete defect, adopt a better existing route or retire the addition according to the observed outcome. It does not reopen the need for substantial Memory, erase accepted obligations or authorize discarding unfinished work.
+
+The consolidated result should identify the source revisions, task and baseline, observed user effort, incorrect or unresolved status, interruptions, delivery/uptake, learning disposition and recurring curation cost. Set quantitative usability budgets from the representative trial instead of inventing a pass threshold before measurement. Keep acceptance evidence with its owning source and link it once.
 
 ## Progress reporting and later scheduling
 

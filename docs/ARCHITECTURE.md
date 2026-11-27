@@ -254,6 +254,14 @@ The client owns view state and drafts. An application layer composes approved op
 
 The authority table defines responsibilities, not a new service or wire schema. Resolve concrete source locations, maintainer and supported revision when binding each deployment. Private operational bindings remain private. Public examples use synthetic identities and explicit configuration.
 
+### Continuity within JustAI
+
+JustAI Continuity is an approved workstream within the product. It addresses accepted obligations, worker-authored next actions, explicit waits and recovery across turns or sessions. Its implementation must consume the existing work, ownership, admission and Memory contracts. The detailed maintained continuity design and private deployment evidence remain with that workstream; this section records the workbench's dependency and interface, not a second continuity specification.
+
+A readiness index may be a rebuildable projection of owner-authored state. It must not become a second task authority, accepted Memory store or competing queue consumer. Workers retain judgment over useful next actions; deterministic code supplies the supported event, waiting and admission mechanics. The UI presents those outcomes and meaningful operator controls.
+
+Full Memory completion under its accepted feature-to-proof plan and existing evidence-based exception rule is the prerequisite for Continuity runtime implementation and live adoption. Independent contract analysis, acceptance design and the native UI trial can proceed while the existing owners finish Memory. A component diagram does not choose separate services; process boundaries require an actual isolation, recovery, scaling or release need.
+
 ### Stack and target decisions
 
 The primary client direction is Rust. [GPUI Kit](https://gpui-kit.com/docs/) is the leading renderer candidate; compare the representative workbench workload with [nanoui](https://github.com/justrach/nanoui) and retain [Slint](https://slint.dev/) as an alternative. nanoui is Zig; selecting it would require a deliberate UI-language or Rust/Zig integration decision. Selection remains open until M2 qualification. Pin the chosen dependency/toolchain revisions and check distribution terms at that decision.
@@ -274,6 +282,22 @@ For each real integration, record these details beside its adapter/configuration
 - Evidence references, error vocabulary and one representative consumer contract check.
 
 If a provider cannot supply a needed guarantee, expose that gap and qualify an adapter or owner-side change. Do not relabel a local optimistic event as confirmed remote state. Define a new contract only for a real uncovered behavior, with a maintaining owner and consumers.
+
+### First-job contract readiness
+
+This matrix identifies the binding work for the product journey. It is a consumer checklist, not a new wire schema or a declaration that the adapters already exist. Record deployment-specific endpoints, identities, revisions and current owners in the operator's private integration profile; use the upstream contract's own names and semantics in implementation.
+
+| Journey boundary | Existing authority to bind | Consumer behavior to prove | Current design disposition |
+| --- | --- | --- | --- |
+| Recover a decision and its revisions | Memory's retrieval and provenance contract | Authorized retrieval, original source, supersession and useful context delivery to the acting session. | Required dependency; JustAI adapter and exact revision binding remain open. |
+| Read an outcome and current owner | Maintained work and ownership records | Same work identity across sessions; attributable freshness and current custody. | Reconcile the selected native adapter; historical rosters and old projections cannot supply current ownership. |
+| Execute and reconcile a command | Selected runtime and effect owner | Current permission, request identity, acknowledgement, terminal result and resolution of a lost response before retry. | Qualify the supported native route. The legacy Python API's earlier authentication finding is not a supported control path. |
+| Discover a capability or load a skill | Current maintained discovery, router/broker and context-delivery owners | Caller scope, selected capability revision, bounded context and owner-attributed invocation. | Resolve the maintained route. The retired Fabric catalog is not selected by this design. |
+| Read source, checks and delivery | Repository and the actual result/recipient owner | Revision-bound changes, relevant checks and explicit delivered-versus-accepted state. | Bind a permitted repository/worktree and result reader; use real recipient evidence for adoption. |
+| Propose learning or correction | Memory's designated writer/admission contract | Proposal identity, owner disposition and later retrieval/use of the accepted revision. | Consumer integration remains open; a client draft is not an accepted record. |
+| Continue across an event or wait | Existing native continuation/admission mechanism and the Continuity workstream | Exact wait, eligible next action, preserved owner and reconciled uncertain delivery without duplicate dispatch. | Design and contract reconciliation can proceed; runtime implementation follows full Memory acceptance. |
+
+M1 can close only when each selected integration has a maintaining owner, a supported revision and the applicable behavioral contract, or a precisely owned gap with its acceptance test and dependency. Source availability, an installed process and a passing synthetic fixture are different evidence. Qualifying the real path remains M3 work.
 
 ### References, copies and new behavior
 

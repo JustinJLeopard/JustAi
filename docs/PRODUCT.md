@@ -1,12 +1,12 @@
 # JustAI product design
 
-Status: design draft for review, 2026-11-24 UTC. This specifies the proposed native workbench, not installed functionality or a replacement for a team's operating rules. [Architecture](ARCHITECTURE.md#native-workbench-design-draft) defines ownership; [Delivery](DELIVERY.md) records milestones and proof. The [README](../README.md) describes the implementation available today.
+Status: design draft for review, reconciled 2026-11-27 UTC. This specifies the proposed native workbench, not installed functionality or a replacement for a team's operating rules. [Architecture](ARCHITECTURE.md#native-workbench-design-draft) defines ownership; [Delivery](DELIVERY.md) records milestones and proof. The [README](../README.md) describes the implementation available today.
 
 ## Product purpose
 
 Give a continuing human and AI team one place to understand, advance and recover its work. A person opening JustAI should be able to answer: what are we trying to accomplish, who owns the next action, what has actually happened, what needs judgment, and what evidence supports it?
 
-The first-use recommendation is the team's ordinary development work, with portable interfaces from the start. An outside user's installation should supply its own identities, policies, runtimes and Memory service. A public demonstration uses synthetic records. Product behavior does not depend on importing the founding team's private history.
+The initial product direction is to improve the existing native team's ordinary work, with portable interfaces from the start. The accepted investment rule is a finite useful-work comparison, then an evidence-based choice to reuse, build or retire the optional JustAI addition. This rule evaluates the workbench's value; substantial Memory remains a required foundation under its existing project. An outside user's installation should supply its own identities, policies, runtimes and Memory service. A public demonstration uses synthetic records. Product behavior does not depend on importing the founding team's private history.
 
 Native Rust is the selected implementation direction. Renderer selection remains an engineering qualification: GPUI Kit leads the candidate set, with nanoui (Zig) and Slint as comparison options. Selecting nanoui would require a deliberate UI-language or Rust/Zig integration decision. Browser and ChatGPT clients have separate target and permission contracts.
 
@@ -55,20 +55,58 @@ The reference task is a real repository change: recover a prior decision from Me
 | Pause | Request a supported checkpoint; show acknowledgement separately from the request. | Drafts, changes, pending effects and the owner of anything still running. |
 | Resume in a fresh session | Reconcile current source state, then continue the same work identity. | Prior decisions, new session attribution and any changed authorization. |
 | Close the window | End the client session without implicitly ending independently owned work. | Reopening restores the owner's current state. |
-| Abandon | Stop future dispatch after owner acknowledgement and retain the reason and partial artifacts. | In-flight or uncertain effects remain separately owned until settled. Abandonment neither erases history nor implies rollback. |
+| Abandon | Immediately withhold new JustAI-originated dispatch for the abandoned goal. Request the owner's stop of future continuation and show abandonment as requested until acknowledged. Retain the reason and partial artifacts. | In-flight or uncertain effects remain separately owned until settled. Abandonment neither erases history nor implies rollback. |
 | Lose connection | Show dated cached data and preserve drafts. | Staleness, unsent intent and the distinction between local edits and confirmed remote state. |
 | Lose an action response | Reconcile with the effect owner before retrying. | Original operation identity and unresolved result; a timeout does not imply no effect. |
 | Change or revoke access | Apply current grants before new reads or actions; isolate account state. | Why a capability became unavailable and how authorized recovery works. |
 
 Whether a particular provider supports pause, cancellation, replay or durable resumption is a contract question. The client advertises only the semantics that integration can prove.
 
+## First complete job for the design trial
+
+**Working scenario:** return to an unfinished repository change, recover why it exists, carry it through review and delivery, and preserve a useful lesson for a later task. The initial audience and investment rule are established. M1 selects the representative task and its accountable owner. Immediately before M3, revalidate that task's current eligibility, source and authorization, or select equivalent authorized work exercising the same journey. M2 uses a clearly labeled synthetic instance.
+
+The story serves three recurring jobs:
+
+| Job | What the person needs | Equivalent for an outside operator |
+| --- | --- | --- |
+| Return to work | Understand what changed, which result is usable and whether a decision needs attention. | Recover a project after time away without access to the founding team's private context. |
+| Advance a change | Follow the actual source, executor, checks and delivery through one outcome. | Use the operator's own repository, runtime and permissions. |
+| Carry learning forward | Correct a prior belief or procedure, see its disposition and observe useful later use. | Use the operator's supported Memory service and its own acceptance rules. |
+
+### Walkthrough
+
+| Step | Experience | Required evidence and ownership |
+| --- | --- | --- |
+| 1. Reorient in Work | Show the continuing outcome, what changed since the last observation, the next accountable action and any genuine decision. No-decision-needed is a valid state. | Source-backed work state with observation time; explicit stale, unavailable or unresolved fields. The client does not infer progress from a busy indicator. |
+| 2. Recover the decision in Memory | Open the decision that explains the change, its supporting source and any superseding revision. Retrieve only the context this task needs. | The Memory owner's authorized result and source revision. A saved record, retrieval and demonstrated use remain distinct. |
+| 3. Continue with the right teammate | Resume through the current owner and supported runtime, preserving the work identity. Show the continuing identity separately from this session, model, environment and effective access. | Current ownership and authorization, with the accepted next action. A new session does not silently inherit another principal's grants. |
+| 4. Work in Develop | Open the actual repository revision, relevant changes, checks and artifacts. Ordinary engineering continues without asking the person to relay messages. | Repository/worktree identity and execution-owner acknowledgement. A UI draft is not a submitted or executed operation. |
+| 5. Recover a boundary | Close and reopen the client, then separately exercise a fresh execution session. Restore the current outcome and reconcile any command whose response was lost before retrying that operation or dispatching work that depends on its outcome. Unrelated authorized work remains eligible. | Closing the window leaves independently owned work running. Session replacement recovers obligations and unresolved effects through their owners; it is not proved by restoring the UI alone. |
+| 6. Inspect the result | Present the intended change, meaningful tests, review disposition and any remaining integration condition. | Exact source and test/review evidence. Written, committed, pushed, merged, installed and consumer-verified are separate claims. |
+| 7. Deliver | Show the actual recipient or consumer outcome, with an owned next action where acceptance is pending. | An artifact link alone does not prove uptake. Use recipient-authored or actual-consumer evidence appropriate to the delivery. |
+| 8. Learn and revise | Submit a useful learning or correction proposal to Memory; display its accepted, rejected or pending disposition. On a later task, show retrieval and application, including revision when contrary evidence appears. | Memory retains the accepted-record writer. JustAI can preserve a draft and display the owner's decision; it cannot award itself acceptance or claim learning merely because text was stored. |
+
+Pause, abandonment, access changes and disconnects remain required branches of this journey, with the meanings in the lifecycle table above. The trial must retain useful partial artifacts and the identity of unsettled effects.
+
+### Opening the same job in two ways
+
+| Starting view | First interaction | Consequence to test |
+| --- | --- | --- |
+| Work first, recommended working default | Read the outcome and meaningful change, then open its active Develop workspace. | Makes returning after absence and deciding whether attention is needed straightforward; adds one navigation step when the operator already knows exactly which file to edit. |
+| Develop first | Restore the previous workspace, with an outcome/status panel linked to Work. | Suits sustained editing; must make changed ownership, stale evidence and pending decisions visible without requiring a hunt through tabs. |
+
+Compare these with the same task and source evidence. Keep the assisted native/chat workflow as the baseline; do not make it artificially harder or rerun model jobs merely to populate a second screen. Measure orientation effort, correctness, interruptions, artifact-finding effort and recurring curation. A later natural task checks whether the benefit survives without a special mapping rebuilt for that example.
+
+Work first guides the reversible trial. Final opening behavior, information density and how much identity detail belongs on the main screen remain interaction choices for review, not additional infrastructure prerequisites.
+
 ## Design questions for human judgment
 
-These are prepared discussion topics, not a request to answer every question now. Recommendations guide reversible design drafts; they do not record human acceptance.
+D1 records the established initial scope. The remaining rows are prepared discussion topics, not a request to answer every question now. Recommendations guide reversible design drafts; they do not record human acceptance.
 
 | ID and timing | Question and options | Recommended starting point | What the team prepares |
 | --- | --- | --- | --- |
-| D1 before M1 closes | First user: A existing team, B independent developer, C small organization? | A, while keeping interfaces portable. Public packaging follows a real daily-use result. | A day-in-the-life storyboard with three recurring jobs and the external user's equivalent. |
+| D1 established initial scope | Improve the existing native team's work; use a finite proof to decide reuse, build or retirement of the optional addition. | Carry this accepted direction forward. The wider public audience remains a D6 question. | The first complete job and three recurring jobs above; qualify them through M1–M4 without reopening the requirement for full Memory. |
 | D2 before M2 interaction review | Opening view: A Work and decisions, B Develop workspace, C activity stream? | A, with fast access to active development. | Two walkthroughs of the same task, showing where attention goes and why. |
 | D3 during M2 | Identity language: A teammate with session details, B role with session details? How much history is useful? | A with explicit provider, session, environment and source-backed continuity. | Identity detail and a session-replacement demonstration; no fictional personality. |
 | D4 before M3 mutating integration | Attention: A notify for real decisions and material failures, B every checkpoint, C selected work subscriptions? | A plus per-work subscriptions. Inherited authorization remains separate from notification preferences. | Routine-action, new-commitment and uncertain-effect scenarios with exact wording. |
@@ -79,6 +117,6 @@ A discussion should end with the chosen option, the reason, its scope, and any c
 
 ## Where ideation fits
 
-Before M1 closes, refine the jobs and storyboard. During M2, use working interactions to compare information density, identity detail and stop/recovery wording. Before M3's write path, walk the actual authority and failure cases. Before M5, design onboarding and the public value proposition with a fresh operator.
+Before M1 closes, qualify the storyboard against actual supported contracts and select a representative task and accountable owner. Revalidate the live task instance immediately before M3. During M2, use working interactions to compare information density, identity detail and stop/recovery wording. Before M3's write path, walk the actual authority and failure cases. Before M5, design onboarding and the public value proposition with a fresh operator.
 
 For each discussion the team brings concrete alternatives, a recommendation, consequences and a preview or runnable example. Record the outcome in this product document or the owning technical contract. A separate ADR is warranted only when a consequential technical choice needs durable alternatives and rationale beyond these documents.
